@@ -4,8 +4,9 @@
 import { isCellError } from "../cell-error"
 import { toRanges } from "../cell-utils"
 import type {
+  AutoFilter,
   RowDef,
-  WriteSheet,
+  SheetInput,
   CellValue,
   CellStyle,
   ColumnDef,
@@ -265,7 +266,7 @@ const DATE_STYLE_CACHE = /* @__PURE__ */ new WeakMap<CellStyle, CellStyle>()
 
 /** Generate xl/worksheets/sheetN.xml along with any hyperlink relationships */
 export function writeWorksheetXml(
-  sheet: WriteSheet,
+  sheet: SheetInput,
   styles: StylesCollector,
   sharedStrings: SharedStringsCollector,
   dateSystem?: "1900" | "1904",
@@ -546,22 +547,7 @@ export function writeWorksheetXml(
 
   // ── Auto Filter (OOXML: after sheetProtection, before mergeCells) ──
   if (sheet.autoFilter) {
-    if (sheet.autoFilter.columns && sheet.autoFilter.columns.length > 0) {
-      const filterChildren: string[] = []
-      for (const col of sheet.autoFilter.columns) {
-        if (col.filters && col.filters.length > 0) {
-          const filterElements = col.filters.map((v) => xmlSelfClose("filter", { val: v }))
-          filterChildren.push(
-            xmlElement("filterColumn", { colId: col.colIndex }, [
-              xmlElement("filters", undefined, filterElements),
-            ]),
-          )
-        }
-      }
-      parts.push(xmlElement("autoFilter", { ref: sheet.autoFilter.range }, filterChildren))
-    } else {
-      parts.push(xmlSelfClose("autoFilter", { ref: sheet.autoFilter.range }))
-    }
+    parts.push(serializeAutoFilter(sheet.autoFilter))
   }
 
   // ── Merge Cells ──
@@ -763,7 +749,7 @@ function columnCellStyle(col: ColumnDef | undefined): CellStyle | undefined {
   return col.style
 }
 
-function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
+function resolveRows(sheet: SheetInput): Array<Array<ResolvedCell | null>> {
   const resolved: Array<Array<ResolvedCell | null>> = []
 
   if (sheet.data && sheet.columns) {
@@ -1218,7 +1204,7 @@ function serializeDataValidations(validations: DataValidation[]): string {
  * the `<hyperlinks>` XML section plus external relationship entries.
  */
 export function collectHyperlinks(
-  sheet: WriteSheet,
+  sheet: SheetInput,
   preResolved?: Array<Array<ResolvedCell | null>>,
 ): {
   xml: string
@@ -1592,13 +1578,37 @@ function serializeFontProps(font: FontStyle): string[] {
   return parts
 }
 
+// ── Auto Filter Serialization ────────────────────────────────────
+
+/**
+ * Serialize an `<autoFilter>` element, including optional `<filterColumn>` children
+ * when column criteria are configured.
+ */
+export function serializeAutoFilter(autoFilter: AutoFilter): string {
+  if (autoFilter.columns && autoFilter.columns.length > 0) {
+    const filterChildren: string[] = []
+    for (const col of autoFilter.columns) {
+      if (col.filters && col.filters.length > 0) {
+        const filterElements = col.filters.map((v) => xmlSelfClose("filter", { val: v }))
+        filterChildren.push(
+          xmlElement("filterColumn", { colId: col.colIndex }, [
+            xmlElement("filters", undefined, filterElements),
+          ]),
+        )
+      }
+    }
+    return xmlElement("autoFilter", { ref: autoFilter.range }, filterChildren)
+  }
+  return xmlSelfClose("autoFilter", { ref: autoFilter.range })
+}
+
 // ── Conditional Formatting Serialization ─────────────────────────
 
 /**
  * Serialize conditional formatting rules into `<conditionalFormatting>` XML blocks.
  * Rules are grouped by range (sqref) — multiple rules on the same range go into one element.
  */
-function serializeConditionalFormatting(
+export function serializeConditionalFormatting(
   rules: ConditionalRule[],
   styles: StylesCollector,
 ): string[] {

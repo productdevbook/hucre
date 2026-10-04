@@ -11,7 +11,7 @@ import { validateWithSchema } from "../src/_schema"
 import { insertRows, deleteRows, cloneSheet } from "../src/sheet-ops"
 import { ZipReader } from "../src/zip/reader"
 import { ZipWriter } from "../src/zip/writer"
-import type { WriteSheet, CellValue, Cell, Sheet } from "../src/_types"
+import type { SheetInput, CellValue, Cell, Sheet } from "../src/_types"
 import type { StreamRow } from "../src/xlsx/stream-reader"
 
 // ── Shared Helpers ──────────────────────────────────────────────────
@@ -105,7 +105,7 @@ describe("Real World: Product Catalog Export", () => {
   it("writes and reads 50+ products with all features", async () => {
     const rows = generateProducts(55)
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Products",
       rows,
       columns: [
@@ -273,7 +273,7 @@ describe("Real World: Product Catalog Export", () => {
 
   it("auto width columns round-trip", async () => {
     const rows = generateProducts(10)
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "AutoWidth",
       rows,
       columns: [
@@ -361,7 +361,7 @@ describe("Real World: Financial Report", () => {
       }
     }
 
-    function makeQuarterSheet(name: string, base: number): WriteSheet {
+    function makeQuarterSheet(name: string, base: number): SheetInput {
       const months = ["Month 1", "Month 2", "Month 3"]
       const rows: CellValue[][] = [
         [`${name} Breakdown`, null, null],
@@ -398,7 +398,7 @@ describe("Real World: Financial Report", () => {
       }
     }
 
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Summary",
         rows: summaryRows,
@@ -577,7 +577,7 @@ describe("Real World: Employee Directory", () => {
     // Small PNG placeholder image
     const pngData = fakePng(128)
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Directory",
       rows,
       cells,
@@ -670,7 +670,7 @@ describe("Real World: Data Import Template", () => {
       rows.push([null, null, null, null, null])
     }
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Import Template",
       rows,
       columns: [
@@ -1159,7 +1159,7 @@ describe("Real World: Schema Validation", () => {
 describe("Real World: Round-trip Preservation", () => {
   it("preserves unknown parts (e.g. chart) while modifying cell data", async () => {
     // Create initial XLSX
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Product", "Sales"],
@@ -1211,7 +1211,7 @@ describe("Real World: Round-trip Preservation", () => {
   })
 
   it("preserves multiple unknown parts across round-trip", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Data",
       rows: [
         ["A", "B"],

@@ -12,7 +12,7 @@ import { streamCsvRows } from "../src/csv/stream"
 //
 // The project already decided this pattern is unacceptable, twice:
 // `CsvReadOptions.schema` was removed before v1 because no CSV reader
-// honoured it, and `WriteSheet.threadedComments` was removed in #404
+// honoured it, and `SheetInput.threadedComments` was removed in #404
 // because "a typed field that is silently discarded is worse than no
 // field at all". The rule was right; it just was not applied here.
 // ═══════════════════════════════════════════════════════════════════════

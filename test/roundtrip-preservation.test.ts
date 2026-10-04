@@ -3,19 +3,19 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip"
 import { ZipReader } from "../src/zip/reader"
-import type { WriteSheet, WriteOptions } from "../src/_types"
+import type { SheetInput, WorkbookInput } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /** write → open → save → read, i.e. one full preservation cycle. */
-async function cycle(options: WriteOptions) {
+async function cycle(options: WorkbookInput) {
   const original = await writeXlsx(options)
   const opened = await openXlsx(original)
   const saved = await saveXlsx(opened)
   return { saved, workbook: await readXlsx(saved) }
 }
 
-function sheetWith(extra: Partial<WriteSheet>): WriteSheet {
+function sheetWith(extra: Partial<SheetInput>): SheetInput {
   return {
     name: "S",
     rows: [

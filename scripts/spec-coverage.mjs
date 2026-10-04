@@ -81,7 +81,7 @@ function sourceLiterals(dir) {
         const text = readFileSync(p, "utf8")
         corpusText += text + "\n"
         // A quoted literal — `case "sheetPr"` — is how a reader switches.
-        for (const m of text.matchAll(/["'`]([A-Za-z_][\w:.\-]*)["'`]/g)) exact.add(m[1])
+        for (const m of text.matchAll(/["'`]([A-Za-z_][\w:.-]*)["'`]/g)) exact.add(m[1])
         // An object key — `xmlSelfClose("calcPr", { calcId: 0 })` — is how
         // a writer emits an attribute. Missing this form reported a dozen
         // attributes hucre writes on every workbook as unknown to it.

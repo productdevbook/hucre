@@ -3,7 +3,7 @@ import { writeOds } from "../src/ods/writer"
 import { readOds } from "../src/ods/reader"
 import { ZipReader } from "../src/zip/reader"
 import { parseXml } from "../src/xml/parser"
-import type { Cell, WriteSheet } from "../src/_types"
+import type { Cell, SheetInput } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -33,7 +33,7 @@ async function getAutomaticStyles(data: Uint8Array) {
   return findChild(contentDoc, "automatic-styles")
 }
 
-function singleCellSheet(numFmt: string, value: number): WriteSheet {
+function singleCellSheet(numFmt: string, value: number): SheetInput {
   const cells = new Map<string, Partial<Cell>>()
   cells.set("0,0", { value, style: { numFmt } })
   return { name: "Sheet1", rows: [[value]], cells }

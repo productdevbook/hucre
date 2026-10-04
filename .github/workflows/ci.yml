@@ -12,12 +12,14 @@ on:
   push:
     branches:
       - main
+      - v2
     paths-ignore:
       - "docs/**"
 
   pull_request:
     branches:
       - main
+      - v2
     paths-ignore:
       - "docs/**"
 
@@ -34,19 +36,20 @@ jobs:
     name: node ${{ matrix.node }}
     steps:
       - uses: actions/checkout@v5
-      - run: corepack enable
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node }}
-          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      # `pnpm test` is lint + typecheck + vitest, so running the first two
+        run: bun install --frozen-lockfile
+      # `bun run test` is lint + typecheck + vitest, so running the first two
       # again here would double every job's work for nothing.
       - name: Test
-        run: pnpm test
+        run: bun run test
       - name: Build
-        run: pnpm build
+        run: bun run build
       - name: Verify packaged artifact
         run: node scripts/verify-package.mjs
 
@@ -60,16 +63,17 @@ jobs:
     name: coverage + size
     steps:
       - uses: actions/checkout@v5
-      - run: corepack enable
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - run: bun install --frozen-lockfile
       - name: Coverage thresholds
-        run: pnpm coverage
+        run: bun run coverage
       - name: Bundle-size budget
-        run: pnpm size
+        run: bun run size
 
   timezone:
     # Everything above runs in UTC, which is where a whole class of date bug
@@ -81,13 +85,14 @@ jobs:
       TZ: Asia/Tokyo
     steps:
       - uses: actions/checkout@v5
-      - run: corepack enable
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - run: bun install --frozen-lockfile
+      - run: bun run test
 
   runtime:
     # Does the *shipped* artifact run where the README says it does?
@@ -103,16 +108,15 @@ jobs:
         runtime: [bun, deno]
     steps:
       - uses: actions/checkout@v5
-      - run: corepack enable
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - run: bun install --frozen-lockfile
+      - run: bun run build
 
-      - if: matrix.runtime == 'bun'
-        uses: oven-sh/setup-bun@v2
       - if: matrix.runtime == 'deno'
         uses: denoland/setup-deno@v2
         with:

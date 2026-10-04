@@ -7,7 +7,7 @@ import { writeOds } from "../src/ods/writer"
 import { streamOdsRows } from "../src/ods/stream"
 import { readOdsObjects, writeOdsObjects } from "../src/ods/objects"
 import { ParseError, ZipError } from "../src/errors"
-import type { Cell, PatternFill, StreamRow, Workbook, WriteSheet } from "../src/_types"
+import type { Cell, PatternFill, StreamRow, Workbook, SheetInput } from "../src/_types"
 
 const enc = new TextEncoder()
 const dec = new TextDecoder("utf-8")
@@ -1268,7 +1268,7 @@ describe("ODS writer — date format code round-trips", () => {
 
 describe("ODS writer — columns + data", () => {
   it("omits the header row when no column declares a header", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "S",
       columns: [{ key: "a" }, { key: "b" }],
       data: [{ a: 1, b: 2 }],
@@ -1278,7 +1278,7 @@ describe("ODS writer — columns + data", () => {
   })
 
   it("uses the header as the lookup key when no key is given", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "S",
       columns: [{ header: "Name" }, { header: "Age" }],
       data: [{ Name: "Ada", Age: 36 }],
@@ -1291,7 +1291,7 @@ describe("ODS writer — columns + data", () => {
   })
 
   it("writes null for a key the object does not have", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "S",
       columns: [
         { key: "a", header: "A" },
@@ -1305,7 +1305,7 @@ describe("ODS writer — columns + data", () => {
 
   it("falls back to an empty header for a column with neither key nor header", async () => {
     // A column declared only for its width still occupies a position.
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "S",
       columns: [{ header: "A", key: "a" }, { key: "b" }, { width: 10 }],
       data: [{ a: 1, b: 2 }],
@@ -1328,7 +1328,7 @@ describe("ODS writer — columns + data", () => {
     // the last `rows` entry for an override below it. Without that, an
     // override at or past a row's last non-null value was simply dropped —
     // and the XLSX writer grows the grid for exactly this case, so one
-    // WriteSheet produced two different documents per output format.
+    // SheetInput produced two different documents per output format.
     const cells = new Map<string, Partial<Cell>>()
     cells.set("0,2", { value: null, formula: "NOW()" })
     cells.set("2,0", { value: "z" })

@@ -16,11 +16,11 @@ import { parseXml } from "../src/xml/parser"
 import { writeOds } from "../src/ods/writer"
 import { readOds } from "../src/ods/reader"
 import { insertRows, deleteRows, removeSheet, insertColumns } from "../src/sheet-ops"
-import type { CellValue, WriteSheet, SchemaDefinition, Sheet, Workbook } from "../src/_types"
+import type { CellValue, SheetInput, SchemaDefinition, Sheet, Workbook } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-async function writeAndRead(sheets: WriteSheet[]): Promise<Workbook> {
+async function writeAndRead(sheets: SheetInput[]): Promise<Workbook> {
   const xlsx = await writeXlsx({ sheets })
   return readXlsx(xlsx)
 }

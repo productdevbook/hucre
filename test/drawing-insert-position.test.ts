@@ -5,7 +5,7 @@ import { createStylesCollector } from "../src/xlsx/styles-writer"
 import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip"
 import { getCharts } from "../src/xlsx/chart-helpers"
 import { ZipReader } from "../src/zip/reader"
-import type { SheetChart, WriteSheet } from "../src/_types"
+import type { SheetChart, SheetInput } from "../src/_types"
 
 // ═══════════════════════════════════════════════════════════════════════
 // #474 — a preserved chart drawing needs a `<drawing r:id>` in the
@@ -32,7 +32,7 @@ const CHART: SheetChart = {
   anchor: { from: { row: 7, col: 0 }, to: { row: 21, col: 7 } },
 }
 
-function base(): WriteSheet {
+function base(): SheetInput {
   return {
     name: "Data",
     rows: [

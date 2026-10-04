@@ -1,11 +1,11 @@
-import { cellError } from "../src/cell-error"
+import { cellError } from "../../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { readFileSync, readdirSync } from "node:fs"
-import { readXlsx } from "../src/xlsx/reader"
-import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip"
-import { streamXlsxRows } from "../src/xlsx/stream-reader"
-import { ZipReader } from "../src/zip/reader"
-import type { CellValue } from "../src/_types"
+import { readXlsx } from "../../src/xlsx/reader"
+import { openXlsx, saveXlsx } from "../../src/xlsx/roundtrip"
+import { streamXlsxRows } from "../../src/xlsx/stream-reader"
+import { ZipReader } from "../../src/zip/reader"
+import type { CellValue } from "../../src/_types"
 
 // ═══════════════════════════════════════════════════════════════════════
 // #464 — the suite parsed 9,934 assertions' worth of hucre's own output
@@ -23,7 +23,7 @@ import type { CellValue } from "../src/_types"
 // See test/fixtures/third-party/README.md for provenance and licensing.
 // ═══════════════════════════════════════════════════════════════════════
 
-const DIR = new URL("./fixtures/third-party/", import.meta.url)
+const DIR = new URL("../fixtures/third-party/", import.meta.url)
 
 function load(name: string): Uint8Array {
   return new Uint8Array(readFileSync(new URL(name, DIR)))

@@ -14,14 +14,14 @@ import { readOds } from "../src/ods/reader"
 import { readXlsx } from "../src/xlsx/reader"
 import { ZipReader } from "../src/zip/reader"
 import { write } from "../src/defter"
-import type { WriteSheet } from "../src/_types"
+import type { SheetInput } from "../src/_types"
 
 async function part(buf: Uint8Array, path: string): Promise<string> {
   const zip = new ZipReader(buf)
   return new TextDecoder().decode(await zip.extract(path))
 }
 
-const inlineSheet: WriteSheet = {
+const inlineSheet: SheetInput = {
   name: "S",
   rows: [
     ["plain", { value: "wrapped", style: { alignment: { wrapText: true } } }],
@@ -30,7 +30,7 @@ const inlineSheet: WriteSheet = {
 }
 
 /** The same sheet said the old way, for the writers to agree with. */
-const mapSheet: WriteSheet = {
+const mapSheet: SheetInput = {
   name: "S",
   rows: [
     ["plain", "wrapped"],
@@ -138,7 +138,14 @@ describe("cell objects written inline in rows", () => {
   })
 
   it("reduces to the value for the formats that carry only values", async () => {
-    const csv = await write({ sheets: [inlineSheet], format: "csv" })
+    const csv = await write(
+      {
+        sheets: [inlineSheet],
+      },
+      {
+        format: "csv",
+      },
+    )
     const text = new TextDecoder().decode(csv as Uint8Array)
     expect(text).toContain("wrapped")
     expect(text).toContain("1234.5")
@@ -149,7 +156,7 @@ describe("cell objects written inline in rows", () => {
     // The scan must not copy a grid it found nothing in — the same array
     // instance is what proves it.
     const rows = [["a", 1]]
-    const sheet: WriteSheet = { name: "S", rows }
+    const sheet: SheetInput = { name: "S", rows }
     await writeXlsx({ sheets: [sheet] })
     expect(sheet.rows).toBe(rows)
     expect(sheet.cells).toBeUndefined()
@@ -157,7 +164,7 @@ describe("cell objects written inline in rows", () => {
 
   it("does not mutate the caller's sheet when it does split", async () => {
     const rows = [[{ value: "x", style: { font: { bold: true } } }]]
-    const sheet: WriteSheet = { name: "S", rows }
+    const sheet: SheetInput = { name: "S", rows }
     await writeXlsx({ sheets: [sheet] })
     expect(sheet.rows).toBe(rows)
     expect(sheet.rows![0]![0]).toEqual({ value: "x", style: { font: { bold: true } } })

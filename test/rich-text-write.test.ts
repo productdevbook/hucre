@@ -4,7 +4,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
 import { createSharedStrings, writeWorksheetXml } from "../src/xlsx/worksheet-writer"
-import type { WriteSheet, Cell } from "../src/_types"
+import type { SheetInput, Cell } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -20,7 +20,7 @@ function getElementText(el: { children: Array<unknown> }): string {
   return el.children.filter((c: unknown) => typeof c === "string").join("")
 }
 
-function writeXml(sheet: WriteSheet): string {
+function writeXml(sheet: SheetInput): string {
   const styles = createStylesCollector()
   const ss = createSharedStrings()
   const result = writeWorksheetXml(sheet, styles, ss)
@@ -40,7 +40,7 @@ describe("rich text write — basic", () => {
       richText: [{ text: "Bold", font: { bold: true } }, { text: " Normal" }],
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [[""]],
       cells,
@@ -84,7 +84,7 @@ describe("rich text write — font properties", () => {
       richText: [{ text: "Red", font: { color: { rgb: "FF0000" } } }],
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [[""]],
       cells,
@@ -109,7 +109,7 @@ describe("rich text write — font properties", () => {
       richText: [{ text: "Italic", font: { italic: true } }],
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [[""]],
       cells,
@@ -133,7 +133,7 @@ describe("rich text write — font properties", () => {
       richText: [{ text: "Underline", font: { underline: true } }],
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [[""]],
       cells,
@@ -157,7 +157,7 @@ describe("rich text write — font properties", () => {
       richText: [{ text: "Double", font: { underline: "double" } }],
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [[""]],
       cells,
@@ -182,7 +182,7 @@ describe("rich text write — font properties", () => {
       richText: [{ text: "Strike", font: { strikethrough: true } }],
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [[""]],
       cells,
@@ -206,7 +206,7 @@ describe("rich text write — font properties", () => {
       richText: [{ text: "Styled", font: { name: "Arial", size: 14 } }],
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [[""]],
       cells,
@@ -243,7 +243,7 @@ describe("rich text write — font properties", () => {
       ],
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [[""]],
       cells,
@@ -274,7 +274,7 @@ describe("rich text write — empty run text", () => {
       richText: [{ text: "", font: { bold: true } }, { text: "After empty" }],
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [[""]],
       cells,
@@ -302,7 +302,7 @@ describe("rich text write — mixed sheet", () => {
       richText: [{ text: "Bold", font: { bold: true } }, { text: " text" }],
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Plain string"], ["placeholder"], [42]],
       cells,

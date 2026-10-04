@@ -13,7 +13,7 @@ import { readOds } from "../src/ods/reader"
 import { ZipReader } from "../src/zip/reader"
 import { ZipWriter } from "../src/zip/writer"
 import { parseXml } from "../src/xml/parser"
-import type { Cell, WriteSheet } from "../src/_types"
+import type { Cell, SheetInput } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -157,7 +157,7 @@ describe("ODS #405 — reading the cross-sheet forms LibreOffice writes", () => 
 
   it("round-trips a cross-sheet formula through write → read", async () => {
     const cells = new Map<string, Partial<Cell>>([["0,0", { value: 6, formula: "Sheet2!A1+1" }]])
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       { name: "Sheet1", rows: [[6]], cells },
       { name: "Sheet2", rows: [[5]] },
     ]

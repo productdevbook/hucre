@@ -167,7 +167,7 @@ export interface Hyperlink {
 }
 
 /**
- * A rich hyperlink value that can be placed inline in a {@link WriteSheet.data}
+ * A rich hyperlink value that can be placed inline in a {@link SheetInput.data}
  * row object, keyed by a column's `key`. The display text and link target live
  * together, so a "Link" column needs no parallel `cells` coordinate map.
  *
@@ -257,7 +257,7 @@ export interface ColumnDef {
   autoWidth?: boolean
   /**
    * Default style for every cell in the column. Applies whether the rows
-   * come from {@link WriteSheet.data} or {@link WriteSheet.rows} — on the
+   * come from {@link SheetInput.data} or {@link SheetInput.rows} — on the
    * `data[]` path the generated header row gets it too.
    */
   style?: CellStyle
@@ -1431,6 +1431,8 @@ export interface Workbook {
   workbookProtection?: {
     lockStructure?: boolean
     lockWindows?: boolean
+    /** Authoring password; a reader cannot recover it from its hash. */
+    password?: string
   }
   /**
    * Workbook-wide person directory referenced from threaded comments.
@@ -1546,8 +1548,8 @@ export interface ReadOptionsBase {
    * describe 1.7e10 slots from a few hundred bytes of XML. It also
    * refuses a legitimate 25-million-cell sheet, which is why this is a
    * number rather than a ceiling: raise it when you know the file, and
-   * budget roughly 8 bytes per slot for the array alone.
-   *
+   * budget roughly 8 bytes per slot for the array alone. XLSX checks the
+   * growing bounding box before allocating rows or padding columns.
    */
   maxTotalCells?: number
 }
@@ -1602,7 +1604,8 @@ export interface XlsxReadOptions extends ReadOptionsBase, ZipReadOptions, Encryp
    */
   dateSystem?: "1900" | "1904" | "auto"
   /**
-   * Whether to read styles. Default: false (faster without).
+   * Whether to read styles. Default: false in `readXlsx` (faster without);
+   * true in `openXlsx`, because saving rebuilds styles from this model.
    *
    * **A resolved style's parts are shared, not copied.** `xl/styles.xml`
    * holds one font, fill and border record per distinct format, and every
@@ -1714,6 +1717,12 @@ export interface XlsbReadOptions extends ReadOptionsBase, ZipReadOptions, Encryp
 /** Options `readXls` honours. A `.xls` is a CFB container, not a ZIP. */
 export interface XlsReadOptions extends ReadOptionsBase {
   /**
+   * Fallback Windows code page for BIFF5/7 files without a CODEPAGE record.
+   * Default: 1252. A file's own CODEPAGE takes precedence; BIFF8 ignores it.
+   */
+  codepage?: number
+
+  /**
    * Date system override. Default: `"auto"`, which takes the file's own
    * `date1904` flag.
    */
@@ -1725,136 +1734,81 @@ export interface XlsReadOptions extends ReadOptionsBase {
  * the bytes, so it takes the widest reader's options and hands the
  * detected reader the fields it understands.
  */
-export type ReadOptions = XlsxReadOptions
+export type ReadOptions = XlsxReadOptions & XlsReadOptions
 
-// ── Write Options ──────────────────────────────────────────────────
+// ── Writer input ────────────────────────────────────────────────────
 
-export interface WriteOptions {
-  sheets: WriteSheet[]
-  properties?: WorkbookProperties
-  namedRanges?: NamedRange[]
-  defaultFont?: FontStyle
-  dateSystem?: "1900" | "1904"
-  /** Active sheet index (0-based). Default: 0 */
-  activeSheet?: number
-  /** Workbook-level protection (lock structure/windows) */
-  workbookProtection?: {
-    lockStructure?: boolean
-    lockWindows?: boolean
-    password?: string
-  }
-  /** String storage mode. Default: "shared"
-   *  - "shared": shared string table (smaller files with repeated strings)
-   *  - "inline": inline strings per cell (faster write, larger files)
-   */
+/**
+ * Authoring shorthand derived from the read model. A complete `Sheet` is
+ * already valid input; callers can also supply inline cells, object data
+ * or A1 merges without constructing a dense read result first.
+ *
+ * Reader charts and pivot tables carry inspection data, not an authoring
+ * specification. Writers report their loss through `onDrop`; use
+ * `openXlsx` / `saveXlsx` to preserve their original parts.
+ */
+export interface SheetInput extends Omit<
+  Sheet,
+  "rows" | "cells" | "merges" | "charts" | "pivotTables"
+> {
+  rows?: CellInput[][]
+  data?: Array<Record<string, CellValue | HyperlinkValue>>
+  cells?: Map<string, Partial<Cell>>
+  merges?: Array<MergeRange | string>
+  charts?: Array<Chart | SheetChart>
+  pivotTables?: Array<PivotTable | WritePivotTable>
+}
+
+/** A read workbook is directly writable; only sheets need authoring shorthand. */
+export interface WorkbookInput extends Omit<Workbook, "sheets"> {
+  sheets: SheetInput[]
+}
+
+/** A feature omitted when rebuilding a workbook from its model. */
+export interface WriteModelDrop {
+  field: string
+  sheet?: string
+  reason: string
+}
+
+/** Options common to buffered workbook writers. */
+export interface WorkbookWriteOptions {
+  /** Called once per populated feature the authoring path cannot carry. */
+  onDrop?: (drop: WriteModelDrop) => void
+}
+
+/** XLSX container choices, separate from the workbook's contents. */
+export interface XlsxWriteOptions extends WorkbookWriteOptions {
+  /** String storage. Default: shared. */
   stringMode?: "shared" | "inline"
-  /** VBA project binary (vbaProject.bin) to embed. Output becomes macro-enabled (.xlsm). */
+  /** Embed a VBA project; produces a macro-enabled workbook. */
   vbaProject?: Uint8Array
-  /**
-   * Encrypt the output as a password-protected workbook (ECMA-376 Agile,
-   * the Excel 2010+ scheme). The result is an OLE2/CFB container that Excel
-   * opens after prompting for the password.
-   *
-   * `spinCount` is the password key-derivation iteration count (default
-   * 100000, matching Excel). Lower it only when the speed/security trade-off
-   * genuinely calls for it — the value is stored in the file, so any reader
-   * (including Excel) honors it.
-   */
+  /** ECMA-376 Agile encryption. Default spin count: 100,000. */
   encryption?: { password: string; spinCount?: number }
 }
 
-export interface WriteSheet {
-  name: string
-  columns?: ColumnDef[]
-  /**
-   * Raw row data (array of arrays).
-   *
-   * An entry is a {@link CellValue}, or a cell object — `{ value, style }`,
-   * `{ formula }`, anything a {@link Cell} carries — written where the
-   * value goes. The streaming writers have taken that shape since they
-   * existed; the buffered ones now do too, so styling one cell no longer
-   * means naming its position again in {@link cells} (#433). Where both
-   * describe a position, {@link cells} wins.
-   */
-  rows?: Array<Array<CellValue | Partial<Cell>>>
-  /**
-   * Object data (array of objects — uses column keys). A value may be a scalar
-   * {@link CellValue} or a rich {@link HyperlinkValue} for inline clickable links.
-   */
-  data?: Array<Record<string, CellValue | HyperlinkValue>>
-  /** Detailed cell overrides (keyed by "row,col") */
-  cells?: Map<string, Partial<Cell>>
-  /**
-   * Default row height in points, for rows with no `rowDefs` entry.
-   * Excel's own default is 15. Written to `<sheetFormatPr defaultRowHeight>`.
-   *
-   * Before this existed the writer emitted a hard-coded 15 and the reader
-   * looked at `<sheetFormatPr>` not at all, so a workbook whose default was
-   * 24 came back through readXlsx → writeXlsx with every unstyled row
-   * shortened. See #439 §X.
-   */
-  defaultRowHeight?: number
-  /**
-   * Default column width in characters, for columns with no `columns[]`
-   * entry. Written to `<sheetFormatPr defaultColWidth>`; absent means
-   * Excel picks its own from the default font.
-   */
-  defaultColWidth?: number
-  /**
-   * Merged ranges, as coordinates or as A1 strings — `"A1:C1"` and
-   * `{ startRow: 0, startCol: 0, endRow: 0, endCol: 2 }` mean the same
-   * thing. See #474; the read model stays coordinates, because that is
-   * what the reader produces.
-   */
-  merges?: Array<MergeRange | string>
-  dataValidations?: DataValidation[]
-  conditionalRules?: ConditionalRule[]
-  autoFilter?: AutoFilter
-  freezePane?: FreezePane
-  splitPane?: SplitPane
-  images?: SheetImage[]
-  protection?: SheetProtection
-  pageSetup?: PageSetup
-  headerFooter?: HeaderFooter
-  view?: SheetView
-  hidden?: boolean
-  veryHidden?: boolean
-  /** Excel Tables (ListObject) to define on this sheet */
-  tables?: TableDefinition[]
-  /** Row page breaks (0-based row indices) */
-  rowBreaks?: number[]
-  /** Column page breaks (0-based column indices) */
-  colBreaks?: number[]
-  /** Row-level properties (keyed by 0-based row index) */
-  rowDefs?: Map<number, RowDef>
-  /** Outline properties (controls summary row/column position) */
-  outlineProperties?: OutlineProperties
-  /** Background image for the worksheet (watermark) */
-  backgroundImage?: Uint8Array
-  /** Sparklines (mini-charts in cells) */
-  sparklines?: Sparkline[]
-  /** Text boxes (shapes with text) */
-  textBoxes?: SheetTextBox[]
-  /**
-   * Native Excel charts (bar, column, line, pie, scatter, area). Charts
-   * share the worksheet's drawing part with images and text boxes.
-   */
+/** @internal The supported authoring subset, after boundary normalization. */
+export interface WritableSheet extends Omit<
+  SheetInput,
+  "kind" | "slicers" | "timelines" | "threadedComments" | "charts" | "pivotTables"
+> {
   charts?: SheetChart[]
-  // No `threadedComments` here, deliberately. Authoring Excel 365 threaded
-  // comments is a roadmap item, not a shipped feature: it needs a
-  // `xl/threadedComments/` part, a workbook-wide `xl/persons/person.xml`,
-  // and the legacy `<comment>` fallback Excel expects alongside them. The
-  // field used to sit here typed and accepted, and was silently discarded
-  // — see #404. `Sheet.threadedComments` is real: they are read, and
-  // preserved through `openXlsx` → `saveXlsx`.
-  /**
-   * Pivot tables anchored on this sheet. The source data is read from
-   * either the same sheet or a sibling sheet identified by
-   * {@link WritePivotTable.sourceSheet}.
-   */
   pivotTables?: WritePivotTable[]
-  /** Accessibility metadata for screen readers and the `audit` helper. */
-  a11y?: SheetA11y
+}
+
+/** @internal Workbook metadata the authoring serializers support. */
+export interface WritableWorkbook extends Omit<
+  WorkbookInput,
+  | "sheets"
+  | "themeColors"
+  | "externalLinks"
+  | "cellImages"
+  | "persons"
+  | "pivotCaches"
+  | "slicerCaches"
+  | "timelineCaches"
+> {
+  sheets: WritableSheet[]
 }
 
 // ── Outline Properties ────────────────────────────────────────────

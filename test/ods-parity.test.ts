@@ -5,7 +5,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { ZipReader } from "../src/zip/reader"
 import { parseXml } from "../src/xml/parser"
-import type { WriteSheet, Cell, MergeRange } from "../src/_types"
+import type { SheetInput, Cell, MergeRange } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ describe("ODS parity — merged cells", () => {
       { startRow: 1, startCol: 1, endRow: 2, endCol: 2 }, // B2:C3
     ]
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Merged Header", null, null, "D1"],
@@ -69,7 +69,7 @@ describe("ODS parity — merged cells", () => {
   })
 
   it("writes number-columns-spanned and number-rows-spanned attributes", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["A", null, null]],
       merges: [{ startRow: 0, startCol: 0, endRow: 1, endCol: 2 }],
@@ -83,7 +83,7 @@ describe("ODS parity — merged cells", () => {
   })
 
   it("writes covered-table-cell for cells covered by a merge", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Merged", null, null],
@@ -99,7 +99,7 @@ describe("ODS parity — merged cells", () => {
   })
 
   it("reader handles covered-table-cell correctly (null values)", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Merged", null, null, "D1"]],
       merges: [{ startRow: 0, startCol: 0, endRow: 0, endCol: 2 }],
@@ -116,7 +116,7 @@ describe("ODS parity — merged cells", () => {
   })
 
   it("merge spanning multiple rows works correctly", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Top", "Data"],
@@ -157,7 +157,7 @@ describe("ODS parity — hyperlinks", () => {
       hyperlink: { target: "https://google.com", display: "Google" },
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Click here"], ["Google"]],
       cells,
@@ -186,7 +186,7 @@ describe("ODS parity — hyperlinks", () => {
       hyperlink: { target: "https://test.org", display: "Link Text" },
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Link Text"]],
       cells,
@@ -214,7 +214,7 @@ describe("ODS parity — hyperlinks", () => {
       hyperlink: { target: "https://example.com" },
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Visit", "Normal"]],
       cells,
@@ -256,7 +256,7 @@ describe("ODS parity — styles", () => {
       },
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Bold", "Italic", "Red"],
@@ -309,7 +309,7 @@ describe("ODS parity — styles", () => {
       style: { font: { bold: true } },
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Bold"]],
       cells,
@@ -344,7 +344,7 @@ describe("ODS parity — styles", () => {
       style: { font: { bold: true } },
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Bold", "Italic"], ["Also Bold"]],
       cells,
@@ -366,7 +366,7 @@ describe("ODS parity — styles", () => {
       style: { font: { bold: true } },
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Styled"]],
       cells,
@@ -390,7 +390,7 @@ describe("ODS parity — formulas", () => {
       formula: "SUM(A1:A1)",
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         [10],
@@ -415,7 +415,7 @@ describe("ODS parity — formulas", () => {
       formula: "SUM(B1:B10)",
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [[42]],
       cells,
@@ -435,7 +435,7 @@ describe("ODS parity — formulas", () => {
       formula: "A1+B1",
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [[50, 50, 100]],
       cells,
@@ -460,7 +460,7 @@ describe("ODS parity — formulas", () => {
       formula: "SUM(A2:A10)",
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [[0]],
       cells,
@@ -560,7 +560,7 @@ describe("ODS parity — combined features", () => {
       formula: "SUM(A1:A2)",
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Bold Link", "B1"], [50, 50], [100]],
       cells,

@@ -1,0 +1,50 @@
+[
+  {
+    "file": "invoice.xlsx",
+    "sha256": "5ba7685c44f2c7a6ab54814eb8545f8a08dbb8f2fb3c69427ca01f373116e311"
+  },
+  {
+    "file": "budget.xlsx",
+    "sha256": "c979ed5af893d3b35a67d21c5f419c1a7532b0555beaa0416551c0339f7dfd4c"
+  },
+  {
+    "file": "inventory.xlsx",
+    "sha256": "7456c755028bf6f70bf1a86bcb896fc407942d1de0be440d85a008d48b224957"
+  },
+  {
+    "file": "sales.xlsx",
+    "sha256": "4e98de7e44ce6553d90fa11a5ec396beb8e9dad59e6c8649b110e919f3643202"
+  },
+  {
+    "file": "employees.xlsx",
+    "sha256": "c88715e85da5421c7b965910570fdcdb8f5a6178dcdc264193129c49b2219735"
+  },
+  {
+    "file": "projects.xlsx",
+    "sha256": "12a09520095bae50cd82bb2ed3d95a4d0dca91d96adc4e7fd6ffe428e8e44b0f"
+  },
+  {
+    "file": "attendance.xlsx",
+    "sha256": "61cb7c1aa673f034b8c474ecdc3c6f8b0b06d148c3c4b0edc4d4b96363c36375"
+  },
+  {
+    "file": "expenses.xlsx",
+    "sha256": "fe68e14317cd78cf90ca721eb506a84c688bb273fabb49f6cf38ec8d6121aa85"
+  },
+  {
+    "file": "unicode.xlsx",
+    "sha256": "abb44ccb919c0a5132604d6d0f0779cdc25d743716c038a77783b2d35ef98b38"
+  },
+  {
+    "file": "dates-and-times.xlsx",
+    "sha256": "90020ae2a120e6d804df2cfb0a49a985603799fdb368eec2b540865fe79d12c6"
+  },
+  {
+    "file": "merged-report.xlsx",
+    "sha256": "d9dfaa7d7af36e5cdec0f692f53f49e92c7c715879d9e8131a86dd765e1c2759"
+  },
+  {
+    "file": "multi-sheet.xlsx",
+    "sha256": "54830a58d49254cef574017303666de58ece3caf753247113837ba14deb336f1"
+  }
+]

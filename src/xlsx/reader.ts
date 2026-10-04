@@ -714,7 +714,7 @@ export async function readXlsx(input: ReadInput, options?: XlsxReadOptions): Pro
 
   // The workbook's default font is fonts[0] in styles.xml — the entry
   // every xf inherits from unless it names another. Surfacing it closes
-  // the WriteOptions.defaultFont round trip.
+  // the WorkbookInput.defaultFont round trip.
   const baseFont = parsedStyles?.fonts[0]
   if (baseFont && Object.keys(baseFont).length > 0) {
     workbook.defaultFont = baseFont

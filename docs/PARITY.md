@@ -30,7 +30,7 @@ written.)
 
 |                | entry points             | behaviour                                                                                                                         |
 | -------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| **Authoring**  | `readXlsx` / `writeXlsx` | the workbook is rebuilt from the model. Only what `WriteSheet` and `WriteOptions` describe comes out                              |
+| **Authoring**  | `readXlsx` / `writeXlsx` | the workbook is rebuilt from the model. Only what `SheetInput` and `WorkbookInput` describe comes out                             |
 | **Round-trip** | `openXlsx` / `saveXlsx`  | parts hucre does not regenerate are copied byte-for-byte, with relationships and content types re-declared so they stay reachable |
 
 So `readXlsx` → `writeXlsx` on a workbook with charts, macros or pivot
@@ -40,32 +40,35 @@ same file keeps them, whether or not hucre understands them.
 Pick the round-trip path when you are **editing someone's file**. Pick the
 authoring path when you are **producing a new one**.
 
-### Getting from one model to the other
+### One model at the writer boundary
 
-`readXlsx` returns a `Workbook` and `writeXlsx` takes `WriteOptions`, and
-neither is assignable to the other — `Chart` is not `SheetChart`, and
-`PivotTable` is not `WritePivotTable`. `toWriteOptions` converts, drops
-what the authoring model has no field for, and tells you what went:
+`readXlsx` returns a `Workbook`; buffered writers accept it directly as
+`WorkbookInput`. `SheetInput` derives its metadata from `Sheet` and adds
+inline cells, object rows and A1 merges. No caller-side converter is needed.
 
 ```ts
-import { readXlsx, toWriteOptions, writeXlsx } from "hucre"
+import { readXlsx, writeXlsx } from "hucre"
 
 const wb = await readXlsx(bytes)
-wb.sheets[0].rows[0][0] = "edited"
-
-const out = await writeXlsx(
-  toWriteOptions(wb, {
-    onDrop: ({ field, sheet, reason }) => console.warn(`dropped ${field}`, sheet, reason),
-  }),
-)
+const out = await writeXlsx(wb, {
+  onDrop: ({ field, sheet, reason }) => console.warn(`dropped ${field}`, sheet, reason),
+})
 ```
 
-It drops exactly the fields listed below — `slicers`, `timelines`,
-`threadedComments`, `charts`, `pivotTables` per sheet, and `themeColors`,
-`externalLinks`, `cellImages`, `persons`, `pivotCaches`, `slicerCaches`,
-`timelineCaches` per workbook — and `test/write-model.test.ts` derives
-that set from the types, so a new field with no counterpart fails until
-someone decides.
+Authoring still omits `slicers`, `timelines`, `threadedComments`, reader
+`charts` and reader `pivotTables` per sheet, plus `themeColors`,
+`externalLinks`, `cellImages`, `persons`, `pivotCaches`, `slicerCaches`
+and `timelineCaches` per workbook. Non-worksheet `kind` is reported too.
+Authoring chart and pivot specifications remain supported. Empty
+collections do not count as losses. Normalization leaves the input intact.
+
+ODS reports the additional metadata it cannot write, such as images,
+filters, freeze panes, tables and workbook protection. The ODS capability
+register is exhaustive at compile time. `onDrop` is a callback, not saved
+data. It can throw to refuse a lossy conversion before output is built.
+
+String storage, encryption and VBA embedding are `XlsxWriteOptions` in
+the second argument; they are container choices rather than model fields.
 
 ## XLSX
 
@@ -258,12 +261,28 @@ index, and it is what the readers' limits are sized against — the cost of
 a sheet is its bounding box rather than its cell count, which is why
 `maxTotalCells` bounds the product.
 
+The XLSX reader checks that growing product before allocating each cell's
+row or column padding, in both buffered and streamed worksheet parsing.
+An over-limit sheet is rejected as soon as its retained bounding box exceeds
+the bound; the error's dimensions and fill count describe that parsed prefix.
+
 The contract went unwritten and two readers did not hold it. `readXls`
 and `readXlsb` padded a row only to its _own_ last cell and never
 allocated a row the file left empty, so one authored sheet saved three
 ways came back three shapes, and a gap row came back as `undefined` —
 which `CellValue` cannot express. Fixed in #494; it is now stated on
 `Sheet.rows` as well as here.
+
+### Number-format rendering has explicit bounds
+
+`formatValue` rejects applied formats over 255 characters, decimal or
+scientific precision over 100 places, and fixed fraction denominators
+outside JavaScript's safe-integer range with `InvalidArgumentError`.
+Variable fraction denominators use a bounded continued-fraction
+approximation, capped at `Number.MAX_SAFE_INTEGER`; placeholder width still
+controls padding. Non-finite values under fraction formats return their
+string representation. These bounds apply to rendering; number-format
+strings are still preserved when reading and writing cell styles.
 
 ### Line endings are normalized on the way in
 
@@ -331,7 +350,7 @@ A non-worksheet tab now reads as an empty `Sheet` carrying
 `kind: "chartsheet"` (or `"dialogsheet"`). It is kept rather than skipped
 so `sheets: [2]` still selects Excel's third tab — renumbering would be a
 quieter kind of wrong. `kind` is **read-only**: hucre writes worksheets,
-and `toWriteOptions` reports it as a drop.
+and `onDrop` reports it as a drop.
 
 `streamXlsxRows` on a non-worksheet tab yields nothing rather than
 throwing. A missing worksheet _part_ is still a `ParseError`, because
@@ -346,7 +365,7 @@ Ranges are A1 strings on `DataValidation.range`, `ConditionalRule.range`,
 rule to hold in your head about which a field wanted.
 
 The authoring surfaces that take a rectangle now take either —
-`WriteSheet.merges`, `XlsxStreamWriter`'s `merges`, and `copyRange` — and
+`SheetInput.merges`, `XlsxStreamWriter`'s `merges`, and `copyRange` — and
 `toRange` / `toRanges` are exported for anywhere else. `Sheet.merges`
 stays coordinates, because that is what the reader produces and a read
 model with two spellings would push the normalising onto every consumer.
@@ -354,8 +373,8 @@ model with two spellings would push the normalising onto every consumer.
 `SheetImage.anchor` is a different shape — a corner plus an optional
 second corner, not a rectangle — and is unchanged.
 
-`test/xlsx-write-read-parity.test.ts` holds every field of `WriteSheet`
-and `WriteOptions` in a register typed over `keyof Required<…>`. Adding a
+`test/xlsx-write-read-parity.test.ts` holds every field of `SheetInput`
+and `WorkbookInput` in a register typed over `keyof Required<…>`. Adding a
 field to either interface fails `tsc` until it is registered — as a probe
 that round-trips, or as a one-way entry with its reason. That register,
 not this list, is the thing that stays current.
@@ -403,9 +422,9 @@ These are parsed into the model and preserved through `openXlsx` →
 | WPS DISPIMG cell images                 | `Workbook.cellImages`                                                       |
 | Theme colours from the file             | `Workbook.themeColors` — `writeXlsx` always emits the standard Office theme |
 
-`WriteSheet` has no fields for these, deliberately: a typed field that is
+`SheetInput` has no fields for these, deliberately: a typed field that is
 silently discarded is worse than no field at all, which is why
-`WriteSheet.threadedComments` was removed rather than left in place.
+`SheetInput.threadedComments` was removed rather than left in place.
 
 ### Charts
 
@@ -441,11 +460,11 @@ the workbook-level caches, and has no write counterpart because
 
 | field                                                     | why                                                                                                                                                                        |
 | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WriteOptions.vbaProject`                                 | attaches a macro project; `Workbook` has no counterpart, so `readXlsx` → `writeXlsx` **drops macros silently**. Use `openXlsx`/`saveXlsx` to edit a macro-enabled workbook |
-| `WriteOptions.encryption`                                 | a property of the container, not of the workbook. Read back with `ReadOptions.password`                                                                                    |
-| `WriteOptions.stringMode`                                 | an encoding choice with nothing to surface on read                                                                                                                         |
-| `WriteSheet.data`                                         | the object form of `rows`; comes back as `rows`                                                                                                                            |
-| `WriteSheet.a11y`                                         | authoring metadata. `a11y.summary` is promoted to `properties.description` and does survive; `a11y.headerRow` has no cell to live in                                       |
+| `WorkbookInput.vbaProject`                                | attaches a macro project; `Workbook` has no counterpart, so `readXlsx` → `writeXlsx` **drops macros silently**. Use `openXlsx`/`saveXlsx` to edit a macro-enabled workbook |
+| `WorkbookInput.encryption`                                | a property of the container, not of the workbook. Read back with `ReadOptions.password`                                                                                    |
+| `WorkbookInput.stringMode`                                | an encoding choice with nothing to surface on read                                                                                                                         |
+| `SheetInput.data`                                         | the object form of `rows`; comes back as `rows`                                                                                                                            |
+| `SheetInput.a11y`                                         | authoring metadata. `a11y.summary` is promoted to `properties.description` and does survive; `a11y.headerRow` has no cell to live in                                       |
 | `SheetProtection.password`, `workbookProtection.password` | the file holds a one-way digest, never the password. The digest is read; the password cannot be                                                                            |
 
 ### Losses inside fields that otherwise round-trip
@@ -714,20 +733,23 @@ No writer exists for either. What the readers surface is narrower than
 XLSX, which matters because converting to XLSX can only carry what was
 read:
 
-|                                                 | XLS (BIFF8) | XLSB |
-| ----------------------------------------------- | ----------- | ---- |
-| Sheet names, strings, numbers, booleans, errors | yes         | yes  |
-| Dates, honouring the file's 1900/1904 flag      | yes         | yes  |
-| Formula **values** (never the formula text)     | yes         | yes  |
-| Merges                                          | yes         | yes  |
-| Everything else on `Sheet` / `Workbook`         | no          | no   |
+|                                                 | XLS (BIFF5 / BIFF8) | XLSB |
+| ----------------------------------------------- | ------------------- | ---- |
+| Sheet names, strings, numbers, booleans, errors | yes                 | yes  |
+| Dates, honouring the file's 1900/1904 flag      | yes                 | yes  |
+| Formula **values** (never the formula text)     | yes                 | yes  |
+| Merges                                          | yes                 | yes  |
+| Everything else on `Sheet` / `Workbook`         | no                  | no   |
 
 So **XLS/XLSB → XLSX is a values-and-names conversion**. Every formula
 becomes a hard-coded value, styles and dimensions are dropped, hidden
 sheets become visible, and workbook properties and named ranges are lost.
 
-BIFF5 and BIFF7 are rejected outright rather than misread — only BIFF8
-(Excel 97-2003) is supported.
+BIFF5 and BIFF7 (Excel 5.0/95) read the same set. Their text is bytes in
+one Windows code page: the file's CODEPAGE record names it, `codepage`
+stands in for a file that carries none (1C exports do this), and
+Windows-1252 is the last resort. Anything older is rejected outright
+rather than misread.
 
 ## CSV / TSV
 

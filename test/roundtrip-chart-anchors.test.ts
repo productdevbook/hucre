@@ -3,7 +3,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip"
 import { getCharts } from "../src/xlsx/chart-helpers"
 import { ZipReader } from "../src/zip/reader"
-import type { SheetChart, WriteSheet } from "../src/_types"
+import type { SheetChart, SheetInput } from "../src/_types"
 
 // ═══════════════════════════════════════════════════════════════════════
 // #465 — a worksheet carries exactly one `<drawing>` element, so images
@@ -32,7 +32,7 @@ const PNG = new Uint8Array([
   0x42, 0x60, 0x82,
 ])
 
-function dataSheet(): WriteSheet {
+function dataSheet(): SheetInput {
   return {
     name: "Data",
     rows: [

@@ -19,6 +19,7 @@ export const SID = {
   EOF: 0x000a,
   CONTINUE: 0x003c,
   DATEMODE: 0x0022,
+  CODEPAGE: 0x0042,
   BLANK: 0x0201,
   NUMBER: 0x0203,
   LABEL: 0x0204,
@@ -30,13 +31,11 @@ export const SID = {
   MULRK: 0x00bd,
   MULBLANK: 0x00be,
   LABELSST: 0x00fd,
-  // RSTRING is a BIFF5/BIFF7 record (rich-text cell: rw, col, ixfe, a
-  // codepage byte string, then a run count and its runs). BIFF8 dropped it:
-  // rich text moved into the SST, so those cells arrive as LABELSST and
-  // readSstString already skips the runs and yields the plain text. The
-  // reader rejects anything that is not BIFF8 (see the version gate in
-  // reader.ts), so this sid cannot reach a cell handler — listed for
-  // recognition only, deliberately not parsed. See #411.
+  // RSTRING is how BIFF5/BIFF7 writes a rich-text cell: rw, col, ixfe, a
+  // codepage byte string, then a run count and its runs. BIFF8 dropped it
+  // (rich text moved into the SST, where readSstString skips the runs), so
+  // the reader meets it only on the BIFF5 path — and takes the text alone,
+  // as it does everywhere else. See #411.
   RSTRING: 0x00d6,
   SST: 0x00fc,
   XF: 0x00e0,

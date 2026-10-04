@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { ZipReader } from "../src/zip/reader"
-import { ZipWriter } from "../src/zip/writer"
+import { xlsxWithCells as withCells } from "./support/xlsx"
 
 // ═══════════════════════════════════════════════════════════════════════
 // #497 — `Cell.formulaResult` was assigned in exactly one place: the
@@ -18,32 +18,6 @@ import { ZipWriter } from "../src/zip/writer"
 // result without recalculating saw an empty cell where Excel showed
 // `#DIV/0!` or `xy`.
 // ═══════════════════════════════════════════════════════════════════════
-
-const enc = new TextEncoder()
-const dec = new TextDecoder()
-
-/** A workbook whose first row is raw `<c>` elements of our choosing. */
-async function withCells(cellsXml: string): Promise<Uint8Array> {
-  const base = await writeXlsx({ sheets: [{ name: "S", rows: [[1]] }] })
-  const all = await new ZipReader(base).extractAll()
-  const zw = new ZipWriter()
-  for (const [name, data] of all) {
-    zw.add(
-      name,
-      name === "xl/worksheets/sheet1.xml"
-        ? enc.encode(
-            dec
-              .decode(data)
-              .replace(
-                /<sheetData>.*<\/sheetData>/,
-                `<sheetData><row r="1">${cellsXml}</row></sheetData>`,
-              ),
-          )
-        : data,
-    )
-  }
-  return zw.build()
-}
 
 const NUMBER = '<c r="A1"><f>B1*2</f><v>24</v></c>'
 const TEXT = '<c r="B1" t="str"><f>"x" &amp; "y"</f><v>xy</v></c>'
@@ -98,7 +72,9 @@ describe("the round trip that was losing them", () => {
       sheets: first.sheets.map((s) => ({ name: s.name, rows: s.rows, cells: s.cells })),
     })
 
-    const sheetXml = dec.decode(await new ZipReader(rewritten).extract("xl/worksheets/sheet1.xml"))
+    const sheetXml = new TextDecoder().decode(
+      await new ZipReader(rewritten).extract("xl/worksheets/sheet1.xml"),
+    )
 
     // An `<f>` with no `<v>` is what anything that does not recalculate
     // reads as an empty cell.

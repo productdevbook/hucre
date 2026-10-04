@@ -56,7 +56,7 @@ const XLSX = require("xlsx")
 const outDir = fileURLToPath(new URL("../../test/fixtures/third-party", import.meta.url))
 mkdirSync(outDir, { recursive: true })
 
-/** Written to disk and asserted against in test/ods-third-party.test.ts. */
+/** Written to disk and asserted against in test/integration/ods-third-party.test.ts. */
 const FIXTURES = []
 
 function fixture(name, build) {

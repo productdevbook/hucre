@@ -7,7 +7,6 @@
 // is why it was the only module in the tree at 0% coverage. See #399.
 // ─────────────────────────────────────────────────────────────────────
 
-import { toWriteOptions } from "../write-model"
 import { isCellError } from "../cell-error"
 import { defineCommand } from "citty"
 import { consola } from "consola"
@@ -21,7 +20,7 @@ import { readOds } from "../ods/reader"
 import { parseCsv } from "../csv/reader"
 import { validateWithSchema } from "../_schema"
 import { read, write } from "../defter"
-import type { Workbook, CellValue, WriteOptions, SchemaDefinition } from "../_types"
+import type { Workbook, CellValue, SchemaDefinition } from "../_types"
 
 // ── Errors ──────────────────────────────────────────────────────────
 
@@ -321,15 +320,13 @@ async function renderWorkbook(
 
   // The whole authoring model, not `{ name, rows }`: an xlsx → xlsx
   // conversion used to drop every style, merge and formula on the floor.
-  const writeOptions: WriteOptions = toWriteOptions(workbook)
 
   // Every row goes through writeCsv, including the first. It used to be
   // pulled out as `headers` and stringified separately, so a Date in row 0
   // came out ISO while the same Date in row 1 came out in writeCsv's
   // format — one column, two formats, decided by which row the value
   // happened to land in.
-  return write({
-    ...writeOptions,
+  return write(workbook, {
     format,
     csv: { delimiter: delimiterForExtension(outputPath), bom },
   })

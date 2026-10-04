@@ -14,8 +14,9 @@ import type {
   RowDef,
   Sheet,
   Workbook,
-  WriteOptions,
-  WriteSheet,
+  WorkbookInput,
+  XlsxWriteOptions,
+  SheetInput,
 } from "../src/_types"
 
 const decoder = new TextDecoder("utf-8")
@@ -27,13 +28,16 @@ async function part(buf: Uint8Array, path: string): Promise<string> {
 }
 
 /** Write one sheet and hand back its `xl/worksheets/sheet1.xml`. */
-async function sheetXml(sheet: WriteSheet, options?: Omit<WriteOptions, "sheets">) {
-  const buf = await writeXlsx({ sheets: [sheet], ...options })
+async function sheetXml(
+  sheet: SheetInput,
+  options?: Omit<WorkbookInput, "sheets"> & XlsxWriteOptions,
+) {
+  const buf = await writeXlsx({ sheets: [sheet], ...options }, options)
   return part(buf, "xl/worksheets/sheet1.xml")
 }
 
 /** Write one sheet and hand back its `xl/styles.xml`. */
-async function stylesXml(sheet: WriteSheet) {
+async function stylesXml(sheet: SheetInput) {
   const buf = await writeXlsx({ sheets: [sheet] })
   return part(buf, "xl/styles.xml")
 }

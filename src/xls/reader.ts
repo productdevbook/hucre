@@ -1,8 +1,9 @@
-// ── XLS (BIFF8) Reader ───────────────────────────────────────────────
-// Read legacy Excel 97-2003 .xls files: an OLE2/CFB container whose
-// "Workbook" stream is a BIFF8 record sequence. Reuses the CFB reader
-// (shared with encryption) and decodes the records into the standard
-// Workbook model. Read-only (MS-XLS).
+// ── XLS (BIFF5 / BIFF8) Reader ───────────────────────────────────────
+// Read legacy Excel .xls files: an OLE2/CFB container whose "Workbook"
+// (BIFF8, Excel 97-2003) or "Book" (BIFF5/7, Excel 5.0/95) stream is a
+// BIFF record sequence. Reuses the CFB reader (shared with encryption)
+// and decodes the records into the standard Workbook model. Read-only
+// (MS-XLS).
 
 import { cellError } from "../cell-error"
 import type { CellValue, MergeRange, XlsReadOptions, Sheet, Workbook } from "../_types"
@@ -12,6 +13,7 @@ import { readInputToUint8Array } from "../_input"
 import { readCfb } from "../xlsx/crypto/cfb"
 import { isBuiltinDateFormatId, isDateFormat, serialToDate } from "../_date"
 import { decodeRk, parseRecords, parseSst, Reader, SID, type BiffRecord } from "./biff"
+import { codepageDecoder } from "./codepage"
 
 const ERROR_TEXT: Record<number, string> = {
   0x00: "#NULL!",
@@ -23,12 +25,18 @@ const ERROR_TEXT: Record<number, string> = {
   0x2a: "#N/A",
 }
 
+const BIFF5 = 0x0500
+const BIFF8 = 0x0600
+
+/** The code page assumed for a BIFF5 workbook that names none. */
+const DEFAULT_CODEPAGE = 1252
+
 /** Whether a CFB container holds a BIFF Workbook stream (.xls). */
 export function looksLikeXls(streams: Map<string, Uint8Array>): boolean {
   return streams.has("Workbook") || streams.has("Book")
 }
 
-/** Read a BIFF8 .xls workbook into the standard {@link Workbook} model. */
+/** Read a BIFF5 or BIFF8 .xls workbook into the standard {@link Workbook} model. */
 export async function readXls(
   input: Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>,
   options?: XlsReadOptions,
@@ -58,27 +66,90 @@ export async function readXls(
   }
 }
 
+/**
+ * How the two BIFF generations spell a string. BIFF8 writes Unicode with a
+ * per-string flag byte (compressed = Latin-1 bytes, else UTF-16LE); BIFF5/7
+ * writes bytes in the workbook's one code page and no flag at all. The
+ * length prefix is a u16 on cell text and a u8 on names and format codes
+ * in both.
+ */
+interface BiffStrings {
+  long(r: Reader): string
+  short(r: Reader): string
+}
+
+const BIFF8_STRINGS: BiffStrings = {
+  long: readXLString,
+  short: readShortString,
+}
+
+function biff5Strings(decode: (bytes: Uint8Array) => string): BiffStrings {
+  const bytes = (r: Reader, cch: number): string => {
+    // `subarray` clamps, so an over-long count would hand back a silently
+    // shortened string instead of the error a truncated record deserves.
+    if (cch > r.remaining()) {
+      throw new ParseError(
+        `Invalid XLS: string claims ${cch} bytes but its record has ${r.remaining()} left`,
+      )
+    }
+    const s = decode(r.buf.subarray(r.pos, r.pos + cch))
+    r.skip(cch)
+    return s
+  }
+  return {
+    long: (r) => bytes(r, r.u16()),
+    short: (r) => bytes(r, r.u8()),
+  }
+}
+
+/**
+ * The globals' CODEPAGE record, if the workbook carries one. Scanned ahead
+ * of the globals pass because the strings that pass decodes — sheet names,
+ * format codes — may in principle precede it.
+ */
+function findCodepage(records: BiffRecord[]): number | undefined {
+  for (const rec of records) {
+    if (rec.id === SID.EOF) return undefined
+    if (rec.id === SID.CODEPAGE) {
+      if (rec.data.length < 2) throw new ParseError("Invalid XLS: CODEPAGE record is too short")
+      return new Reader(rec.data).u16()
+    }
+  }
+  return undefined
+}
+
 function parseWorkbookRecords(stream: Uint8Array, options?: XlsReadOptions): Workbook {
   const records = parseRecords(stream)
 
   // ── BIFF version gate ──
   // The first record is the workbook globals BOF; its first u16 is the BIFF
-  // version (0x0600 = BIFF8). BIFF5/7 store strings as codepage byte strings
-  // with a different SST/record layout — parsing them as BIFF8 yields garbage
-  // names and cell text, so reject them with a clear error instead.
+  // version. BIFF8 (0x0600) is Excel 97-2003; BIFF5 and BIFF7 (both 0x0500)
+  // are Excel 5.0 and 95 — the same record layout except that strings are
+  // code-page bytes and there is no shared-string table. Anything else is
+  // rejected rather than misread.
   const bof = records[0]
   if (!bof || bof.id !== SID.BOF) {
     throw new ParseError("Invalid XLS: missing BOF record at start of Workbook stream")
   }
-  if (bof.data.length >= 2) {
-    const biffVersion = new Reader(bof.data).u16()
-    if (biffVersion !== 0x0600) {
-      throw new ParseError(
-        `Unsupported XLS version (BIFF 0x${biffVersion.toString(16)}). ` +
-          "Only BIFF8 (Excel 97-2003) is supported; re-save the file as .xlsx or BIFF8 .xls.",
-      )
-    }
+  // A BOF too short to carry a version is read as BIFF8, as it always was.
+  const biffVersion = bof.data.length >= 2 ? new Reader(bof.data).u16() : BIFF8
+  if (biffVersion !== BIFF8 && biffVersion !== BIFF5) {
+    throw new ParseError(
+      `Unsupported XLS version (BIFF 0x${biffVersion.toString(16)}). ` +
+        "Only BIFF5 (Excel 5.0/95) and BIFF8 (Excel 97-2003) are supported; re-save the file as .xlsx.",
+    )
   }
+
+  // A BIFF5 workbook's strings are bytes in one code page: the file's own
+  // CODEPAGE record names it, the caller's `codepage` stands in for a file
+  // that has none, and Windows-1252 is the last resort. Resolved before
+  // any string is read, so a bad page fails here rather than mid-sheet.
+  const strings: BiffStrings =
+    biffVersion === BIFF5
+      ? biff5Strings(
+          codepageDecoder(findCodepage(records) ?? options?.codepage ?? DEFAULT_CODEPAGE),
+        )
+      : BIFF8_STRINGS
 
   const offsetToIndex = new Map<number, number>()
   for (let i = 0; i < records.length; i++) offsetToIndex.set(records[i].offset, i)
@@ -107,7 +178,9 @@ function parseWorkbookRecords(stream: Uint8Array, options?: XlsReadOptions): Wor
       case SID.FORMAT: {
         const r = new Reader(rec.data)
         const ifmt = r.u16()
-        fmtCodes.set(ifmt, readXLString(r))
+        // BIFF8 spells the code as an XLUnicodeString (u16 count); BIFF5
+        // as a u8-counted byte string.
+        fmtCodes.set(ifmt, biffVersion === BIFF5 ? strings.short(r) : strings.long(r))
         break
       }
       case SID.XF: {
@@ -121,7 +194,7 @@ function parseWorkbookRecords(stream: Uint8Array, options?: XlsReadOptions): Wor
         const pos = r.u32()
         r.u8() // hsState (visibility)
         r.u8() // dt (sheet type)
-        boundSheets.push({ name: readShortString(r), pos })
+        boundSheets.push({ name: strings.short(r), pos })
         break
       }
       case SID.SST: {
@@ -174,6 +247,7 @@ function parseWorkbookRecords(stream: Uint8Array, options?: XlsReadOptions): Wor
         startIdx,
         bs.name,
         sst,
+        strings,
         isDate,
         date1904,
         options?.maxTotalCells ?? MAX_TOTAL_CELLS,
@@ -189,6 +263,7 @@ function parseSheet(
   startIdx: number,
   name: string,
   sst: string[],
+  strings: BiffStrings,
   isDate: (ixfe: number) => boolean,
   date1904: boolean,
   cellLimit: number,
@@ -275,11 +350,16 @@ function parseSheet(
         setCell(row, col, isError ? cellError(ERROR_TEXT[val] ?? "#ERR!") : val !== 0)
         break
       }
-      case SID.LABEL: {
+      case SID.LABEL:
+      case SID.RSTRING: {
+        // Same head; RSTRING (BIFF5 rich text) trails formatting runs the
+        // value does not carry.
         const row = r.u16(),
           col = r.u16()
         r.u16() // ixfe
-        setCell(row, col, readXLString(r))
+        const text = strings.long(r)
+        if (rec.id === SID.RSTRING) skipBiff5Runs(r)
+        setCell(row, col, text)
         break
       }
       case SID.FORMULA: {
@@ -296,7 +376,7 @@ function parseSheet(
             // string: value is in the following STRING record
             const next = records[i + 1]
             if (next && next.id === SID.STRING)
-              setCell(row, col, readXLString(new Reader(next.data)))
+              setCell(row, col, strings.long(new Reader(next.data)))
           }
           // kind === 3 → blank/empty
         } else {
@@ -335,7 +415,24 @@ function parseSheet(
   return sheet
 }
 
-// ── String helpers ───────────────────────────────────────────────────
+/**
+ * The BIFF5 RSTRING trailer: a u8 run count, then two bytes per run (first
+ * character, font). Narrower than BIFF8's FormatRun (u16 + u16), which is
+ * what the SST path skips. Read for the same reason readSstString skips
+ * its runs: a record that stops short of what it announces is malformed.
+ */
+function skipBiff5Runs(r: Reader): void {
+  if (r.remaining() < 1) throw new ParseError("Invalid XLS: RSTRING record has no run count")
+  const runs = r.u8()
+  if (r.remaining() < runs * 2) {
+    throw new ParseError(
+      `Invalid XLS: RSTRING claims ${runs} formatting runs but its record has ${r.remaining()} bytes left`,
+    )
+  }
+  r.skip(runs * 2)
+}
+
+// ── BIFF8 string helpers ─────────────────────────────────────────────
 
 /** XLUnicodeString: u16 char count + 1 grbit byte + chars. */
 function readXLString(r: Reader): string {

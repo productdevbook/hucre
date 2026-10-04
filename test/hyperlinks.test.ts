@@ -6,7 +6,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { collectHyperlinks } from "../src/xlsx/worksheet-writer"
 import { link } from "../src/xlsx/hyperlink"
-import type { WriteSheet, Cell } from "../src/_types"
+import type { SheetInput, Cell } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -50,7 +50,7 @@ describe("collectHyperlinks", () => {
       value: "Internal",
       hyperlink: { target: "", location: "Sheet2!A1" },
     })
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Click me"], [null, null, "Internal"]],
       cells,
@@ -71,7 +71,7 @@ describe("collectHyperlinks", () => {
   })
 
   it("returns empty when no cells", () => {
-    const sheet: WriteSheet = { name: "Sheet1", rows: [["Hello"]] }
+    const sheet: SheetInput = { name: "Sheet1", rows: [["Hello"]] }
     const result = collectHyperlinks(sheet)
     expect(result.xml).toBe("")
     expect(result.relationships).toEqual([])
@@ -80,7 +80,7 @@ describe("collectHyperlinks", () => {
   it("returns empty when cells have no hyperlinks", () => {
     const cells = new Map<string, Partial<Cell>>()
     cells.set("0,0", { value: "Hello" })
-    const sheet: WriteSheet = { name: "Sheet1", rows: [["Hello"]], cells }
+    const sheet: SheetInput = { name: "Sheet1", rows: [["Hello"]], cells }
     const result = collectHyperlinks(sheet)
     expect(result.xml).toBe("")
     expect(result.relationships).toEqual([])
@@ -92,7 +92,7 @@ describe("collectHyperlinks", () => {
       value: "Click me",
       hyperlink: { target: "https://example.com" },
     })
-    const sheet: WriteSheet = { name: "Sheet1", rows: [["Click me"]], cells }
+    const sheet: SheetInput = { name: "Sheet1", rows: [["Click me"]], cells }
     const result = collectHyperlinks(sheet)
 
     expect(result.relationships).toHaveLength(1)
@@ -111,7 +111,7 @@ describe("collectHyperlinks", () => {
       value: "Go to Sheet2",
       hyperlink: { target: "", location: "Sheet2!A1" },
     })
-    const sheet: WriteSheet = { name: "Sheet1", rows: [["Go to Sheet2"]], cells }
+    const sheet: SheetInput = { name: "Sheet1", rows: [["Go to Sheet2"]], cells }
     const result = collectHyperlinks(sheet)
 
     // Internal hyperlinks should NOT generate relationships
@@ -133,7 +133,7 @@ describe("collectHyperlinks", () => {
         display: "Example Site",
       },
     })
-    const sheet: WriteSheet = { name: "Sheet1", rows: [["Link"]], cells }
+    const sheet: SheetInput = { name: "Sheet1", rows: [["Link"]], cells }
     const result = collectHyperlinks(sheet)
 
     expect(result.xml).toContain('tooltip="Click here"')
@@ -150,7 +150,7 @@ describe("collectHyperlinks", () => {
       value: "Link 2",
       hyperlink: { target: "https://other.com" },
     })
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Link 1"], ["Link 2"]],
       cells,
@@ -178,7 +178,7 @@ describe("collectHyperlinks", () => {
       value: "Another external",
       hyperlink: { target: "https://other.com" },
     })
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["External"], ["Internal"], ["Another external"]],
       cells,

@@ -5,7 +5,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { writeChart, chartKindElement } from "../src/xlsx/chart-writer"
 import { parseChart } from "../src/xlsx/chart-reader"
 import { writeDrawing } from "../src/xlsx/drawing-writer"
-import type { ChartScatterStyle, WriteChartKind, SheetChart, WriteSheet } from "../src/_types"
+import type { ChartScatterStyle, WriteChartKind, SheetChart, SheetInput } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -1645,7 +1645,7 @@ describe("writeDrawing with charts", () => {
 
 describe("writeXlsx with charts", () => {
   it("emits xl/charts/chart1.xml for a single bar chart", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sales",
       rows: [
         ["Quarter", "Revenue"],
@@ -1669,7 +1669,7 @@ describe("writeXlsx with charts", () => {
   })
 
   it("registers chart parts in [Content_Types].xml", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sales",
       rows: [
         ["A", "B"],
@@ -1689,7 +1689,7 @@ describe("writeXlsx with charts", () => {
   })
 
   it("wires the worksheet to the drawing via <drawing r:id>", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Data",
       rows: [
         ["x", "y"],
@@ -1710,7 +1710,7 @@ describe("writeXlsx with charts", () => {
   })
 
   it("supports multiple charts on the same sheet", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Dashboard",
       rows: [
         ["Month", "Revenue", "Cost"],
@@ -1745,7 +1745,7 @@ describe("writeXlsx with charts", () => {
   })
 
   it("assigns unique global chart indices across sheets", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Q1",
         rows: [
@@ -1778,7 +1778,7 @@ describe("writeXlsx with charts", () => {
 
   it("co-exists with images on the same drawing", async () => {
     const fakePng = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13])
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Mixed",
       rows: [
         ["x", "y"],
@@ -1806,7 +1806,7 @@ describe("writeXlsx with charts", () => {
   })
 
   it("auto-qualifies bare ranges with the owning sheet's name", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "My Sheet",
       rows: [
         ["A", "B"],
@@ -1827,7 +1827,7 @@ describe("writeXlsx with charts", () => {
   })
 
   it("does not emit chart parts when no charts are declared", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "NoCharts",
       rows: [["A"], [1]],
     }
@@ -1840,7 +1840,7 @@ describe("writeXlsx with charts", () => {
   })
 
   it("produces parseable chart XML that round-trips through the SAX parser", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["A", "B", "C"],
@@ -1870,7 +1870,7 @@ describe("writeXlsx with charts", () => {
   })
 
   it("packages a doughnut chart that parseChart can re-read end-to-end", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Distribution",
       rows: [
         ["Category", "Share"],
@@ -4207,7 +4207,7 @@ describe("writeChart — legendOverlay", () => {
   })
 
   it("survives a writeXlsx round trip — legendOverlay lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -4396,7 +4396,7 @@ describe("writeChart — legendFontSize", () => {
   })
 
   it("survives a writeXlsx round trip — legendFontSize lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -4555,7 +4555,7 @@ describe("writeChart — legendBold", () => {
   })
 
   it("survives a writeXlsx round trip — legendBold lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -4709,7 +4709,7 @@ describe("writeChart — legendItalic", () => {
   })
 
   it("survives a writeXlsx round trip — legendItalic lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -4891,7 +4891,7 @@ describe("writeChart — legendUnderline", () => {
   })
 
   it("survives a writeXlsx round trip — legendUnderline lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -5077,7 +5077,7 @@ describe("writeChart — legendStrikethrough", () => {
   })
 
   it("survives a writeXlsx round trip — legendStrikethrough lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -5279,7 +5279,7 @@ describe("writeChart — legendFontColor", () => {
   })
 
   it("survives a writeXlsx round trip — legendFontColor lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -5493,7 +5493,7 @@ describe("writeChart — legendFontFamily", () => {
   })
 
   it("survives a writeXlsx round trip — legendFontFamily lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -5648,7 +5648,7 @@ describe("writeChart — data labels showLegendKey", () => {
   })
 
   it("end-to-end: writeXlsx packages a chart with showLegendKey=true", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -5885,7 +5885,7 @@ describe("writeChart — data labels numberFormat", () => {
   })
 
   it("end-to-end: writeXlsx packages a chart with numberFormat into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -6033,7 +6033,7 @@ describe("writeChart — axis noMultiLvlLbl", () => {
   })
 
   it("end-to-end: writeXlsx packages the flag into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -6178,7 +6178,7 @@ describe("writeChart — axis auto", () => {
   })
 
   it("end-to-end: writeXlsx packages the flag into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -6336,7 +6336,7 @@ describe("writeChart — titleOverlay", () => {
   })
 
   it("survives a writeXlsx round trip — titleOverlay lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -6544,7 +6544,7 @@ describe("writeChart — axis crosses / crossesAt", () => {
   })
 
   it("end-to-end: writeXlsx packages the crosses pin into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -6729,7 +6729,7 @@ describe("writeChart — drop lines", () => {
   })
 
   it("survives a writeXlsx round trip — dropLines lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -6876,7 +6876,7 @@ describe("writeChart — high-low lines", () => {
   })
 
   it("survives a writeXlsx round trip — hiLowLines lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -7168,7 +7168,7 @@ describe("writeChart — series lines", () => {
   })
 
   it("survives a writeXlsx round trip — serLines lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -7292,7 +7292,7 @@ describe("writeChart — upDownBars", () => {
   })
 
   it("threads upDownBars through writeXlsx end-to-end packaging", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -7494,7 +7494,7 @@ describe("writeChart — upDownBars gap width", () => {
   })
 
   it("threads the custom gap width through writeXlsx end-to-end packaging", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -7676,7 +7676,7 @@ describe("writeChart — axis dispUnits", () => {
   })
 
   it("packages the chart end-to-end through writeXlsx", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -7829,7 +7829,7 @@ describe("writeChart — axis dispUnits", () => {
   })
 
   it("packages a custUnit chart end-to-end through writeXlsx", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -7954,7 +7954,7 @@ describe("writeChart — chart style preset", () => {
   })
 
   it("threads style end-to-end through writeXlsx packaging", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Dashboard",
         rows: [
@@ -8109,7 +8109,7 @@ describe("writeChart — chart editing locale", () => {
   })
 
   it("threads lang end-to-end through writeXlsx packaging", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Dashboard",
         rows: [
@@ -8246,7 +8246,7 @@ describe("writeChart — chart date system", () => {
   })
 
   it("threads date1904 end-to-end through writeXlsx packaging", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Dashboard",
         rows: [
@@ -8439,7 +8439,7 @@ describe("writeChart — axis crossBetween", () => {
   })
 
   it("packages the chart end-to-end through writeXlsx", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -8666,7 +8666,7 @@ describe("writeChart — data table", () => {
   })
 
   it("threads dataTable end-to-end through writeXlsx packaging", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Dashboard",
         rows: [
@@ -8867,7 +8867,7 @@ describe("writeChart — data table", () => {
   })
 
   it("threads fontSize end-to-end through writeXlsx packaging", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Dashboard",
         rows: [
@@ -9030,7 +9030,7 @@ describe("writeChart — data table", () => {
   })
 
   it("threads fontColor end-to-end through writeXlsx packaging", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Dashboard",
         rows: [
@@ -9195,7 +9195,7 @@ describe("writeChart — data table", () => {
   })
 
   it("threads bold end-to-end through writeXlsx packaging", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Dashboard",
         rows: [
@@ -9361,7 +9361,7 @@ describe("writeChart — data table", () => {
   })
 
   it("threads italic end-to-end through writeXlsx packaging", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Dashboard",
         rows: [
@@ -9528,7 +9528,7 @@ describe("writeChart — data table", () => {
   })
 
   it("threads underline end-to-end through writeXlsx packaging", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Dashboard",
         rows: [
@@ -9706,7 +9706,7 @@ describe("writeChart — data table", () => {
   })
 
   it("threads strikethrough end-to-end through writeXlsx packaging", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Dashboard",
         rows: [
@@ -9947,7 +9947,7 @@ describe("writeChart — data table", () => {
   })
 
   it("threads fontFamily end-to-end through writeXlsx packaging", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Dashboard",
         rows: [
@@ -10192,7 +10192,7 @@ describe("writeChart — data table", () => {
   })
 
   it("threads fillColor end-to-end through writeXlsx packaging", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Dashboard",
         rows: [
@@ -10501,7 +10501,7 @@ describe("writeChart — data table", () => {
   })
 
   it("threads borderColor end-to-end through writeXlsx packaging", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Dashboard",
         rows: [
@@ -10750,7 +10750,7 @@ describe("writeChart — chart-space protection", () => {
   })
 
   it("threads protection through writeXlsx into xl/charts/chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -10965,7 +10965,7 @@ describe("writeChart — showLineMarkers", () => {
   })
 
   it("threads showLineMarkers=false through writeXlsx end-to-end packaging", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -10996,7 +10996,7 @@ describe("writeChart — showLineMarkers", () => {
   it("threads showLineMarkers alongside upDownBars / dropLines / hiLowLines", async () => {
     // Compose every line-only optional block on the same chart to
     // guard the schema-order contract end-to-end (writer → re-parse).
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -11237,7 +11237,7 @@ describe("writeChart — legend entries", () => {
   })
 
   it("survives a writeXlsx round trip — legendEntries lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -11424,7 +11424,7 @@ describe("writeChart — autoTitleDeleted", () => {
   })
 
   it("survives a writeXlsx round trip — autoTitleDeleted lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -11742,7 +11742,7 @@ describe("writeChart — view3D", () => {
   })
 
   it("threads view3D through writeXlsx into xl/charts/chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -11937,7 +11937,7 @@ describe("writeChart — floorThickness", () => {
   })
 
   it("threads floorThickness through writeXlsx into xl/charts/chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -12130,7 +12130,7 @@ describe("writeChart — sideWallThickness", () => {
   })
 
   it("threads sideWallThickness through writeXlsx into xl/charts/chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -12333,7 +12333,7 @@ describe("writeChart — backWallThickness", () => {
   })
 
   it("threads backWallThickness through writeXlsx into xl/charts/chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -12546,7 +12546,7 @@ describe("writeChart — axis labelRotation", () => {
   })
 
   it("end-to-end: writeXlsx packages the rotation into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -12741,7 +12741,7 @@ describe("writeChart — axis labelFontSize", () => {
   })
 
   it("end-to-end: writeXlsx packages the size into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -12995,7 +12995,7 @@ describe("writeChart — data labels showLeaderLines", () => {
   })
 
   it("end-to-end: writeXlsx packages a pie chart with showLeaderLines=false", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -13175,7 +13175,7 @@ describe("writeChart — title rotation", () => {
   })
 
   it("end-to-end: writeXlsx packages the title rotation into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -13353,7 +13353,7 @@ describe("writeChart — title font size", () => {
   })
 
   it("end-to-end: writeXlsx packages the title font size into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -13501,7 +13501,7 @@ describe("writeChart — title bold", () => {
   })
 
   it("writeXlsx package round-trip surfaces titleBold from the chart part", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -13657,7 +13657,7 @@ describe("writeChart — title italic", () => {
   })
 
   it("writeXlsx package round-trip surfaces titleItalic from the chart part", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -13835,7 +13835,7 @@ describe("writeChart — title color", () => {
   })
 
   it("writeXlsx package round-trip surfaces titleColor from the chart part", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -13998,7 +13998,7 @@ describe("writeChart — title strike", () => {
   })
 
   it("writeXlsx package round-trip surfaces titleStrike from the chart part", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -14165,7 +14165,7 @@ describe("writeChart — title underline", () => {
   })
 
   it("writeXlsx package round-trip surfaces titleUnderline from the chart part", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -14437,7 +14437,7 @@ describe("writeChart — axis title rotation", () => {
   })
 
   it("end-to-end: writeXlsx packages the axis title rotation into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -14704,7 +14704,7 @@ describe("writeChart — axis title font size", () => {
   })
 
   it("end-to-end: writeXlsx packages the axis title size into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -14854,7 +14854,7 @@ describe("writeChart — axis title bold", () => {
     // family. Pie / doughnut were short-circuited upstream — the
     // resolver never invokes the axis builder for those families.
     for (const type of ["bar", "column", "line", "area", "scatter"] as WriteChartKind[]) {
-      const sheets: WriteSheet[] = [
+      const sheets: SheetInput[] = [
         {
           name: "Sheet1",
           rows: [
@@ -14884,7 +14884,7 @@ describe("writeChart — axis title bold", () => {
   })
 
   it("round-trips through writeXlsx -> readXlsx", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -15080,7 +15080,7 @@ describe("writeChart — axis title italic", () => {
   })
 
   it("end-to-end: writeXlsx packages the axis title italic flag into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -15312,7 +15312,7 @@ describe("writeChart — axis title color", () => {
   })
 
   it("end-to-end: writeXlsx packages the axis title color into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -15544,7 +15544,7 @@ describe("writeChart — axis title strike", () => {
   })
 
   it("end-to-end: writeXlsx packages the axis title strike into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -15759,7 +15759,7 @@ describe("writeChart — axis title underline", () => {
   })
 
   it("end-to-end: writeXlsx packages the axis title underline into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -15951,7 +15951,7 @@ describe("writeChart — axis labelBold", () => {
   })
 
   it("end-to-end: writeXlsx packages the bold flag into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -16156,7 +16156,7 @@ describe("writeChart — axis labelItalic", () => {
   })
 
   it("end-to-end: writeXlsx packages the italic flag into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -16359,7 +16359,7 @@ describe("writeChart — axis labelColor", () => {
   })
 
   it("end-to-end: writeXlsx packages the color into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -16561,7 +16561,7 @@ describe("writeChart — axis labelUnderline", () => {
   })
 
   it("end-to-end: writeXlsx packages the underline flag into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -16754,7 +16754,7 @@ describe("writeChart — axis labelStrike", () => {
   })
 
   it("end-to-end: writeXlsx packages the strike flag into chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -16932,7 +16932,7 @@ describe("writeChart — dataLabels.fontSize", () => {
   })
 
   it("survives a writeXlsx round trip — dataLabels.fontSize lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -17126,7 +17126,7 @@ describe("writeChart — dataLabels.fontColor", () => {
   })
 
   it("survives a writeXlsx round trip — dataLabels.fontColor lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -17280,7 +17280,7 @@ describe("writeChart — dataLabels.bold", () => {
   })
 
   it("survives a writeXlsx round trip — dataLabels.bold lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -17460,7 +17460,7 @@ describe("writeChart — dataLabels.italic", () => {
   })
 
   it("survives a writeXlsx round trip — dataLabels.italic lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -17639,7 +17639,7 @@ describe("writeChart — dataLabels.underline", () => {
   })
 
   it("survives a writeXlsx round trip — dataLabels.underline lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -17819,7 +17819,7 @@ describe("writeChart — dataLabels.strikethrough", () => {
   })
 
   it("survives a writeXlsx round trip — dataLabels.strikethrough lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -18026,7 +18026,7 @@ describe("writeChart — dataLabels.fontFamily", () => {
   })
 
   it("survives a writeXlsx round trip — fontFamily lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -18193,7 +18193,7 @@ describe("writeChart — title font family", () => {
   })
 
   it("end-to-end: writeXlsx -> open -> reparse retains the typeface", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -18372,7 +18372,7 @@ describe("writeChart — axis tick-label font family", () => {
   })
 
   it("end-to-end: writeXlsx -> open -> reparse retains the typeface on both axes", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -18611,7 +18611,7 @@ describe("writeChart — axis title font family", () => {
   })
 
   it("end-to-end: writeXlsx -> open -> reparse retains the typeface", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -18815,7 +18815,7 @@ describe("writeChart — axis title overlay", () => {
   })
 
   it("end-to-end: writeXlsx -> open -> reparse retains the overlay flag", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -19077,7 +19077,7 @@ describe("writeChart — legendLayout", () => {
   })
 
   it("survives a writeXlsx round trip — legendLayout lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -19388,7 +19388,7 @@ describe("writeChart — titleLayout", () => {
   })
 
   it("survives a writeXlsx round trip — titleLayout lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -19682,7 +19682,7 @@ describe("writeChart — plotAreaLayout", () => {
   })
 
   it("survives a writeXlsx round trip — plotAreaLayout lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -19877,7 +19877,7 @@ describe("writeChart — plotAreaFillColor", () => {
   })
 
   it("survives a writeXlsx round trip — plotAreaFillColor lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -20067,7 +20067,7 @@ describe("writeChart — plotAreaBorderColor", () => {
   })
 
   it("survives a writeXlsx round trip — plotAreaBorderColor lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -20251,7 +20251,7 @@ describe("writeChart — plotAreaBorderWidth", () => {
   })
 
   it("survives a writeXlsx round trip — plotAreaBorderWidth lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -20598,7 +20598,7 @@ describe("writeChart — axisTitleLayout", () => {
   })
 
   it("survives a writeXlsx round trip — axisTitleLayout lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -20840,7 +20840,7 @@ describe("writeChart — titleFillColor", () => {
   })
 
   it("survives a writeXlsx round trip — titleFillColor lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -21065,7 +21065,7 @@ describe("writeChart — titleBorderColor", () => {
   })
 
   it("survives a writeXlsx round trip — titleBorderColor lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -21265,7 +21265,7 @@ describe("writeChart — legendFillColor", () => {
   })
 
   it("survives a writeXlsx round trip — legendFillColor lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -21462,7 +21462,7 @@ describe("writeChart — chartSpaceFillColor", () => {
   })
 
   it("survives a writeXlsx round trip — chartSpaceFillColor lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -21663,7 +21663,7 @@ describe("writeChart — chartSpaceBorderColor", () => {
   })
 
   it("survives a writeXlsx round trip — chartSpaceBorderColor lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -21938,7 +21938,7 @@ describe("writeChart — axisTitleFillColor", () => {
   })
 
   it("survives a writeXlsx round trip — axisTitleFillColor lands in chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -22250,7 +22250,7 @@ describe("writeChart — axisTitleBorderColor", () => {
   })
 
   it("survives a writeXlsx round trip — axisTitleBorderColor lands in chart1.xml", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -22486,7 +22486,7 @@ describe("writeChart — dataLabels.fillColor", () => {
   })
 
   it("survives a writeXlsx round trip — dataLabels.fillColor lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -22771,7 +22771,7 @@ describe("writeChart — dataLabels.borderColor", () => {
   })
 
   it("survives a writeXlsx round trip — dataLabels.borderColor lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -22964,7 +22964,7 @@ describe("writeChart — legendBorderColor", () => {
   })
 
   it("survives a writeXlsx round trip — legendBorderColor lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -23152,7 +23152,7 @@ describe("writeChart — legendBorderWidth", () => {
   })
 
   it("survives a writeXlsx round trip — legendBorderWidth lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -23363,7 +23363,7 @@ describe("writeChart — titleBorderWidth", () => {
   })
 
   it("survives a writeXlsx round trip — titleBorderWidth lands in the packaged chart XML", async () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Sheet1",
         rows: [
@@ -23466,7 +23466,7 @@ describe("writeChart — chartSpaceBorderWidth", () => {
   })
 
   it("round-trips through writeXlsx -> parseChart", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["A", "B"],
@@ -23569,7 +23569,7 @@ describe("writeChart — axisTitleBorderWidth", () => {
   })
 
   it("round-trips through writeXlsx -> parseChart", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["A", "B"],
@@ -23674,7 +23674,7 @@ describe("writeChart — dataTableBorderWidth", () => {
   })
 
   it("round-trips dataTable.borderWidth", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["A", "B"],
@@ -23744,7 +23744,7 @@ describe("writeChart — dataLabelsBorderWidth", () => {
   })
 
   it("round-trips dataLabels.borderWidth", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["A", "B"],
@@ -23827,7 +23827,7 @@ describe("writeChart — plotAreaBorderDash", () => {
   })
 
   it("round-trips plotAreaBorderDash", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["A", "B"],
@@ -23880,7 +23880,7 @@ describe("writeChart — legendBorderDash", () => {
   })
 
   it("round-trips legendBorderDash", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["A", "B"],
@@ -23931,7 +23931,7 @@ describe("writeChart — titleBorderDash", () => {
   })
 
   it("round-trips titleBorderDash", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["A", "B"],
@@ -23977,7 +23977,7 @@ describe("writeChart — chartSpaceBorderDash", () => {
   })
 
   it("round-trips chartSpaceBorderDash", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["A", "B"],
@@ -24054,7 +24054,7 @@ describe("writeChart — axisTitleBorderDash", () => {
   })
 
   it("round-trips axisTitleBorderDash", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["A", "B"],
@@ -24137,7 +24137,7 @@ describe("writeChart — dataTableBorderDash", () => {
   })
 
   it("round-trips dataTable.borderDash", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["A", "B"],
@@ -24204,7 +24204,7 @@ describe("writeChart — dataLabelsBorderDash", () => {
   })
 
   it("round-trips per-series dataLabels.borderDash", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["A", "B"],
@@ -24446,7 +24446,7 @@ describe("writeChart — chart-space border cap / compound", () => {
 // ── writeXlsx round-trip for theme + cap/compound ─────────────────
 describe("writeXlsx — theme color + line cap/compound round-trip", () => {
   it("round-trips chartSpace theme fill through writeXlsx + parseChart", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Q", "Sales"],
@@ -24474,7 +24474,7 @@ describe("writeXlsx — theme color + line cap/compound round-trip", () => {
   })
 
   it("round-trips title theme color through writeXlsx + parseChart", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["A1"]],
       charts: [

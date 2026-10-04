@@ -5,7 +5,7 @@ import { readXlsx } from "../src/xlsx/reader"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
 import { createSharedStrings, writeWorksheetXml } from "../src/xlsx/worksheet-writer"
 import { hashSheetPassword } from "../src/xlsx/password"
-import type { WriteSheet, SheetProtection } from "../src/_types"
+import type { SheetInput, SheetProtection } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -17,14 +17,14 @@ function findChildren(el: { children: Array<unknown> }, localName: string): any[
   return el.children.filter((c: any) => typeof c !== "string" && (c.local || c.tag) === localName)
 }
 
-function writeXml(sheet: WriteSheet): string {
+function writeXml(sheet: SheetInput): string {
   const styles = createStylesCollector()
   const ss = createSharedStrings()
   const result = writeWorksheetXml(sheet, styles, ss)
   return result.xml
 }
 
-function writeStylesXml(sheet: WriteSheet): string {
+function writeStylesXml(sheet: SheetInput): string {
   const styles = createStylesCollector()
   const ss = createSharedStrings()
   writeWorksheetXml(sheet, styles, ss)
@@ -86,7 +86,7 @@ describe("hashSheetPassword", () => {
 
 describe("sheet protection — writing", () => {
   it("writes basic sheet protection (sheet=true)", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       protection: {
@@ -103,7 +103,7 @@ describe("sheet protection — writing", () => {
   })
 
   it("writes protection with password hash", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       protection: {
@@ -122,7 +122,7 @@ describe("sheet protection — writing", () => {
   })
 
   it("writes protection with objects and scenarios", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       protection: {
@@ -142,7 +142,7 @@ describe("sheet protection — writing", () => {
   })
 
   it("writes granular allow options (sort=true, autoFilter=true)", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       protection: {
@@ -164,7 +164,7 @@ describe("sheet protection — writing", () => {
   })
 
   it("writes disallowed options correctly (formatCells=false)", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       protection: {
@@ -186,7 +186,7 @@ describe("sheet protection — writing", () => {
   })
 
   it("does not emit sheetProtection when no protection property", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
     }
@@ -199,7 +199,7 @@ describe("sheet protection — writing", () => {
   })
 
   it("defaults sheet to protected when protection object exists", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       protection: {},
@@ -215,7 +215,7 @@ describe("sheet protection — writing", () => {
   })
 
   it("emits sheetProtection after sheetData (OOXML spec order)", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       protection: { sheet: true },
@@ -262,7 +262,7 @@ describe("sheet protection — writing", () => {
       pivotTables: true,
     }
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       protection,
@@ -308,7 +308,7 @@ describe("cell protection — writing", () => {
       style: { protection: { locked: false } },
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Editable"]],
       cells,
@@ -342,7 +342,7 @@ describe("cell protection — writing", () => {
       style: { protection: { hidden: true } },
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Formula"]],
       cells,
@@ -369,7 +369,7 @@ describe("cell protection — writing", () => {
       style: { protection: { locked: true, hidden: true } },
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Secret"]],
       cells,
@@ -391,7 +391,7 @@ describe("cell protection — writing", () => {
   })
 
   it("default cells have no explicit protection (all locked by default)", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Normal cell"]],
     }

@@ -5,7 +5,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { openXlsx, saveXlsx, ROUNDTRIP_STATE } from "../src/xlsx/roundtrip"
 import { InvalidArgumentError } from "../src/errors"
-import type { WriteSheet, Cell } from "../src/_types"
+import type { SheetInput, Cell } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -30,7 +30,7 @@ async function zipExtractText(data: Uint8Array, path: string): Promise<string> {
 }
 
 /** Create a minimal valid XLSX from writeXlsx for testing */
-async function createBasicXlsx(sheets: WriteSheet[]): Promise<Uint8Array> {
+async function createBasicXlsx(sheets: SheetInput[]): Promise<Uint8Array> {
   return writeXlsx({ sheets })
 }
 

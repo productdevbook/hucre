@@ -1,12 +1,10 @@
 # test/fixtures — workbooks hucre did not write
 
-These twenty binaries exist because of [#464][]. Every other binary input
-under `test/` is assembled byte-by-byte by the test that reads it, which
-is a closed loop: a reader that misunderstands a record is checked
-against a hand-built record that misunderstands it identically, and the
-suite stays green. The XLS and XLSB readers are the sharp end — they
-exist only to consume other tools' output and, until this directory, had
-never seen any.
+These twenty binaries exist because of [#464][]. Hand-built inputs alone
+form a closed loop: a reader that misunderstands a record can be checked
+against a record with the same misunderstanding. Independent producer
+files check that interpretation against another tool's output, especially
+for the XLS and XLSB readers.
 
 That stayed half-true for longer than it should have. The files in _this_
 directory are Excel's, and openpyxl — the second producer, the one that
@@ -15,7 +13,7 @@ exactly one source. [`third-party/sheetjs-*.{xlsb,xls}`](third-party/) are
 the second, and the XLSB reader was dropping every cell after the first
 in each row when they arrived.
 
-They are read by [`test/real-files.test.ts`](../real-files.test.ts).
+They are read by [`test/integration/real-files.test.ts`](../integration/real-files.test.ts).
 
 [#464]: https://github.com/productdevbook/hucre/issues/464
 
@@ -37,8 +35,8 @@ no shared string table.
 | Content     | synthetic, written for this corpus by the contributor — no third-party or confidential document is involved | same                                                                            |
 | Licence     | same as the repository (MIT)                                                                                | same                                                                            |
 
-openpyxl writes `.xlsx` only, so the `.xls` and `.xlsb` readers still see
-Excel output alone.
+openpyxl writes `.xlsx` only; the `.xls` and `.xlsb` readers also use the
+SheetJS files in `third-party/`.
 
 Every Excel file was produced by Excel's own `SaveAs`. Nothing here was
 post-processed, repacked or hand-edited; what is committed is the byte
@@ -113,7 +111,7 @@ for f in *.xlsx *.xlsb; do unzip -p "$f" docProps/core.xml | grep -o '<dc:creato
 for f in *.xls; do strings -el "$f"; strings "$f"; done | grep -i '<your name>'
 ```
 
-`test/real-files.test.ts` also asserts `hasAuthor: false` for every
+`test/integration/real-files.test.ts` also asserts `hasAuthor: false` for every
 fixture — but that only bites for the `.xlsx` files. `readXls` and
 `readXlsb` do not surface workbook properties at all (see the XLS/XLSB
 table in `docs/PARITY.md`), so for the two `.xls` and two `.xlsb`

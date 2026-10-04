@@ -12,7 +12,7 @@ import {
   colToLetter,
   cellRef,
 } from "../src/xlsx/worksheet-writer"
-import type { WriteSheet, CellStyle, CellValue } from "../src/_types"
+import type { SheetInput, CellStyle, CellValue } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -134,7 +134,7 @@ describe("writeContentTypes", () => {
 
 describe("writeWorkbookXml", () => {
   it("generates workbook with correct sheet names", () => {
-    const sheets: WriteSheet[] = [{ name: "Sheet1" }, { name: "Data" }]
+    const sheets: SheetInput[] = [{ name: "Sheet1" }, { name: "Data" }]
     const xml = writeWorkbookXml(sheets)
     const doc = parseXml(xml)
 
@@ -151,7 +151,7 @@ describe("writeWorkbookXml", () => {
   })
 
   it("marks hidden sheets", () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       { name: "Visible" },
       { name: "Hidden", hidden: true },
       { name: "VeryHidden", veryHidden: true },
@@ -412,7 +412,7 @@ describe("StylesCollector", () => {
 
 describe("writeWorksheetXml", () => {
   it("generates worksheet with string/number/boolean cells", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [
         ["Hello", 42, true],
@@ -462,7 +462,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("handles null and undefined values", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [[null, "hello", null]],
     }
@@ -483,7 +483,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("generates date cells with serial numbers", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [
         [new Date(Date.UTC(2024, 0, 15))], // Jan 15, 2024
@@ -511,7 +511,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("writes formula cells", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [[10, 20]],
       cells: new Map([
@@ -548,7 +548,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("writes merged cells", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Merged Header"]],
       merges: [{ startRow: 0, startCol: 0, endRow: 0, endCol: 3 }],
@@ -568,7 +568,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("writes freeze panes", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Header"]],
       freezePane: { rows: 1, columns: 0 },
@@ -593,7 +593,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("writes freeze panes for columns", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["A", "B"]],
       freezePane: { rows: 0, columns: 2 },
@@ -612,7 +612,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("writes freeze panes for both rows and columns", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["A"]],
       freezePane: { rows: 1, columns: 1 },
@@ -632,7 +632,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("writes auto filter", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [
         ["Name", "Age"],
@@ -652,7 +652,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("writes column widths", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       columns: [{ width: 20 }, { width: 30 }, {}, { width: 15, hidden: true }],
       rows: [["A", "B", "C", "D"]],
@@ -680,7 +680,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("writes empty sheet", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Empty",
       rows: [],
     }

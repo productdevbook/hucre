@@ -4,8 +4,8 @@ Reproducible measurements for the claims in the README, and for anyone
 changing a hot path.
 
 ```bash
-pnpm build     # bench runs against dist/, which is what users get
-pnpm bench     # every scenario, one process each
+bun run build     # bench runs against dist/, which is what users get
+bun run bench     # every scenario, one process each
 ```
 
 Or one at a time:
@@ -20,7 +20,7 @@ node bench/read.mjs streamXlsxRows high-cardinality
 `process.resourceUsage().maxRSS` is a high-water mark for the **whole
 process**. Measure two things in one run and the second inherits the
 first's peak — which is how a streaming writer can appear to use 800 MB.
-`pnpm bench` forks a child per scenario for that reason, and the numbers
+`bun run bench` forks a child per scenario for that reason, and the numbers
 below were taken that way.
 
 ## The scenarios

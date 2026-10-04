@@ -5,7 +5,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
 import { createSharedStrings, writeWorksheetXml } from "../src/xlsx/worksheet-writer"
 import { readXlsx } from "../src/xlsx/reader"
-import type { WriteSheet, ConditionalRule } from "../src/_types"
+import type { SheetInput, ConditionalRule } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ function getElementText(el: { children: Array<unknown> }): string {
   return el.children.filter((c: unknown) => typeof c === "string").join("")
 }
 
-function writeXml(sheet: WriteSheet): { xml: string; stylesXml: string } {
+function writeXml(sheet: SheetInput): { xml: string; stylesXml: string } {
   const styles = createStylesCollector()
   const ss = createSharedStrings()
   const result = writeWorksheetXml(sheet, styles, ss)
@@ -44,7 +44,7 @@ function parseWorksheetXml(xml: string) {
 
 describe("conditional formatting — writing", () => {
   it("writes cellIs rule with operator and formula", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -78,7 +78,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes cellIs rule with style → dxfId in cfRule and dxf in styles.xml", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -127,7 +127,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes expression rule with custom formula", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -153,7 +153,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes 2-color colorScale", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -191,7 +191,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes 3-color colorScale", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -224,7 +224,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes dataBar", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -258,7 +258,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes iconSet", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -298,7 +298,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes containsText rule", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -326,7 +326,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes beginsWith rule", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -350,7 +350,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes endsWith rule", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -374,7 +374,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes duplicateValues rule", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -395,7 +395,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes uniqueValues rule", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -416,7 +416,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes top10 rule", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -437,7 +437,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes aboveAverage rule", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -458,7 +458,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes multiple rules on same range (priorities)", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -496,7 +496,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes multiple ranges", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["A", "B"]],
       conditionalRules: [
@@ -537,7 +537,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes stopIfTrue attribute", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -561,7 +561,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("does not emit conditionalFormatting when none are provided", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
     }

@@ -1,3 +1,4 @@
+import { prepareWorkbook } from "../_write-model"
 // ── XLSX Writer ──────────────────────────────────────────────────────
 // Generates valid Office Open XML spreadsheet files (XLSX).
 
@@ -5,9 +6,11 @@ import { InvalidArgumentError } from "../errors"
 import type {
   CellValue,
   WorkbookProperties,
-  WriteOptions,
+  WorkbookInput,
+  WritableWorkbook,
+  WritableSheet,
+  XlsxWriteOptions,
   WriteOutput,
-  WriteSheet,
 } from "../_types"
 import { ZipWriter } from "../zip/writer"
 import { splitInlineCellsInSheets, toCellValue } from "../_inline-cells"
@@ -56,7 +59,7 @@ const REL_PIVOT_TABLE =
  * `properties.description` when the workbook does not already declare one.
  * This is what screen readers announce when the file is opened.
  */
-function effectiveProperties(options: WriteOptions): WorkbookProperties | undefined {
+function effectiveProperties(options: WritableWorkbook): WorkbookProperties | undefined {
   const props = options.properties
   if (props?.description) return props
 
@@ -73,7 +76,11 @@ function effectiveProperties(options: WriteOptions): WorkbookProperties | undefi
  * Write a Workbook to XLSX format.
  * Returns a Uint8Array containing the ZIP archive.
  */
-export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
+export async function writeXlsx(
+  input: WorkbookInput,
+  writeOptions?: XlsxWriteOptions,
+): Promise<WriteOutput> {
+  const options = { ...prepareWorkbook(input, writeOptions?.onDrop), ...writeOptions }
   // A cell object written inline in `rows` becomes a `cells` entry before
   // anything reads the grid, so every consumer below still sees values.
   // See #433 and `src/_inline-cells.ts`.
@@ -592,14 +599,14 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
 // ── Pivot Source Resolution ────────────────────────────────────────────
 
 /**
- * Pull the source data out of a `WriteSheet`. Pivot tables can source
+ * Pull the source data out of a `SheetInput`. Pivot tables can source
  * from either `rows` (raw 2-D arrays) or `data` (objects keyed by
  * `columns[].key`); we normalise both shapes into a single `CellValue[][]`.
  *
  * Returns `[]` when the sheet has no row-shaped data — `resolvePivotSource`
  * will throw a clearer error in that case.
  */
-function collectSourceRows(sheet: WriteSheet): CellValue[][] {
+function collectSourceRows(sheet: WritableSheet): CellValue[][] {
   if (sheet.rows && sheet.rows.length > 0) {
     // A pivot sources values; `writeXlsx` has already lifted any inline
     // cell objects, and `toCellValue` keeps this correct on its own.

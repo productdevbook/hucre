@@ -1,14 +1,15 @@
 # Migrating to v2
 
-v2 removes what v1 kept for compatibility and fixes the shapes v1 could not change without a major: two models where one will do, an options type that could not say which reader honours what, and a `Map` that capped a sheet at 2^24 cells.
+v2 removes what v1 kept for compatibility and fixes the shapes v1 could not change without a major: duplicate read/write models, reader options that silently did nothing, and inconsistent streaming contracts. `Sheet.cells` remains a `Map`; its runtime ceiling is documented in `docs/PARITY.md`.
 
 Every change that can affect existing code is listed. TypeScript flags most of them; the ones it cannot are marked **behaviour**.
 
 ## At a glance
 
-| Change                                                | Affects you if…                                                                                                                       |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| [Deprecated names removed](#deprecated-names-removed) | you reference `DefterError`, `readNdjsonStream`, `headerRow: true`, `write()`/`end()`, or import a `parse*` part parser from the root |
+| Change                                                            | Affects you if…                                                                                                                       |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| [Deprecated names removed](#deprecated-names-removed)             | you reference `DefterError`, `readNdjsonStream`, `headerRow: true`, `write()`/`end()`, or import a `parse*` part parser from the root |
+| [One workbook model](#one-workbook-model-for-reading-and-writing) | you use `WriteSheet`, `WriteOptions`, `toWriteOptions` or encoding options inside the workbook                                        |
 
 ---
 
@@ -44,7 +45,7 @@ Each reader now has its own type — `XlsxReadOptions`, `OdsReadOptions`, `XlsbR
 + await readXls(bytes)                        // .xls has no Agile encryption
 ```
 
-`ReadOptions` still exists as the type `read()` takes — it cannot know the format before looking at the bytes — and is an alias of `XlsxReadOptions`, the widest. Code annotating a bag as `ReadOptions` and passing it to `readXlsx` or `read()` is unaffected. `ReadObjectsOptions` extends it as before.
+`ReadOptions` still exists as the type `read()` takes — it cannot know the format before looking at the bytes — and combines `XlsxReadOptions` and the BIFF code-page fallback from `XlsReadOptions`. Code annotating a bag as `ReadOptions` and passing it to `readXlsx` or `read()` is unaffected. `ReadObjectsOptions` extends it as before.
 
 **Behaviour:** `readXlsb` now honours `maxTotalCells`. It was the one reader with no bounding-box ceiling; a hostile `.xlsb` could allocate a dense grid the size of its two furthest cells.
 
@@ -207,7 +208,41 @@ Two smaller alignments in the same family:
 - **`sheetToObjects` skips blank rows by default**, as `readObjects`, `readXlsxObjects` and `readOdsObjects` do. It used to hard-code the opposite with no way to change it; it now takes `skipEmptyRows`, and `skipEmptyRows: false` restores the old projection. **Behaviour.**
 - **`JsonReadOptions.transformValue` receives `(value, header, rowIndex, colIndex)`**, four arguments like every other `transformValue` in the library. It received three.
 
+## One workbook model for reading and writing
+
+`WriteSheet` and `WriteOptions` are replaced by `SheetInput` and
+`WorkbookInput`, derived from the read model. A `Workbook` returned by
+any reader can go directly to a buffered writer. `toWriteOptions` and
+`toWriteSheet` are removed; writers normalize at their boundary and
+report authoring losses through `onDrop`.
+
+```ts
+// v1
+await writeXlsx(toWriteOptions(workbook))
+await writeXlsx({ sheets, stringMode: "inline", encryption: { password } })
+await write({ sheets, format: "csv", csv: { bom: true } })
+
+// v2
+await writeXlsx(workbook, { onDrop: ({ field, reason }) => console.warn(field, reason) })
+await writeXlsx({ sheets }, { stringMode: "inline", encryption: { password } })
+await write({ sheets }, { format: "csv", csv: { bom: true } })
+```
+
+`XlsxWriteOptions` holds string storage, encryption and VBA embedding.
+`WorkbookWriteOptions` holds the common loss callback; `WriteFormatOptions`
+adds the format and text-format options used by `write`.
+
+Reader chart/pivot records still cannot be authored automatically, and
+ODS supports fewer metadata fields than XLSX. Populated unsupported
+features are reported without mutating the input. Throw from `onDrop` to
+refuse a loss. For preserving original parts, use `openXlsx`/`saveXlsx`.
+
 ## Smaller changes
+
+- `openXlsx` reads styles by default so saving preserves number formats and presentation. `readStyles: false` remains an explicit opt-out; ordinary `readXlsx` defaults to false.
+
+- Empty `<f/>` and shared-formula followers retain cached results of every cell type through both save paths.
+- `WorkbookBuilder.set()` and named metadata methods share one state; the later call wins. `build(options?)` accepts encoding and loss reporting.
 
 - **Every error is a `HucreError`.** Eighteen throws were a plain `Error` or `TypeError` — argument misuse in `addChart`, `cloneChart`, the pivot writer, the incremental writers. They are `InvalidArgumentError` now, so `instanceof HucreError` is the catch-all it was documented to be. A `catch` that tested `instanceof TypeError` on `addChart` no longer matches. **Behaviour.**
 - **`moveSheet` and `removeSheet` refuse an index out of range** with `InvalidArgumentError`. `moveSheet(wb, 0, 5)` used to splice `undefined` into `sheets` without a word. **Behaviour.**

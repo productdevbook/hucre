@@ -3,7 +3,7 @@ import { ZipReader } from "../src/zip/reader"
 import { ZipWriter } from "../src/zip/writer"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
-import type { WriteSheet } from "../src/_types"
+import type { SheetInput } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -38,7 +38,7 @@ async function buildXlsxWithOneCellAnchor(
   extCy: number,
 ): Promise<Uint8Array> {
   // First, write a normal XLSX with a twoCellAnchor image
-  const sheet: WriteSheet = {
+  const sheet: SheetInput = {
     name: "Sheet1",
     rows: [["Data"]],
     images: [
@@ -111,7 +111,7 @@ async function buildXlsxWithOneCellAnchor(
 describe("twoCellAnchor (existing, verify still works)", () => {
   it("writes and reads back a twoCellAnchor image", async () => {
     const imageData = fakePng(100)
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Hello"]],
       images: [
@@ -212,7 +212,7 @@ describe("mixed anchor types", () => {
     const imageData1 = fakePng(80)
 
     // Build an XLSX with a twoCellAnchor image first
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Data"]],
       images: [

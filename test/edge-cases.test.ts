@@ -25,7 +25,7 @@ import {
 import { colToLetter } from "../src/xlsx/worksheet-writer"
 import type {
   CellValue,
-  WriteSheet,
+  SheetInput,
   CellStyle,
   SchemaDefinition,
   Sheet,
@@ -34,7 +34,7 @@ import type {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-async function writeAndRead(sheets: WriteSheet[]): Promise<Workbook> {
+async function writeAndRead(sheets: SheetInput[]): Promise<Workbook> {
   const xlsx = await writeXlsx({ sheets })
   return readXlsx(xlsx)
 }
@@ -331,7 +331,7 @@ describe("XLSX Writer Edge Cases", () => {
   })
 
   it("many sheets (50)", async () => {
-    const sheets: WriteSheet[] = []
+    const sheets: SheetInput[] = []
     for (let i = 0; i < 50; i++) {
       sheets.push({ name: `Sheet${i + 1}`, rows: [[`data_${i}`]] })
     }

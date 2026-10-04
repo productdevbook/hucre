@@ -1,7 +1,7 @@
 // ── Workbook XML Writer ──────────────────────────────────────────────
 // Generates xl/workbook.xml, xl/_rels/workbook.xml.rels, and _rels/.rels
 
-import type { WriteSheet, NamedRange } from "../_types"
+import type { SheetInput, NamedRange } from "../_types"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
 import { hashSheetPassword } from "./password"
 import { METADATA_REL_TYPE } from "./metadata"
@@ -33,7 +33,7 @@ export interface PivotCacheRef {
 
 /** Generate xl/workbook.xml */
 export function writeWorkbookXml(
-  sheets: WriteSheet[],
+  sheets: SheetInput[],
   namedRanges?: NamedRange[],
   dateSystem?: "1900" | "1904",
   activeSheet?: number,
