@@ -258,12 +258,28 @@ index, and it is what the readers' limits are sized against — the cost of
 a sheet is its bounding box rather than its cell count, which is why
 `maxTotalCells` bounds the product.
 
+The XLSX reader checks that growing product before allocating each cell's
+row or column padding, in both buffered and streamed worksheet parsing.
+An over-limit sheet is rejected as soon as its retained bounding box exceeds
+the bound; the error's dimensions and fill count describe that parsed prefix.
+
 The contract went unwritten and two readers did not hold it. `readXls`
 and `readXlsb` padded a row only to its _own_ last cell and never
 allocated a row the file left empty, so one authored sheet saved three
 ways came back three shapes, and a gap row came back as `undefined` —
 which `CellValue` cannot express. Fixed in #494; it is now stated on
 `Sheet.rows` as well as here.
+
+### Number-format rendering has explicit bounds
+
+`formatValue` rejects applied formats over 255 characters, decimal or
+scientific precision over 100 places, and fixed fraction denominators
+outside JavaScript's safe-integer range with `InvalidArgumentError`.
+Variable fraction denominators use a bounded continued-fraction
+approximation, capped at `Number.MAX_SAFE_INTEGER`; placeholder width still
+controls padding. Non-finite values under fraction formats return their
+string representation. These bounds apply to rendering; number-format
+strings are still preserved when reading and writing cell styles.
 
 ### Line endings are normalized on the way in
 

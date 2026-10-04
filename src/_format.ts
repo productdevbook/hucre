@@ -8,6 +8,7 @@
 
 import { isDateFormat, formatDate, serialToDate, dateToSerial } from "./_date"
 import { InvalidArgumentError } from "./errors"
+import { MAX_FORMAT_DECIMALS, MAX_NUMBER_FORMAT_LENGTH } from "./limits"
 
 // ── Locale Definitions ──────────────────────────────────────────────
 
@@ -158,6 +159,8 @@ export interface FormatOptions {
  * @param numFmt - Excel number format string (e.g., "#,##0.00", "0%", "yyyy-mm-dd")
  * @param options - Optional formatting options (locale, etc.)
  * @returns Formatted string
+ * @throws InvalidArgumentError if an applied format exceeds 255 characters,
+ * asks for more than 100 decimal places, or has an unsafe fixed denominator.
  */
 export function formatValue(value: unknown, numFmt: string, options?: FormatOptions): string {
   // Null/undefined → ""
@@ -168,6 +171,14 @@ export function formatValue(value: unknown, numFmt: string, options?: FormatOpti
   // Boolean → "TRUE"/"FALSE"
   if (typeof value === "boolean") {
     return value ? "TRUE" : "FALSE"
+  }
+
+  // A long placeholder run makes fraction detection quadratic even
+  // without a slash. Reject it before trimming or scanning any section.
+  if (numFmt && numFmt.length > MAX_NUMBER_FORMAT_LENGTH) {
+    throw new InvalidArgumentError(
+      `Number format exceeds the ${MAX_NUMBER_FORMAT_LENGTH}-character limit`,
+    )
   }
 
   // No format or "General"
@@ -457,6 +468,7 @@ function formatScientific(value: number, fmt: string, locale?: LocaleFormat): st
     // Fallback: determine decimal places from the mantissa part
     const decMatch = fmt.match(/\.([0#?]+)[eE]/)
     const decPlaces = decMatch ? decMatch[1].length : 2
+    assertFormatPrecision(decPlaces)
     const expStr = value.toExponential(decPlaces)
     return formatExponentialString(expStr, fmt)
   }
@@ -469,6 +481,8 @@ function formatScientific(value: number, fmt: string, locale?: LocaleFormat): st
   // Count decimal places in mantissa
   const dotIdx = mantissaFmt.indexOf(".")
   const decPlaces = dotIdx >= 0 ? mantissaFmt.length - dotIdx - 1 : 0
+
+  assertFormatPrecision(decPlaces)
 
   const expStr = value.toExponential(decPlaces)
   const parts = expStr.split(/[eE]/)
@@ -580,6 +594,10 @@ function maskLiterals(fmt: string): string {
 const MASK = "\u0001"
 
 function formatFraction(value: number, fmt: string): string {
+  // There is no rational approximation of NaN or infinity; neither can
+  // satisfy an exact-error exit condition in a denominator search.
+  if (!Number.isFinite(value)) return String(value)
+
   // Determine denominator precision from format. Matched against the
   // masked form so a slash inside a literal cannot be mistaken for the
   // fraction bar; the mask preserves length, so the index and the
@@ -630,6 +648,9 @@ function formatFraction(value: number, fmt: string): string {
   // guard below sends them to the search — which is where Excel puts them,
   // since "0" is a placeholder character.
   const fixedDenom = /^\d+$/.test(fracMatch[2]) ? Number.parseInt(fracMatch[2], 10) : 0
+  if (!Number.isSafeInteger(fixedDenom)) {
+    throw new InvalidArgumentError("A fixed fraction denominator must be a safe integer")
+  }
 
   let bestNum: number
   let bestDen: number
@@ -641,8 +662,9 @@ function formatFraction(value: number, fmt: string): string {
     bestDen = fixedDenom
     bestNum = Math.round(target * fixedDenom)
   } else {
-    // Find best fraction with denominator up to 10^denomLen
-    const maxDen = Math.pow(10, denomLen) - 1
+    // Keep denominator arithmetic in the integer range. Placeholder
+    // width still controls padding, even beyond the available precision.
+    const maxDen = Math.min(Math.pow(10, denomLen) - 1, Number.MAX_SAFE_INTEGER)
     const result = findBestFraction(target, maxDen)
     bestNum = result.num
     bestDen = result.den
@@ -680,22 +702,40 @@ function formatFraction(value: number, fmt: string): string {
 }
 
 function findBestFraction(value: number, maxDen: number): { num: number; den: number } {
-  let bestNum = 0
-  let bestDen = 1
-  let bestError = Math.abs(value)
-
-  for (let den = 1; den <= maxDen; den++) {
-    const num = Math.round(value * den)
+  // Continued-fraction convergents and the last admissible
+  // semiconvergent contain the closest bounded-denominator fraction.
+  // Scanning 10^k denominators instead let nine '?' pin a CPU, and at
+  // 16 '?' den++ could stop advancing at 2^53. A fixed iteration ceiling
+  // also bounds work for floating-point edge cases.
+  let prevNum = 0
+  let prevDen = 1
+  let num = 1
+  let den = 0
+  let remainder = value
+  for (let step = 0; step < 128; step++) {
+    const whole = Math.floor(remainder)
+    const nextDen = prevDen + whole * den
+    if (nextDen > maxDen) break
+    const nextNum = prevNum + whole * num
+    prevNum = num
+    prevDen = den
+    num = nextNum
+    den = nextDen
     const error = Math.abs(value - num / den)
-    if (error < bestError) {
-      bestError = error
-      bestNum = num
-      bestDen = den
-      if (error === 0) break
-    }
+    const fraction = remainder - whole
+    if (error === 0 || fraction === 0) return { num, den }
+    remainder = 1 / fraction
   }
 
-  return { num: bestNum, den: bestDen }
+  const steps = Math.floor((maxDen - prevDen) / den)
+  const boundNum = prevNum + steps * num
+  const boundDen = prevDen + steps * den
+  const error = Math.abs(value - num / den)
+  const boundError = Math.abs(value - boundNum / boundDen)
+  // Match the old scan's preference for the smaller denominator on ties.
+  return boundError < error || (boundError === error && boundDen < den)
+    ? { num: boundNum, den: boundDen }
+    : { num, den }
 }
 
 // ── Number Formatting ───────────────────────────────────────────────
@@ -730,6 +770,8 @@ function formatNumber(value: number, fmt: string, locale?: LocaleFormat): string
     const afterDot = core.slice(dotIndex + 1).replace(/[^0#?]/g, "")
     decimalPlaces = afterDot.length
   }
+
+  assertFormatPrecision(decimalPlaces)
 
   // Round the value
   const roundedValue = roundToDecimal(Math.abs(scaledValue), decimalPlaces)
@@ -864,6 +906,16 @@ function extractLiterals(fmt: string): { prefix: string; suffix: string; core: s
   }
 
   return { prefix, suffix, core }
+}
+
+function assertFormatPrecision(decimals: number): void {
+  // Throw a library error before the native formatting methods would
+  // answer an untrusted precision with a raw RangeError.
+  if (decimals > MAX_FORMAT_DECIMALS) {
+    throw new InvalidArgumentError(
+      `Number format exceeds the ${MAX_FORMAT_DECIMALS}-decimal-place limit`,
+    )
+  }
 }
 
 function roundToDecimal(value: number, decimals: number): number {

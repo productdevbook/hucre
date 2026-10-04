@@ -248,6 +248,24 @@ function worksheetParser(
   let cellCount = 0
   let hasCells = false
 
+  function assertDenseCapacity(row: number, col: number, count: number): void {
+    if (ctx.sparse) return
+    const totalCells = (row + 1) * (col + 1)
+    const cellLimit = ctx.maxTotalCells ?? MAX_TOTAL_CELLS
+    if (totalCells > cellLimit) {
+      throw new ParseError(
+        oversizeSheetMessage(name, row + 1, col + 1, totalCells, count, cellLimit),
+      )
+    }
+  }
+
+  function assertCellFitsDenseGrid(row: number, col: number): void {
+    // Checking only in finish() is too late: each far-column cell has
+    // already padded its row. Bound the growing rectangle before either
+    // row or column allocation, including cells that arrive out of order.
+    assertDenseCapacity(Math.max(maxRow, row), Math.max(maxCol, col), cellCount + 1)
+  }
+
   // Range filter — parse once, use in cell processing
   let rangeFilter: MergeRange | undefined
   if (ctx.range) {
@@ -1040,6 +1058,7 @@ function worksheetParser(
                 ctx,
                 rows,
                 cells,
+                assertCellFitsDenseGrid,
                 cellFormulaType,
                 cellFormulaSi,
                 cellFormulaRef,
@@ -1269,26 +1288,9 @@ function worksheetParser(
     // has nothing to guard.
     if (hasCells && !ctx.sparse) {
       const colCount = maxCol + 1
-      // The cost of a sheet is its bounding box, not its cell count — the
-      // loop below fills every slot in it. Two in-bounds cells at opposite
-      // corners describe 1.7e10 slots, which V8 answers with an OOM the
-      // caller cannot catch, so the product is checked before allocating.
-      const totalCells = (maxRow + 1) * colCount
-      const cellLimit = ctx.maxTotalCells ?? MAX_TOTAL_CELLS
-      if (totalCells > cellLimit) {
-        // The options this used to name were the wrong three for the case
-        // that actually hits it. A *sparse* sheet — 82k values scattered
-        // over a 305M-slot box, 0.03% fill — is not large, so raising
-        // `maxTotalCells` trades a clean error for a multi-gigabyte
-        // allocation; `range` needs the caller to already know where the
-        // data is; and `maxRows` bounds rows when the problem is columns.
-        //
-        // `streamXlsxRows` reads exactly this file today, one row at a
-        // time, and the message never mentioned it. See #501.
-        throw new ParseError(
-          oversizeSheetMessage(name, maxRow + 1, colCount, totalCells, cellCount, cellLimit),
-        )
-      }
+      // Cell processing checks the growing box before allocation. Keep
+      // the same guard at the final densification boundary as well.
+      assertDenseCapacity(maxRow, maxCol, cellCount)
       for (let r = 0; r <= maxRow; r++) {
         if (!rows[r]) {
           rows[r] = Array.from({ length: colCount }, () => null) as CellValue[]
@@ -1783,6 +1785,7 @@ function processCell(
   ctx: WorksheetContext,
   rows: CellValue[][],
   cells: Map<string, Cell>,
+  assertCellFitsDenseGrid: (row: number, col: number) => void,
   formulaType?: string,
   formulaSi?: number,
   formulaRef?: string,
@@ -1831,6 +1834,8 @@ function processCell(
     })
     return
   }
+
+  assertCellFitsDenseGrid(row, col)
 
   // Ensure row array exists. Skipped in sparse mode — allocating the row
   // out to the cell's column is the cost being avoided, and it is paid

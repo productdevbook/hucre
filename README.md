@@ -1460,6 +1460,11 @@ formatValue(1234, "$#,##0") // "$1,234"
 formatValue(0.333, "# ?/?") // "1/3"
 ```
 
+Applied formats are limited to 255 characters and 100 decimal places;
+exceeding either throws `InvalidArgumentError`. Fixed fraction denominators
+must be safe integers. Variable denominators use a bounded approximation,
+up to `Number.MAX_SAFE_INTEGER`, while retaining the format's padding width.
+
 ### Cell Utilities
 
 ```ts

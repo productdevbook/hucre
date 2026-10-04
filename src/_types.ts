@@ -1613,6 +1613,7 @@ export interface ReadOptions {
    * budget roughly 8 bytes per slot for the array alone.
    *
    * Honoured by `readXlsx`, `readOds` and `readXls`.
+   * XLSX checks the growing bounding box before row or column allocation.
    */
   maxTotalCells?: number
   /**
