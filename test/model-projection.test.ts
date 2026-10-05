@@ -60,6 +60,48 @@ describe("model projection uses effective cells", () => {
     })
     expect(() => parseCsvObjects("Name,Score\nAda,42", { maxTotalCells: 3 })).toThrow(ParseError)
   })
+  it("rejects an oversized unfiltered table before invoking user transforms", () => {
+    const headers: string[] = []
+    const values: number[] = []
+    expect(() =>
+      sheetToObjects(overridden(), {
+        skipEmptyRows: false,
+        maxTotalCells: 5,
+        transformHeader: (header) => {
+          headers.push(header)
+          return header
+        },
+        transformValue: (value, _header, row) => {
+          values.push(row)
+          return value
+        },
+      }),
+    ).toThrow(ParseError)
+    expect(headers).toEqual([])
+    expect(values).toEqual([])
+  })
+
+  it("checks only the requested header and data rows before padding sparse gaps", () => {
+    const sheet: Sheet = {
+      name: "S",
+      rows: [],
+      cells: createCellStore([
+        [3, 0, { value: "Name", type: "string" }],
+        [1_048_575, 1, { value: "last", type: "string" }],
+      ]),
+    }
+    expect(sheetToArrays(sheet, { headerRow: 3, maxRows: 1, maxTotalCells: 4 })).toEqual({
+      headers: ["Name", ""],
+      data: [[null, null]],
+    })
+    expect(sheetToArrays(sheet, { headerRow: 3, maxRows: 0, maxTotalCells: 2 })).toEqual({
+      headers: ["Name", ""],
+      data: [],
+    })
+    expect(() => sheetToArrays(sheet, { headerRow: 3, maxRows: 1, maxTotalCells: 3 })).toThrow(
+      ParseError,
+    )
+  })
   for (const [name, reader] of [
     ["readObjects", readObjects],
     ["readXlsxObjects", readXlsxObjects],

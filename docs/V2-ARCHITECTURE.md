@@ -35,6 +35,9 @@ data: [{ name: "Ada" }] }] }, { format: "json" })` still produces `[]`.
    array/JSON projections, HTML/Markdown and accessibility consume the
    effective model; 31 regressions fail on the preceding V2 tree and the
    independent invoice verifies sparse records/caches and text output.
+   Unfiltered tables check the selected rectangle before headers or user
+   transforms run; a follow-up regression fails before this preflight fix,
+   and bounded header/data selection remains covered.
 3. Consolidate repeated ODS/ZIP fixture scaffolds into `test/support/`;
    retain raw regression inputs and independently authored expectations.
 4. Recheck published runtime claims and perform the final whole-architecture

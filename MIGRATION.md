@@ -122,7 +122,9 @@ rectangular output bound.
 
 Projection/export options accept `maxTotalCells`, defaulting to 20,000,000
 including headers. For table projection the bound counts selected output
-rows. HTML/Markdown and CSV/TSV exports require the whole rectangle; they
+rows. When blank rows are kept, the selected rectangle is checked before
+headers or transforms run, respecting `headerRow` and `maxRows`.
+HTML/Markdown and CSV/TSV exports require the whole rectangle; they
 check its size before expansion. HTML also includes merge extents in
 its layout bound before constructing the hidden-cell map. Root `write()` accepts this limit for text
 formats. Nested HTML/Markdown limits take precedence for those formats.

@@ -714,7 +714,8 @@ Arrays are rectangular copies rather than aliases of the source rows.
 of 20,000,000. With empty rows skipped, the bound counts returned rows rather
 than physical gaps. Arrays/JSON keep blank rows by default; object readers
 skip them. `skipEmptyRows`, `maxRows` and `headerRow` configure table
-projection. HTML/Markdown and CSV/TSV output pay for the full rectangle and
+projection. With blanks kept, the selected output size is checked before
+header materialization or user transforms. HTML/Markdown and CSV/TSV output pay for the full rectangle and
 check that bound before expanding it. HTML includes merge extents in its
 layout bound before constructing the hidden-cell map. Sparse reading does not make a dense
 presentation export memory-bounded. Accessibility uses the same effective

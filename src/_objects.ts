@@ -80,7 +80,16 @@ export function projectTable(
   if (!Number.isInteger(headerRow) || headerRow < 0 || headerRow >= grid.height) {
     return { headers: [], rows: (function* (): Generator<[number, CellValue[]]> {})() }
   }
-  assertGridSize(1, grid.width, options.maxTotalCells)
+  const skipEmptyRows = options.skipEmptyRows ?? true
+  const available = grid.height - headerRow - 1
+  const dataRows =
+    options.maxRows !== undefined && options.maxRows < available
+      ? Math.max(0, Math.ceil(options.maxRows))
+      : available
+  // Keeping blanks makes the output rectangle known up front. A per-row
+  // check alone would build up to the limit before rejecting a sparse
+  // corner, and would already have invoked user transforms on that work.
+  assertGridSize(skipEmptyRows ? 1 : dataRows + 1, grid.width, options.maxTotalCells)
   const headers = disambiguate(
     grid.row(headerRow).map((value, col) => {
       const header = value === null ? "" : String(value).trim()
@@ -89,7 +98,7 @@ export function projectTable(
   )
   function* rows(): Generator<[number, CellValue[]]> {
     let count = 0
-    for (const index of grid.indexes(headerRow + 1, options.skipEmptyRows ?? true)) {
+    for (const index of grid.indexes(headerRow + 1, skipEmptyRows)) {
       if (options.maxRows !== undefined && count >= options.maxRows) break
       // Check before even one more row is padded. Sparse reads bypass the
       // reader's box limit, but an object export still allocates its output.
