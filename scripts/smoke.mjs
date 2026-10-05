@@ -32,6 +32,10 @@ import {
   findCells,
   replaceCells,
   fillTemplate,
+  readObjects,
+  sheetToObjects,
+  toJson,
+  write,
 } from "../dist/index.mjs"
 
 let failures = 0
@@ -68,6 +72,43 @@ const ROWS = [
   ["Name", "Amount", "When"],
   ["Ada", 1234.5, new Date(Date.UTC(2024, 0, 15))],
 ]
+
+console.log("model projection")
+{
+  const bytes = await writeXlsx({
+    sheets: [
+      {
+        name: "S",
+        rows: [
+          ["Name", "Score"],
+          ["Ada", 42],
+        ],
+      },
+    ],
+  })
+  const sparse = (await readXlsx(bytes, { sparse: true })).sheets[0]
+  const result = await readObjects(bytes, { sparse: true })
+  check("sparse object projection", result.data[0]?.Name === "Ada" && result.data[0]?.Score === 42)
+  check("sparse JSON projection", JSON.parse(toJson(sparse))[0]?.Score === 42)
+  check(
+    "sparse CSV projection",
+    new TextDecoder()
+      .decode(await write({ sheets: [sparse] }, { format: "csv" }))
+      .includes("Ada,42"),
+  )
+  const far = {
+    name: "Far",
+    rows: [],
+    cells: createCellStore([
+      [0, 0, { value: "Name", type: "string" }],
+      [1048575, 0, { value: "last", type: "string" }],
+    ]),
+  }
+  check(
+    "far-away values without dense gaps",
+    sheetToObjects(far).data[0]?.Name === "last" && far.rows.length === 0,
+  )
+}
 
 console.log("cell metadata")
 {

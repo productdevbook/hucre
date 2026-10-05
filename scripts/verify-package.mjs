@@ -138,7 +138,7 @@ try {
     writeFileSync(
       probe,
       [
-        `import { read, ParseError, readXlsx, writeXlsx, insertRows, replaceCells } from "hucre"`,
+        `import { read, ParseError, readXlsx, writeXlsx, insertRows, replaceCells, readObjects, sheetToObjects, toJson, write } from "hucre"`,
         `import { writeXlsx as x } from "hucre/xlsx"`,
         `import { parseCsv } from "hucre/csv"`,
         `import { readOds } from "hucre/ods"`,
@@ -166,6 +166,10 @@ try {
         `if (replaceCells(sheet, 2, false) !== 1 || getCell(sheet.cells, 2, 0)?.formulaResult !== false) throw new Error("installed value edit lost its cache")`,
         `const cleared = await readXlsx(await writeXlsx({ sheets: [{ name: "Null", rows: [[42]], cells: createCellStore([[0, 0, { value: null, style: { font: { bold: true } } }]]) }] }), { readStyles: true })`,
         `if (cleared.sheets[0].rows[0][0] !== null) throw new Error("installed writer discarded a null override")`,
+        `const table = await writeXlsx({ sheets: [{ name: "S", rows: [["Name"], ["Ada"]] }] })`,
+        `const sparse = (await readXlsx(table, { sparse: true })).sheets[0]`,
+        `if ((await readObjects(table, { sparse: true })).data[0]?.Name !== "Ada" || sheetToObjects(sparse).data[0]?.Name !== "Ada" || JSON.parse(toJson(sparse))[0]?.Name !== "Ada") throw new Error("installed sparse projection lost values")`,
+        `if (!(new TextDecoder().decode(await write({ sheets: [sparse] }, { format: "csv" }))).includes("Ada")) throw new Error("installed text write lost sparse values")`,
         `let bounded = false`,
         `try { await read(new TextEncoder().encode("a,b,c\\nx\\nx"), { maxTotalCells: 8 }) } catch (error) { bounded = error instanceof ParseError }`,
         `if (!bounded) throw new Error("installed read discarded maxTotalCells")`,

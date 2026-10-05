@@ -208,9 +208,11 @@ The error also reports how full the box actually is, which is what turns
 "your sheet is too large" into "your sheet is mostly nothing" — a
 different problem with a different answer.
 
-`sparse` is XLSX-only and off by default. With it on, consumers of
-`Sheet.rows`, such as `sheetToObjects` and `readObjects`, see an empty
-grid; `cells` contains the data. Buffered XLSX and ODS writers also read
+`sparse` is XLSX-only and off by default. The grid stays empty, while
+object readers, sheet projections, JSON/HTML/Markdown exports and text
+`write()` consume the values in `cells`. Object projection skips implicit
+blank rows by default; opting into blank rows includes physical gaps.
+Buffered XLSX and ODS writers also read
 `cells` and can write that data, but may materialize its bounding box.
 Sparse reading does not make buffered writing memory-bounded.
 
@@ -700,6 +702,24 @@ Replacements update value/type/cache together. Formula text and unrelated
 metadata survive, while changed text removes its obsolete rich-text runs.
 These operations do not calculate formulas. Partial authoring cell metadata
 inherits undefined fields and preserves explicit null values.
+
+Object readers, `sheetToObjects`, `sheetToArrays`, `toJson`,
+`workbookToJson`, HTML/Markdown exports and text `write()` share effective
+metadata/cache values. Projection preserves source row indexes for transforms,
+sorts sparse rows by coordinate and does not mutate the workbook. Duplicate
+headers are disambiguated; prototype-looking labels are ordinary data keys.
+Arrays are rectangular copies rather than aliases of the source rows.
+
+`maxTotalCells` bounds projected cells including the header, with a default
+of 20,000,000. With empty rows skipped, the bound counts returned rows rather
+than physical gaps. Arrays/JSON keep blank rows by default; object readers
+skip them. `skipEmptyRows`, `maxRows` and `headerRow` configure table
+projection. With blanks kept, the selected output size is checked before
+header materialization or user transforms. HTML/Markdown and CSV/TSV output pay for the full rectangle and
+check that bound before expanding it. HTML includes merge extents in its
+layout bound before constructing the hidden-cell map. Sparse reading does not make a dense
+presentation export memory-bounded. Accessibility uses the same effective
+values and reports a contiguous blank-row gap once, with its physical range.
 
 Each reader has its own options type, and the type is the statement of
 what it honours: `XlsxReadOptions`, `OdsReadOptions`, `XlsbReadOptions`,

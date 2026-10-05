@@ -1,5 +1,6 @@
 import type { CellValue, CsvReadOptions } from "../_types"
 import { rowsToObjects } from "../_objects"
+import type { GridProjectionOptions } from "../_sheet-grid"
 import { unescapeFormula } from "./formula"
 import { inferType } from "../_infer"
 import { decodeCsvInput, type CsvInput } from "./encoding"
@@ -214,16 +215,19 @@ export interface CsvObjectsResult<T extends Record<string, CellValue> = Record<s
   headers: string[]
 }
 
+/** CSV parsing knobs plus the bound on rectangular object output. */
+export interface CsvObjectsReadOptions extends CsvReadOptions, GridProjectionOptions {}
+
 /**
  * Parse CSV with a header row, returning an array of objects
  * and the detected headers.
  */
 export function parseCsvObjects<T extends Record<string, CellValue> = Record<string, CellValue>>(
   input: CsvInput,
-  options?: CsvReadOptions,
+  options?: CsvObjectsReadOptions,
 ): CsvObjectsResult<T> {
   // Pass through without transformValue/transformHeader to parseCsv — we handle them here
-  const { transformHeader, transformValue, ...restOptions } = options ?? {}
+  const { transformHeader, transformValue, maxRows, maxTotalCells, ...restOptions } = options ?? {}
   const rows = parseCsv(input, {
     ...restOptions,
     hasHeaderRow: false,
@@ -239,6 +243,8 @@ export function parseCsvObjects<T extends Record<string, CellValue> = Record<str
     skipEmptyRows: false,
     transformHeader,
     transformValue,
+    maxRows,
+    maxTotalCells,
   })
 }
 
