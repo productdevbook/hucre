@@ -29,6 +29,9 @@ import {
   deleteRows,
   insertColumns,
   deleteColumns,
+  findCells,
+  replaceCells,
+  fillTemplate,
 } from "../dist/index.mjs"
 
 let failures = 0
@@ -123,6 +126,35 @@ console.log("csv")
   const csv = writeCsv(ROWS)
   const back = parseCsv(csv, { typeInference: true })
   check("round trip", back[1][0] === "Ada" && back[1][1] === 1234.5)
+}
+
+console.log("value editing")
+{
+  const cell = {
+    value: "{{value}}",
+    type: "formula",
+    formula: '"unchanged"',
+    formulaResult: "{{value}}",
+  }
+  const sheet = { name: "Values", rows: [["{{value}}"]], cells: createCellStore([[0, 0, cell]]) }
+  fillTemplate({ sheets: [sheet] }, { value: 7 })
+  check(
+    "template keeps the formula cache synchronized",
+    sheet.rows[0][0] === 7 && cell.formulaResult === 7 && cell.type === "formula",
+  )
+  const sparse = {
+    name: "Sparse",
+    rows: [],
+    cells: createCellStore([[1048575, 16383, { value: "old", type: "string" }]]),
+  }
+  check(
+    "find and replace includes sparse values",
+    findCells(sparse, "old").length === 1 && replaceCells(sparse, "old", false) === 1,
+  )
+  check(
+    "sparse edits keep the grid empty",
+    sparse.rows.length === 0 && getCell(sparse.cells, 1048575, 16383).type === "boolean",
+  )
 }
 
 console.log("dense text bounds")

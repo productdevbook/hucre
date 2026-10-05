@@ -1,4 +1,4 @@
-import { createCellStore, setCell, cellEntries } from "./cell-store"
+import { createCellStore, setCell, cellEntries, getCell } from "./cell-store"
 // ── Cell objects written inline in `rows` ───────────────────────────
 //
 // `SheetInput.rows` is the grid and `SheetInput.cells` the per-cell
@@ -32,6 +32,16 @@ import { isHyperlinkValue } from "./xlsx/hyperlink"
  * or any other part of a {@link Cell}.
  */
 export type InlineCell = Partial<Cell>
+
+/** Undefined inherits; null is a deliberate value, including an empty cache. */
+export function mergeDefined<T extends object>(base: T, override: Partial<T>): T {
+  const merged = { ...base }
+  for (const key of Object.keys(override) as Array<keyof T>) {
+    const value = override[key]
+    if (value !== undefined) merged[key] = value
+  }
+  return merged
+}
 
 /**
  * Whether a row entry is a cell object rather than a value.
@@ -131,7 +141,11 @@ export function splitInlineCells<T extends SheetInput>(sheet: T): T {
   // position the explicit store wins — the same precedence `cells` already
   // has over `rows`.
   if (sheet.cells) {
-    for (const [row, col, cell] of cellEntries(sheet.cells)) setCell(lifted, row, col, cell)
+    for (const [row, col, cell] of cellEntries(sheet.cells)) {
+      const inline = getCell(lifted, row, col)
+      // A partial style override must not discard the row's formula/cache.
+      setCell(lifted, row, col, inline ? mergeDefined(inline, cell) : cell)
+    }
   }
 
   return { ...sheet, rows: plainRows, cells: lifted }

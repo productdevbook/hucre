@@ -12,7 +12,7 @@ the evidence for the whole target and the concrete gaps found in code.
 | One sparse metadata representation            | Numeric `CellStore` is used by readers, writers, builders, templates, exports and editing; bounds/count/clone/capacity regressions exercise it                           | Implemented                                                                                                   |
 | Shared structural editing                     | Insert/delete operations share `editAxis` and the A1 rewriter; invalid geometry is checked before mutation; independent invoice edits verify both save paths             | Implemented for insert/delete; other geometry APIs still need an audit                                        |
 | Dense reads enforce limits before expansion   | XLSX/XLS/XLSB guard growing boxes; ODS, HTML and text normalization share `_grid` checks; ODS repeats keep metadata and respect `maxRows` before expansion               | Implemented; small regressions and a fresh-process default-bound benchmark verify the previously missed paths |
-| Consistent values, errors and streaming       | `CellInput`, `CellError`, per-reader options and `StreamRow` are shared; text writers expose `finishText()` beside byte output                                           | Implemented; mutation value/type consistency still needs an audit                                             |
+| Consistent values, errors and streaming       | `CellInput`, `CellError`, reader/stream options are shared; search/replacement/templates use `_sheet-values`; partial metadata merges preserve inline fields             | Implemented for search/replacement/templates; value/type/cache, sparse and both save paths are covered        |
 | Independent workbook examples                 | Twelve authored business XLSX files, SHA-256 manifest, literal expectations and native/third-party producer corpus; integration suites cover read, stream and save paths | Implemented; generated examples are not claimed to be Microsoft Excel-authored                                |
 | Shared test infrastructure                    | Integration suites use shared loading/model/XML helpers; ODS package scaffolding is shared in four existing suites and new regressions; every test is typechecked        | Partly consolidated; remaining ZIP/XML helpers still need an inventory                                        |
 | Published API and runtime verification        | Export/type registers, installed tarball/CLI, all ten entry points, Node 24/LTS, Bun, Deno and non-UTC CI                                                                | Implemented for those runtimes; browser/Worker execution needs direct evidence                                |
@@ -23,12 +23,17 @@ the evidence for the whole target and the concrete gaps found in code.
 1. Review remaining geometry helpers (`moveRows`, `copyRange`, hiding,
    grouping, sorting) for index validation and mutation atomicity. Inventory
    position-bearing sheet fields (chart/pivot locations, filter columns,
-   print areas and drawing anchors) and record maintenance decisions. Review
-   value replacements and template filling for metadata/type/cache
-   consistency. Preserve documented limits on workbook-level references.
-2. Consolidate repeated ODS/ZIP fixture scaffolds into `test/support/`;
+   print areas and drawing anchors) and record maintenance decisions. Preserve documented limits on
+   workbook-level references. Value-edit consistency is verified by typed/cache/sparse regressions and independent invoice saves.
+2. Audit object/export projection against the same sparse/value model.
+   A current-source probe with `Name`/`Ada` returns the record through
+   `readObjects(bytes)`, but empty headers/data through
+   `readObjects(bytes, { sparse: true })`. The object readers still pass
+   only `sheet.rows` to projection, discarding populated sparse metadata.
+   Verify object options, row indexes, limits and display/export consumers.
+3. Consolidate repeated ODS/ZIP fixture scaffolds into `test/support/`;
    retain raw regression inputs and independently authored expectations.
-3. Run the built package in a browser and Worker, then perform the final
+4. Run the built package in a browser and Worker, then perform the final
    whole-architecture audit against current code, corpus and CI evidence.
 
 ## Completion gate

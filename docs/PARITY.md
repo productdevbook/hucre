@@ -693,6 +693,14 @@ _wrong_.
 
 ## Read options, per reader
 
+Value editing (`findCells`, `replaceCells`, `fillTemplate`) uses metadata
+overrides and formula cached values when present, then dense row values.
+Each materialized coordinate is visited once; sparse values remain sparse.
+Replacements update value/type/cache together. Formula text and unrelated
+metadata survive, while changed text removes its obsolete rich-text runs.
+These operations do not calculate formulas. Partial authoring cell metadata
+inherits undefined fields and preserves explicit null values.
+
 Each reader has its own options type, and the type is the statement of
 what it honours: `XlsxReadOptions`, `OdsReadOptions`, `XlsbReadOptions`,
 `XlsReadOptions`, all extending `ReadOptionsBase` (`maxInputBytes`,

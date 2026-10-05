@@ -1577,6 +1577,12 @@ fillTemplate(workbook, {
 const output = await saveXlsx(workbook)
 ```
 
+`fillTemplate`, `findCells` and `replaceCells` use the same value traversal.
+They include populated sparse cells without building a dense grid, honor
+cell overrides, and synchronize values, types and formula caches. Formulas
+are retained and their stored results are edited without recalculation.
+Replacing text clears obsolete rich-text runs while retaining cell styles.
+
 ### Excel 2024 Checkboxes
 
 Boolean cells can be flagged as native Excel 2024 checkboxes via Microsoft's
