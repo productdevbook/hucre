@@ -12,6 +12,7 @@ Every change that can affect existing code is listed. TypeScript flags most of t
 | [One workbook model](#one-workbook-model-for-reading-and-writing) | you use `WriteSheet`, `WriteOptions`, `toWriteOptions` or encoding options inside the workbook                                        |
 | [Structural edits](#structural-edits-share-reference-handling)    | you insert or delete rows/columns, or inspect range spelling                                                                          |
 | [Value edits](#value-edits-share-one-model)                       | you search, replace or fill templates on a styled/sparse workbook                                                                     |
+| [Table projections](#table-projections-use-effective-values)      | you convert sparse/styled sheets to objects, arrays, JSON, HTML, Markdown or text                                                     |
 | [Numeric cell storage](#numeric-cell-storage)                     | you construct, inspect or mutate `Sheet.cells` using string keys                                                                      |
 
 ---
@@ -95,6 +96,40 @@ RegExp is reset per cell; the caller's `lastIndex` cannot skip replacements.
 Partial `cells` metadata overlays inline cell fields instead of replacing
 the whole cell. `undefined` inherits; explicit `null` clears a value or
 formula cache. A style-only override therefore keeps the inline formula.
+
+## Table projections use effective values
+
+**Behaviour:** object readers and sheet/export helpers now read metadata
+overrides and formula caches rather than only `rows`. `sparse: true` works
+with `readObjects` and `readXlsxObjects`. Sparse records are ordered by
+physical coordinate; transform callbacks keep the source row index. With
+`skipEmptyRows: true`, implicit gaps are skipped without allocating a dense
+grid. With `false`, gaps are returned as blank rows.
+
+`sheetToObjects` accepts the object readers' transform and row-limit options.
+`sheetToArrays`, `toJson` and `workbookToJson` support `headerRow`, `maxRows`
+and `skipEmptyRows`; these array/JSON helpers keep blank rows by default.
+Their arrays are rectangular copies, so modifying output no longer edits
+the original sheet. All record projections disambiguate duplicate headers
+and retain `__proto__` as an ordinary key. Text writers keep positional
+names for null header cells; other projections retain a unique blank key.
+
+`parseCsvObjects` takes `CsvObjectsReadOptions`, which adds an output
+`maxTotalCells` bound to the raw CSV parsing knobs. Its `maxRows` now counts
+data records after the header rather than consuming one slot for headers.
+The raw `parseCsv` and streaming CSV options remain separate from the
+rectangular output bound.
+
+Projection/export options accept `maxTotalCells`, defaulting to 20,000,000
+including headers. For table projection the bound counts selected output
+rows. HTML/Markdown and CSV/TSV exports require the whole rectangle; they
+check its size before expansion. HTML also includes merge extents in
+its layout bound before constructing the hidden-cell map. Root `write()` accepts this limit for text
+formats. Nested HTML/Markdown limits take precedence for those formats.
+
+Accessibility audit now reads sparse/effective values too. Contiguous blank
+rows produce one finding whose `location.ref` spans the gap, such as
+`"2:1048575"`, instead of a separate finding for every row.
 
 ## Structural edits share reference handling
 

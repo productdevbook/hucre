@@ -39,3 +39,22 @@ The library is checked without Node types in `tsconfig.json`; the CLI has
 `tsconfig.cli.json`; **all** tests use `tsconfig.test.json`. A new disk-backed
 test needs no synchronized include/exclude lists. Model parity registers
 remain exhaustive and clone tests still exercise `structuredClone`.
+
+## Browser and Web Worker smoke
+
+```sh
+bun run build
+bun run smoke:browser
+```
+
+Open the printed loopback URL in a browser. Both Browser and Worker must
+show `PASS`. The page loads `scripts/smoke.mjs` against built ESM in each
+context, verifies encrypted XLSX reading/writing, then exchanges a workbook
+with numeric Maps and Date values through native `postMessage`, including
+a transferred byte buffer. The fake password and data are local test inputs.
+Stop the server with Ctrl-C.
+
+The harness was run in Chromium 154 and its module Web Worker for the V2
+projection change. This verifies those contexts; it does not claim a
+Microsoft Excel application check, Safari/Firefox execution or a deployed
+edge runtime.

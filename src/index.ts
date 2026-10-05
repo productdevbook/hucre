@@ -67,6 +67,7 @@ export {
 } from "./csv/index"
 export type { CsvObjectsResult } from "./csv/index"
 export { streamCsvRows, CsvStreamWriter, writeCsvStream } from "./csv/stream"
+export type { CsvObjectsReadOptions } from "./csv/reader"
 export { decodeCsvInput, detectBom } from "./csv/encoding"
 export type { CsvInput, BomEncoding } from "./csv/encoding"
 export type { CsvStreamRow, CsvStreamWriterOptions } from "./csv/stream"
@@ -251,7 +252,7 @@ export { createCellStore, getCell, setCell, hasCell, deleteCell, cellEntries } f
 
 // ── Sheet Utilities ──────────────────────────────────────────────
 export { sheetToObjects, sheetToArrays } from "./sheet-utils"
-export type { SheetObjectsResult, SheetToObjectsOptions } from "./sheet-utils"
+export type { SheetObjectsResult, SheetToObjectsOptions, SheetToArraysOptions } from "./sheet-utils"
 
 // ── Export (HTML / Markdown / JSON / TSV) ────────────────────────────
 export { toHtml, toMarkdown, toJson, fromHtml } from "./export/index"

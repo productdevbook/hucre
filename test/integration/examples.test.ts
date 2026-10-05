@@ -1,6 +1,8 @@
 import { getCell } from "../../src/cell-store"
 import type { Workbook } from "../../src/_types"
-import { read } from "../../src/defter"
+import { read, readObjects, write } from "../../src/defter"
+import { sheetToArrays, sheetToObjects } from "../../src/sheet-utils"
+import { workbookToJson } from "../../src/json/writer"
 import { createHash } from "node:crypto"
 import { readFileSync, readdirSync } from "node:fs"
 import { describe, expect, it } from "vitest"
@@ -8,6 +10,31 @@ import { readXlsx, streamXlsxRows, writeXlsx, openXlsx, saveXlsx } from "../../s
 import { flat } from "../support/workbook-model"
 import { insertRows, insertColumns, replaceCells } from "../../src/sheet-ops"
 import { parseCellRef, toRange } from "../../src/cell-utils"
+
+it("projects the independent invoice through sparse object and export paths", async () => {
+  const input = new Uint8Array(
+    readFileSync(new URL("../../examples/workbooks/invoice.xlsx", import.meta.url)),
+  )
+  const headers = ["Item", "Quantity", "Unit price", "Amount"]
+  const data = [
+    { Item: "Keyboard", Quantity: 2, "Unit price": 75, Amount: 150 },
+    { Item: "Mouse", Quantity: 3, "Unit price": 20, Amount: 60 },
+    { Item: "Total", Quantity: null, "Unit price": null, Amount: 210 },
+  ]
+  const workbook = await readXlsx(input, { sparse: true })
+  expect(workbook.sheets[0].rows).toEqual([])
+  expect(await readObjects(input, { sparse: true })).toEqual({ headers, data })
+  expect(sheetToObjects(workbook.sheets[0])).toEqual({ headers, data })
+  expect(sheetToArrays(workbook.sheets[0]).data).toEqual([
+    ["Keyboard", 2, 75, 150],
+    ["Mouse", 3, 20, 60],
+    ["Total", null, null, 210],
+  ])
+  expect(JSON.parse(workbookToJson(workbook))).toEqual(data)
+  expect(new TextDecoder().decode(await write(workbook, { format: "csv" }))).toBe(
+    "Item,Quantity,Unit price,Amount\r\nKeyboard,2,75,150\r\nMouse,3,20,60\r\nTotal,,,210",
+  )
+})
 
 interface ScenarioSheet {
   name: string

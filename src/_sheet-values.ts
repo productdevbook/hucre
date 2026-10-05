@@ -1,6 +1,6 @@
 // Value edits share this boundary: rows are the dense cache, CellStore
 // carries sparse values and metadata, and a writer prefers an override.
-import type { Cell, CellType, CellValue, Sheet } from "./_types"
+import type { Cell, CellStore, CellType, CellValue, Sheet } from "./_types"
 import { cellEntries, getCell } from "./cell-store"
 import { isCellError } from "./cell-error"
 
@@ -18,23 +18,27 @@ export function valueType(value: CellValue): CellType {
   return "error"
 }
 
-function hasFormula(cell: Cell): boolean {
+function hasFormula(cell: Partial<Cell>): boolean {
   return cell.formula !== undefined || cell.type === "formula" || cell.formulaType !== undefined
 }
 
-function effectiveValue(cell: Cell | undefined, fallback: CellValue): CellValue {
+export function effectiveValue(cell: Partial<Cell> | undefined, fallback: CellValue): CellValue {
   if (!cell) return fallback
   if (hasFormula(cell) && cell.formulaResult !== undefined) return cell.formulaResult
   return cell.value !== undefined ? cell.value : fallback
 }
 
 /** Visit each materialized coordinate once; sparse cells never grow a grid. */
-export function visitValues(
-  sheet: Sheet,
-  visit: (value: CellValue, row: number, col: number, cell: Cell | undefined) => void,
+export type ValueSheet<T extends Partial<Cell> = Cell> = Pick<Sheet, "rows"> & {
+  cells?: CellStore<T>
+}
+
+export function visitValues<T extends Partial<Cell>>(
+  sheet: ValueSheet<T>,
+  visit: (value: CellValue, row: number, col: number, cell: T | undefined) => void,
 ): void {
   for (let row = 0; row < sheet.rows.length; row++) {
-    const values = sheet.rows[row]!
+    const values = sheet.rows[row] ?? []
     for (let col = 0; col < values.length; col++) {
       const cell = getCell(sheet.cells, row, col)
       visit(effectiveValue(cell, values[col] ?? null), row, col, cell)

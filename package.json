@@ -102,7 +102,8 @@
     "release": "bun run test && bun run build && bumpp --commit --tag --push --all",
     "prepack": "bun run build",
     "test:unit": "vitest run --exclude 'test/integration/**'",
-    "test:integration": "vitest run test/integration"
+    "test:integration": "vitest run test/integration",
+    "smoke:browser": "node scripts/browser-smoke/server.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

@@ -6,6 +6,13 @@ rather than as a list of commits.
 
 ## Unreleased — 2.0.0
 
+Object readers, sheet projections and JSON/HTML/Markdown/text exports share
+effective metadata and formula-cache values. Sparse object reads no longer
+return an empty result. Projection keeps physical transform indexes,
+disambiguates duplicate headers, preserves prototype-looking data keys and
+checks output limits before padding. Accessibility coalesces sparse blank-row
+gaps into one finding. Object options/results share their definitions.
+
 Search, replacement and templates share one value traversal for dense and
 sparse cells. Value edits update cell types and formula caches together,
 remove obsolete rich-text runs and retain styles and formula text. Partial

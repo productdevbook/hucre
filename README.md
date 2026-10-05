@@ -1700,6 +1700,23 @@ is the format-agnostic one: it takes the same options as the two above and
 applies them to whatever `read()` detected, so `maxRows` and `skipEmptyRows`
 work for ODS and XLS too.
 
+`readObjects` and `readXlsxObjects` also support `sparse: true`. Sheet
+projections and JSON/HTML/Markdown exports use metadata overrides and formula
+cached values, so a sparse workbook can be exported without losing its data.
+Object projection skips blank gaps by default and retains physical row
+indexes in transforms. `sheetToObjects` accepts the same projection knobs;
+`sheetToArrays` and JSON exports retain blank rows by default and return
+rectangular copies. Duplicate headers are renamed without losing columns.
+
+`parseCsvObjects` accepts `CsvObjectsReadOptions` with an output cell bound;
+its `maxRows` counts data records after the header.
+
+`maxTotalCells` bounds projected output, including headers, at 20,000,000
+cells by default. With blank rows skipped it counts returned rows rather
+than sparse gaps. HTML/Markdown and CSV/TSV output require a dense rectangle
+and check the bound before expanding it. Text `write()` uses the same
+rows/cells/cache model and accepts this limit in its second argument.
+
 ### JSON / NDJSON
 
 ```ts

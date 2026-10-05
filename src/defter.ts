@@ -21,7 +21,13 @@ import type { JsonWriteOptions } from "./json/writer"
 import type { XmlWriteOptions } from "./xml/data-writer"
 import type { HtmlExportOptions } from "./export/html"
 import type { MarkdownExportOptions } from "./export/markdown"
-import { collectHeaders, rowsToObjects, selectSheet } from "./_objects"
+import {
+  collectHeaders,
+  rowsToObjects,
+  selectSheet,
+  type RowsToObjectsOptions,
+  type ObjectsResult,
+} from "./_objects"
 import { readXlsx } from "./xlsx/reader"
 import { readXlsb, looksLikeXlsb } from "./xlsx/xlsb/reader"
 import { readXls, looksLikeXls } from "./xls/reader"
@@ -44,7 +50,9 @@ import { writeXml } from "./xml/data-writer"
 import { fromHtml } from "./export/html-import"
 import { toHtml } from "./export/html"
 import { toMarkdown } from "./export/markdown"
-import { toCellValues } from "./_inline-cells"
+import { denseValues, sheetGrid, type GridProjectionOptions } from "./_sheet-grid"
+import { toRange } from "./cell-utils"
+import { splitInlineCells, toCellValues } from "./_inline-cells"
 
 // ── Format Detection ────────────────────────────────────────────────
 
@@ -240,7 +248,7 @@ export type WriteFormat =
  * `hucre convert` documents. The return is always bytes, so a caller can
  * hand the result to `Response` or `writeFile` without branching.
  */
-export interface TextFormatOptions {
+export interface TextFormatOptions extends GridProjectionOptions {
   /** Options for `format: "csv"`. */
   csv?: CsvWriteOptions
   /** Options for `format: "tsv"`. The delimiter is the tab and not yours. */
@@ -273,10 +281,19 @@ export async function write(
   if (!sheet) {
     throw new UnsupportedFormatError(`${format} needs a sheet to write, and the workbook has none.`)
   }
-  // These formats carry values and nothing else, so an inline cell object
-  // reduces to its value here rather than going through the `cells` split
-  // the two spreadsheet writers do. See #433.
-  const rows = toCellValues(sheet.rows ?? [])
+  const input = splitInlineCells(sheet)
+  const values = { ...input, rows: toCellValues(input.rows ?? []) }
+  // Value exports must apply the same inline/store/cache precedence as
+  // spreadsheet writers. Reading just rows silently discards sparse data.
+  const records = () => {
+    const grid = sheetGrid(values)
+    return rowsToObjects(values, {
+      skipEmptyRows: false,
+      maxTotalCells: options.maxTotalCells,
+      // Keep the text writer's positional names for unnamed columns.
+      transformHeader: (header, col) => (grid.value(0, col) === null ? `column${col + 1}` : header),
+    }).data
+  }
 
   // Each text writer already takes an options bag; this function used to
   // call every one of them with none, so `write` — the entry #469 added
@@ -288,40 +305,34 @@ export async function write(
   const encoder = new TextEncoder()
   switch (format) {
     case "csv":
-      return encoder.encode(writeCsv(rows, options.csv))
+      return encoder.encode(writeCsv(denseValues(values, options.maxTotalCells), options.csv))
     case "tsv":
-      return encoder.encode(writeTsv(rows, options.tsv))
+      return encoder.encode(writeTsv(denseValues(values, options.maxTotalCells), options.tsv))
     case "json":
-      return encoder.encode(writeJson(rowsToRecords(rows), options.json))
+      return encoder.encode(writeJson(records(), options.json))
     case "ndjson":
-      return encoder.encode(writeNdjson(rowsToRecords(rows), options.ndjson))
+      return encoder.encode(writeNdjson(records(), options.ndjson))
     case "xml":
-      return encoder.encode(writeXml(rowsToRecords(rows), options.xml))
+      return encoder.encode(writeXml(records(), options.xml))
     case "html":
-      return encoder.encode(toHtml({ name: sheet.name, rows }, options.html))
+      return encoder.encode(
+        toHtml(
+          {
+            name: values.name,
+            rows: values.rows,
+            cells: values.cells,
+            merges: values.merges?.map((merge) =>
+              typeof merge === "string" ? toRange(merge) : merge,
+            ),
+          },
+          { maxTotalCells: options.maxTotalCells, ...options.html },
+        ),
+      )
     case "markdown":
-      return encoder.encode(toMarkdown({ name: sheet.name, rows }, options.markdown))
+      return encoder.encode(
+        toMarkdown(values, { maxTotalCells: options.maxTotalCells, ...options.markdown }),
+      )
   }
-}
-
-/**
- * Read the first row as field names and project the rest against it.
- *
- * The record-shaped writers need names; a `SheetInput` is a grid. This is
- * the same convention `writeCsvObjects` and the CLI use, and the same one
- * {@link withHeaderRow} inverts on the way in.
- */
-function rowsToRecords(rows: CellValue[][]): Array<Record<string, CellValue>> {
-  const [header, ...body] = rows
-  if (!header) return []
-  const names = header.map((h, i) => (h === null || h === undefined ? `column${i + 1}` : String(h)))
-  return body.map((row) => {
-    const out: Record<string, CellValue> = {}
-    names.forEach((name, i) => {
-      out[name] = row[i] ?? null
-    })
-    return out
-  })
 }
 
 /**
@@ -336,42 +347,17 @@ function rowsToRecords(rows: CellValue[][]): Array<Record<string, CellValue>> {
  * handed to the format reader and are honoured as unevenly as ever (see
  * #365 item 4). `sheets` is omitted because {@link sheet} supersedes it.
  */
-export interface ReadObjectsOptions extends Omit<ReadOptions, "sheets"> {
+export interface ReadObjectsOptions extends Omit<ReadOptions, "sheets">, RowsToObjectsOptions {
   /** Sheet to read from. Index (0-based) or sheet name. Default: 0. */
   sheet?: number | string
-  /** 0-based row index to use as headers. Default: 0. */
-  headerRow?: number
-  /** Skip rows where every cell is null/empty. Default: true. */
-  skipEmptyRows?: boolean
-  /** Transform header values (after String/trim normalization). */
-  transformHeader?: (header: string, index: number) => string
-  /** Transform each cell value. */
-  transformValue?: (
-    value: CellValue,
-    header: string,
-    rowIndex: number,
-    colIndex: number,
-  ) => CellValue
-  /**
-   * Maximum number of data rows to return (after the header row).
-   *
-   * Shadows `ReadOptions.maxRows` — this one is applied to the projected
-   * rows for every format, rather than to the XLSX parse only. The
-   * format reader is never handed a `maxRows`.
-   */
-  maxRows?: number
 }
 
 /**
  * Result shape for {@link readObjects} — the same `{ data, headers }`
  * every other `*Objects` reader returns.
  */
-export interface ReadObjectsResult<
-  T extends Record<string, CellValue> = Record<string, CellValue>,
-> {
-  data: T[]
-  headers: string[]
-}
+export type ReadObjectsResult<T extends Record<string, CellValue> = Record<string, CellValue>> =
+  ObjectsResult<T>
 
 /**
  * Quick helper: read a file and get a sheet as objects keyed by a header
@@ -397,12 +383,13 @@ export async function readObjects<T extends Record<string, CellValue> = Record<s
   const workbook = await read(input, readOpts)
   const sheet = selectSheet(workbook, sheetSelector)
 
-  return rowsToObjects<T>(sheet.rows, {
+  return rowsToObjects<T>(sheet, {
     headerRow,
     skipEmptyRows,
     transformHeader,
     transformValue,
     maxRows,
+    maxTotalCells: readOpts.maxTotalCells,
   })
 }
 

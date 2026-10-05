@@ -1,8 +1,11 @@
+import { sheetGrid, type GridProjectionOptions } from "../_sheet-grid"
+import { assertGridSize } from "../_grid"
+import type { ValueSheet } from "../_sheet-values"
 import { getCell } from "../cell-store"
 import { isCellError } from "../cell-error"
-import type { Sheet, CellValue, CellStyle, Color, MergeRange } from "../_types"
+import type { Sheet, CellValue, CellStyle, Cell, Color, MergeRange } from "../_types"
 
-export interface HtmlExportOptions {
+export interface HtmlExportOptions extends GridProjectionOptions {
   /** Include inline CSS styles from cell styles. Default: false */
   styles?: boolean
   /** Add CSS classes for cell types (num, bool, date, null). Default: true */
@@ -181,10 +184,15 @@ function buildMergeMap(
  * Export a sheet as an HTML <table> string.
  */
 /** Options after defaults are applied. */
-type ResolvedHtmlOptions = Required<Omit<HtmlExportOptions, "caption" | "ariaLabel">> &
-  Pick<HtmlExportOptions, "caption" | "ariaLabel">
+type ResolvedHtmlOptions = Required<
+  Omit<HtmlExportOptions, "caption" | "ariaLabel" | "maxTotalCells">
+> &
+  Pick<HtmlExportOptions, "caption" | "ariaLabel" | "maxTotalCells">
 
-export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
+export function toHtml(
+  sheet: Omit<Sheet, "cells"> & ValueSheet<Partial<Cell>>,
+  options?: HtmlExportOptions,
+): string {
   const opts: ResolvedHtmlOptions = {
     styles: options?.styles ?? false,
     classes: options?.classes ?? true,
@@ -202,8 +210,17 @@ export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
   if (opts.ariaLabel) tableAttrs.push(`aria-label="${escapeHtml(opts.ariaLabel)}"`)
   const tableAttrStr = tableAttrs.length > 0 ? " " + tableAttrs.join(" ") : ""
 
-  const rows = sheet.rows
-  if (!rows || rows.length === 0) {
+  const grid = sheetGrid(sheet)
+  let height = grid.height
+  let width = grid.width
+  // Merges can extend beyond values. The hidden-cell map costs their
+  // layout too, so checking only the value box would miss amplification.
+  for (const merge of sheet.merges ?? []) {
+    height = Math.max(height, merge.endRow + 1)
+    width = Math.max(width, merge.endCol + 1)
+  }
+  assertGridSize(height, width, options?.maxTotalCells)
+  if (height === 0) {
     let empty = `<table${tableAttrStr}>`
     if (opts.caption) empty += `<caption>${escapeHtml(opts.caption)}</caption>`
     empty += "</table>"
@@ -230,10 +247,10 @@ export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
   const startRow = opts.hasHeaderRow ? 1 : 0
 
   // Header row
-  if (opts.hasHeaderRow && rows.length > 0) {
+  if (opts.hasHeaderRow) {
     parts.push("<thead>")
     parts.push("<tr>")
-    const row = rows[0]
+    const row = grid.row(0, width)
     for (let c = 0; c < row.length; c++) {
       const mergeInfo = mergeMap.get(`0,${c}`)
       if (mergeInfo?.hidden) continue
@@ -248,9 +265,9 @@ export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
 
   // Body rows
   parts.push("<tbody>")
-  for (let r = startRow; r < rows.length; r++) {
+  for (let r = startRow; r < height; r++) {
     parts.push("<tr>")
-    const row = rows[r]
+    const row = grid.row(r, width)
     for (let c = 0; c < row.length; c++) {
       const mergeInfo = mergeMap.get(`${r},${c}`)
       if (mergeInfo?.hidden) continue
@@ -273,7 +290,7 @@ function buildCellAttrs(
   value: CellValue,
   row: number,
   col: number,
-  sheet: Sheet,
+  sheet: ValueSheet<Partial<Cell>>,
   opts: ResolvedHtmlOptions,
   mergeInfo: { colspan?: number; rowspan?: number; hidden?: boolean } | undefined,
 ): string {

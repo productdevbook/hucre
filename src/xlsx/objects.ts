@@ -2,42 +2,30 @@
 // Header-row-based read/write helpers that mirror parseCsvObjects ergonomics.
 
 import type { CellValue, ReadInput, XlsxReadOptions, WriteOutput } from "../_types"
-import { collectHeaders, rowsToObjects, selectSheet } from "../_objects"
+import {
+  collectHeaders,
+  rowsToObjects,
+  selectSheet,
+  type RowsToObjectsOptions,
+  type ObjectsResult,
+} from "../_objects"
 import { readXlsx } from "./reader"
 import { writeXlsx } from "./writer"
 
 /**
  * Options for {@link readXlsxObjects}.
  */
-export interface XlsxObjectsReadOptions extends Omit<XlsxReadOptions, "sheets"> {
+export interface XlsxObjectsReadOptions
+  extends Omit<XlsxReadOptions, "sheets">, RowsToObjectsOptions {
   /** Sheet to read from. Index (0-based) or sheet name. Default: 0. */
   sheet?: number | string
-  /** 0-based row index to use as headers. Default: 0. */
-  headerRow?: number
-  /** Skip rows where every cell is null/empty. Default: true. */
-  skipEmptyRows?: boolean
-  /** Transform header values (after String/trim normalization). */
-  transformHeader?: (header: string, index: number) => string
-  /** Transform each cell value. */
-  transformValue?: (
-    value: CellValue,
-    header: string,
-    rowIndex: number,
-    colIndex: number,
-  ) => CellValue
-  /** Maximum number of data rows to return (after the header row). */
-  maxRows?: number
 }
 
 /**
  * Result shape for {@link readXlsxObjects}, mirroring `parseCsvObjects`.
  */
-export interface XlsxObjectsResult<
-  T extends Record<string, CellValue> = Record<string, CellValue>,
-> {
-  data: T[]
-  headers: string[]
-}
+export type XlsxObjectsResult<T extends Record<string, CellValue> = Record<string, CellValue>> =
+  ObjectsResult<T>
 
 /**
  * Read an XLSX file and return its rows as an array of objects keyed by
@@ -63,12 +51,13 @@ export async function readXlsxObjects<
   const wb = await readXlsx(input, readOpts)
   const sheet = selectSheet(wb, sheetSelector)
 
-  return rowsToObjects<T>(sheet.rows, {
+  return rowsToObjects<T>(sheet, {
     headerRow,
     skipEmptyRows,
     transformHeader,
     transformValue,
     maxRows,
+    maxTotalCells: readOpts.maxTotalCells,
   })
 }
 
