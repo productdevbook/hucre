@@ -1,3 +1,4 @@
+import { visitValues, setValue, matchesValue, type ValuePredicate } from "./_sheet-values"
 import { cellEntries, createCellStore, setCell, deleteCell, getCell } from "./cell-store"
 // ── Sheet Operations ────────────────────────────────────────────────
 // In-memory row/column manipulation utilities for Sheet objects.
@@ -826,37 +827,12 @@ export function removeSheet(workbook: Workbook, index: number): void {
  */
 export function findCells(
   sheet: Sheet,
-  predicate: CellValue | RegExp | ((value: CellValue, row: number, col: number) => boolean),
+  predicate: ValuePredicate,
 ): Array<{ row: number; col: number; value: CellValue }> {
   const results: Array<{ row: number; col: number; value: CellValue }> = []
-  const isFn = typeof predicate === "function"
-  // `replaceCells` has always taken a RegExp; this one took a predicate
-  // instead, so "find the cells I am about to replace" could not be
-  // written with the same argument. Both take all three forms now.
-  const isRegExp = predicate instanceof RegExp
-
-  for (let r = 0; r < sheet.rows.length; r++) {
-    const row = sheet.rows[r]!
-    for (let c = 0; c < row.length; c++) {
-      const value = row[c] ?? null
-      let match: boolean
-      if (isFn) {
-        match = (predicate as (value: CellValue, row: number, col: number) => boolean)(value, r, c)
-      } else if (isRegExp) {
-        // Same rule as replaceCells: a RegExp tests strings only. `lastIndex`
-        // on a /g pattern would make the result depend on call order, so it
-        // is reset before each test.
-        predicate.lastIndex = 0
-        match = typeof value === "string" && predicate.test(value)
-      } else {
-        match = valueEquals(value, predicate)
-      }
-      if (match) {
-        results.push({ row: r, col: c, value })
-      }
-    }
-  }
-
+  visitValues(sheet, (value, row, col) => {
+    if (matchesValue(value, predicate, row, col)) results.push({ row, col, value })
+  })
   return results
 }
 
@@ -871,38 +847,15 @@ export function findCells(
  */
 export function replaceCells(sheet: Sheet, find: CellValue | RegExp, replace: CellValue): number {
   let count = 0
-
-  for (let r = 0; r < sheet.rows.length; r++) {
-    const row = sheet.rows[r]!
-    for (let c = 0; c < row.length; c++) {
-      const value = row[c] ?? null
-
-      if (find instanceof RegExp) {
-        // RegExp matching: only applies to string cells
-        if (typeof value === "string" && find.test(value)) {
-          if (typeof replace === "string") {
-            // Reset lastIndex for global regexes
-            find.lastIndex = 0
-            row[c] = value.replace(find, replace)
-          } else {
-            row[c] = replace
-          }
-          // Reset lastIndex after test() for global regexes
-          find.lastIndex = 0
-          syncCellOverride(sheet, r, c, row[c]!)
-          count++
-        }
-      } else {
-        // Exact value matching
-        if (valueEquals(value, find)) {
-          row[c] = replace
-          syncCellOverride(sheet, r, c, replace)
-          count++
-        }
-      }
-    }
-  }
-
+  visitValues(sheet, (value, row, col, cell) => {
+    if (!matchesValue(value, find, row, col)) return
+    const next =
+      find instanceof RegExp && typeof value === "string" && typeof replace === "string"
+        ? value.replace(find, replace)
+        : replace
+    setValue(sheet, row, col, next, cell)
+    count++
+  })
   return count
 }
 
@@ -971,17 +924,6 @@ export function sortRows(sheet: Sheet, colIndex: number, order?: "asc" | "desc")
   }
 }
 
-/**
- * Keep a sheet's per-cell metadata in sync when a row value changes via
- * {@link replaceCells}: if an override exists at (row,col), update its
- * `value` so the writer (which prefers the override) doesn't emit the stale
- * pre-replace value.
- */
-function syncCellOverride(sheet: Sheet, row: number, col: number, value: CellValue): void {
-  const existing = getCell(sheet.cells, row, col)
-  if (existing) existing.value = value
-}
-
 /** Compare two cell values for sorting: nulls last, numbers < strings < booleans. */
 /**
  * Compare two cell values for {@link sortRows}.
@@ -1022,13 +964,4 @@ function typeRank(v: CellValue): number {
   if (typeof v === "string") return 2
   if (typeof v === "boolean") return 3
   return 4
-}
-
-/**
- * `===` with one exception: two errors are equal when their tokens are,
- * so `findCells(sheet, cellError("#N/A"))` finds them.
- */
-function valueEquals(a: CellValue, b: CellValue): boolean {
-  if (isCellError(a) && isCellError(b)) return a.error === b.error
-  return a === b
 }

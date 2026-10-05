@@ -3,6 +3,7 @@ import { createCellStore, setCell, deleteCell } from "../cell-store"
 // Reads OpenDocument Spreadsheet (.ods) files.
 
 import { assertGridSize, padToRectangle } from "../_grid"
+import { valueType } from "../_sheet-values"
 import { cellError } from "../cell-error"
 import type {
   Workbook,
@@ -865,14 +866,7 @@ function parseContentXml(
           if (entry.formula || entry.hyperlink || styleDef) {
             const cell: Cell = {
               value: entry.value,
-              type:
-                entry.value === null
-                  ? "empty"
-                  : entry.value instanceof Date
-                    ? "date"
-                    : typeof entry.value === "object"
-                      ? "error"
-                      : (typeof entry.value as "string" | "number" | "boolean"),
+              type: valueType(entry.value),
             }
             if (entry.formula) {
               cell.formula = entry.formula

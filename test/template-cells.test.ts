@@ -11,7 +11,8 @@ import type { Cell, CellValue, Sheet, Workbook } from "../src/_types"
 /**
  * A workbook shaped the way the XLSX reader hands it back: `rows` carries
  * the plain values and `cells` carries the rich record for the same
- * coordinate. `fillTemplate` walks both, so both must be exercised.
+ * coordinate. `fillTemplate` visits the effective value once and keeps
+ * both representations synchronized, so both must be exercised.
  */
 function workbookWithCells(
   entries: Array<[number, number, Cell]>,
@@ -118,11 +119,10 @@ describe("fillTemplate — cell store keeps `type` in sync with `value`", () => 
   })
 
   it("stores a null replacement as a null value", () => {
-    // The `type` for a null replacement falls through to "string"; the
-    // writer keys off the null value, so the cell still serialises blank.
     const wb = workbookWithCells([[0, 0, cell("{{blank}}")]])
     fillTemplate(wb, { blank: null })
     expect(getCell(wb.sheets[0].cells!, 0, 0)!.value).toBe(null)
+    expect(getCell(wb.sheets[0].cells!, 0, 0)!.type).toBe("empty")
   })
 })
 

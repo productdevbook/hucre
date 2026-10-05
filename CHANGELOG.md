@@ -6,6 +6,11 @@ rather than as a list of commits.
 
 ## Unreleased — 2.0.0
 
+Search, replacement and templates share one value traversal for dense and
+sparse cells. Value edits update cell types and formula caches together,
+remove obsolete rich-text runs and retain styles and formula text. Partial
+metadata preserves inline cell fields; explicit null overrides clear values.
+
 Dense ODS/text normalization checks the growing rectangle before repeat
 expansion or padding. ODS row repeats carry formulas, cached values,
 hyperlinks, styles and horizontal merges; `maxRows` bounds repeats before

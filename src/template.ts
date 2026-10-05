@@ -1,4 +1,4 @@
-import { cellEntries } from "./cell-store"
+import { visitValues, setValue } from "./_sheet-values"
 // ── Template Engine ──────────────────────────────────────────────────
 // Fill {{placeholder}} patterns in workbook cells with data values.
 // Works with round-trip: openXlsx -> fillTemplate -> saveXlsx.
@@ -39,76 +39,22 @@ export function fillTemplate(workbook: Workbook, data: Record<string, CellValue>
   // a *function* into a cell — outside CellValue entirely. `constructor`,
   // `valueOf`, `hasOwnProperty` and `__proto__` behaved the same way.
   for (const sheet of workbook.sheets) {
-    for (let r = 0; r < sheet.rows.length; r++) {
-      const row = sheet.rows[r]!
-      for (let c = 0; c < row.length; c++) {
-        const val = row[c]
-        if (typeof val !== "string") continue
-
-        // Check if this cell has any placeholders
-        if (!val.includes("{{")) continue
-
-        // Check if the entire cell is a single placeholder
-        const singleMatch = val.match(/^\{\{\s*([^}\s]+)\s*\}\}$/)
-        if (singleMatch) {
-          const key = singleMatch[1]!
-          if (Object.hasOwn(data, key)) {
-            row[c] = data[key]!
-          }
-          // If key not in data, leave as-is
-          continue
-        }
-
-        // Multiple placeholders or mixed text: string replacement
-        const replaced = val.replace(PLACEHOLDER_RE, (match, key: string) => {
-          if (Object.hasOwn(data, key)) {
-            const replacement = data[key]
-            if (replacement === null) return ""
-            if (replacement instanceof Date) return replacement.toISOString()
-            if (isCellError(replacement)) return replacement.error
-            return String(replacement)
-          }
-          return match // leave unmatched placeholders as-is
-        })
-
-        row[c] = replaced
+    visitValues(sheet, (value, row, col, cell) => {
+      if (typeof value !== "string" || !value.includes("{{")) return
+      const single = /^\{\{\s*([^}\s]+)\s*\}\}$/.exec(value)
+      if (single) {
+        if (Object.hasOwn(data, single[1]!)) setValue(sheet, row, col, data[single[1]!]!, cell)
+        return
       }
-    }
-
-    // Also process the cell metadata if present (for rich cell data)
-    if (sheet.cells) {
-      for (const [, , cell] of cellEntries(sheet.cells)) {
-        if (typeof cell.value !== "string") continue
-        if (!cell.value.includes("{{")) continue
-
-        const singleMatch = cell.value.match(/^\{\{\s*([^}\s]+)\s*\}\}$/)
-        if (singleMatch) {
-          const dataKey = singleMatch[1]!
-          if (Object.hasOwn(data, dataKey)) {
-            cell.value = data[dataKey]!
-            // Update cell type based on value
-            if (typeof cell.value === "number") cell.type = "number"
-            else if (typeof cell.value === "boolean") cell.type = "boolean"
-            else if (cell.value instanceof Date) cell.type = "date"
-            else if (isCellError(cell.value)) cell.type = "error"
-            else cell.type = "string"
-          }
-          continue
-        }
-
-        cell.value = cell.value.replace(PLACEHOLDER_RE, (match, k: string) => {
-          if (Object.hasOwn(data, k)) {
-            const replacement = data[k]
-            if (replacement === null) return ""
-            if (replacement instanceof Date) return replacement.toISOString()
-            if (isCellError(replacement)) return replacement.error
-            return String(replacement)
-          }
-          return match
-        })
-      }
-    }
+      const next = value.replace(PLACEHOLDER_RE, (match, key: string) => {
+        if (!Object.hasOwn(data, key)) return match
+        const replacement = data[key]
+        if (replacement === null) return ""
+        if (replacement instanceof Date) return replacement.toISOString()
+        return isCellError(replacement) ? replacement.error : String(replacement)
+      })
+      if (next !== value) setValue(sheet, row, col, next, cell)
+    })
   }
-
   return workbook
 }

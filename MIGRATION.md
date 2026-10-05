@@ -11,6 +11,7 @@ Every change that can affect existing code is listed. TypeScript flags most of t
 | [Deprecated names removed](#deprecated-names-removed)             | you reference `DefterError`, `readNdjsonStream`, `headerRow: true`, `write()`/`end()`, or import a `parse*` part parser from the root |
 | [One workbook model](#one-workbook-model-for-reading-and-writing) | you use `WriteSheet`, `WriteOptions`, `toWriteOptions` or encoding options inside the workbook                                        |
 | [Structural edits](#structural-edits-share-reference-handling)    | you insert or delete rows/columns, or inspect range spelling                                                                          |
+| [Value edits](#value-edits-share-one-model)                       | you search, replace or fill templates on a styled/sparse workbook                                                                     |
 | [Numeric cell storage](#numeric-cell-storage)                     | you construct, inspect or mutate `Sheet.cells` using string keys                                                                      |
 
 ---
@@ -75,6 +76,25 @@ shortest way to author styles and formulas.
 Map and the coordinate strings retained by it. The store does not cap
 memory usage; streaming remains appropriate for large dense files. See
 `docs/PARITY.md` for the other bounds.
+
+## Value edits share one model
+
+**Behaviour:** `findCells`, `replaceCells` and `fillTemplate` visit each
+materialized coordinate once. Cell metadata overrides the dense row value;
+a formula's cached result is its effective value. Populated sparse cells
+are included without allocating their bounding box. Implicit blank cells
+outside the materialized grid are not scanned.
+
+Edits synchronize the existing dense slot, cell value, type and formula
+cache. Formula text is retained: these helpers edit stored results and do
+not calculate formulas. A new value clears old rich-text runs so a save
+cannot emit the pre-edit text; styles, links and comments are retained.
+Whole-placeholder null substitutions have type `"empty"`. A global/sticky
+RegExp is reset per cell; the caller's `lastIndex` cannot skip replacements.
+
+Partial `cells` metadata overlays inline cell fields instead of replacing
+the whole cell. `undefined` inherits; explicit `null` clears a value or
+formula cache. A style-only override therefore keeps the inline formula.
 
 ## Structural edits share reference handling
 

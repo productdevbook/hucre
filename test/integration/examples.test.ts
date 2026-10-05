@@ -6,7 +6,7 @@ import { readFileSync, readdirSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { readXlsx, streamXlsxRows, writeXlsx, openXlsx, saveXlsx } from "../../src/xlsx"
 import { flat } from "../support/workbook-model"
-import { insertRows, insertColumns } from "../../src/sheet-ops"
+import { insertRows, insertColumns, replaceCells } from "../../src/sheet-ops"
 import { parseCellRef, toRange } from "../../src/cell-utils"
 
 interface ScenarioSheet {
@@ -140,5 +140,27 @@ it.each(["authoring", "preserved"] as const)(
     expect(getCell(sheet.cells, 3, 4)?.formula).toBe("C4*D4")
     expect(getCell(sheet.cells, 4, 4)?.formula).toBe("SUM(E3:E4)")
     expect(getCell(sheet.cells, 2, 3)?.style?.numFmt).toBe("#,##0.00")
+  },
+)
+
+it.each(["authoring", "preserved"] as const)(
+  "edits independent invoice values and cached results through the %s path",
+  async (mode) => {
+    const input = bytes("invoice.xlsx")
+    const opened = mode === "preserved" ? await openXlsx(input) : undefined
+    const workbook = opened ?? (await readXlsx(input, { readStyles: true }))
+    const sheet = workbook.sheets[0]
+    expect(replaceCells(sheet, "Keyboard", "Keys")).toBe(1)
+    expect(replaceCells(sheet, 150, 151)).toBe(1)
+    const output = opened ? await saveXlsx(opened) : await writeXlsx(workbook)
+    const again = (await readXlsx(output, { readStyles: true })).sheets[0]
+    expect(again.rows).toEqual([
+      ["Item", "Quantity", "Unit price", "Amount"],
+      ["Keys", 2, 75, 151],
+      ["Mouse", 3, 20, 60],
+      ["Total", null, null, 210],
+    ])
+    expect(getCell(again.cells, 1, 3)).toMatchObject({ formula: "B2*C2", formulaResult: 151 })
+    expect(getCell(again.cells, 1, 3)?.style?.numFmt).toBe("#,##0.00")
   },
 )

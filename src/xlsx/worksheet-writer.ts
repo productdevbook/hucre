@@ -8,6 +8,7 @@ import type {
   AutoFilter,
   RowDef,
   SheetInput,
+  Cell,
   CellValue,
   CellStyle,
   ColumnDef,
@@ -34,7 +35,7 @@ import { calculateColumnWidth } from "./auto-width"
 import { DYNAMIC_ARRAY_CM } from "./metadata"
 import { hashSheetPassword } from "./password"
 import { validateColumnIndex } from "../_validate"
-import { toCellValue } from "../_inline-cells"
+import { mergeDefined, toCellValue } from "../_inline-cells"
 
 // ── Hyperlink Relationship ────────────────────────────────────────
 
@@ -211,18 +212,8 @@ export function writeSharedStringsXml(sharedStrings: SharedStringsCollector): st
  * Exported because the streaming writers build these too — see
  * {@link serializeCell}.
  */
-export interface ResolvedCell {
+export interface ResolvedCell extends Omit<Partial<Cell>, "value"> {
   value: CellValue
-  style?: CellStyle
-  checkbox?: boolean
-  formula?: string
-  formulaResult?: CellValue
-  formulaType?: "shared" | "array"
-  formulaSharedIndex?: number
-  formulaRef?: string
-  formulaDynamic?: boolean
-  richText?: RichTextRun[]
-  hyperlink?: Hyperlink
 }
 
 // ── Rich data-row values ───────────────────────────────────────────
@@ -820,19 +811,9 @@ function resolveRows(sheet: SheetInput): Array<Array<ResolvedCell | null>> {
       }
 
       const existing = row[c]
-      row[c] = {
-        value: cellOverride.value ?? existing?.value ?? null,
-        style: cellOverride.style ?? existing?.style,
-        checkbox: cellOverride.checkbox ?? existing?.checkbox,
-        formula: cellOverride.formula ?? existing?.formula,
-        formulaResult: cellOverride.formulaResult ?? existing?.formulaResult,
-        formulaType: cellOverride.formulaType ?? existing?.formulaType,
-        formulaSharedIndex: cellOverride.formulaSharedIndex ?? existing?.formulaSharedIndex,
-        formulaRef: cellOverride.formulaRef ?? existing?.formulaRef,
-        formulaDynamic: cellOverride.formulaDynamic ?? existing?.formulaDynamic,
-        richText: cellOverride.richText ?? existing?.richText,
-        hyperlink: cellOverride.hyperlink ?? existing?.hyperlink,
-      }
+      // Share the same partial-cell overlay as inline lifting. `??` used
+      // to discard explicit null values and resurrect the dense value.
+      row[c] = mergeDefined(existing ?? { value: null }, cellOverride)
     }
   }
 
