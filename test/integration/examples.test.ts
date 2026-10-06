@@ -9,6 +9,7 @@ import { readFileSync, readdirSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { readXlsx, streamXlsxRows, writeXlsx, openXlsx, saveXlsx } from "../../src/xlsx"
 import { flat } from "../support/workbook-model"
+import { writerPaths } from "../support/writer-paths"
 import { insertRows, insertColumns, replaceCells } from "../../src/sheet-ops"
 import { parseCellRef, toRange } from "../../src/cell-utils"
 
@@ -79,6 +80,36 @@ it("rebuilds the independent invoice from object data with shared header and for
   )
   expect(sheet).toEqual(before)
 })
+
+// This independently exported file has literal cached formula results.
+// Carry its complete cells through every adapter rather than rebuilding
+// expectations from another hucre write.
+for (const path of writerPaths) {
+  it(`preserves the independent invoice through ${path.name}`, async () => {
+    const source = (
+      await readXlsx(
+        new Uint8Array(
+          readFileSync(new URL("../../examples/workbooks/invoice.xlsx", import.meta.url)),
+        ),
+        { readStyles: true },
+      )
+    ).sheets[0]
+    const rows = source.rows.map((row, r) =>
+      row.map((value, c) => getCell(source.cells, r, c) ?? value),
+    )
+    const before = structuredClone(rows)
+    const result = (await path.read(await path.write(rows), { readStyles: true })).sheets[0]
+    expect(result.rows).toEqual([
+      ["Item", "Quantity", "Unit price", "Amount"],
+      ["Keyboard", 2, 75, 150],
+      ["Mouse", 3, 20, 60],
+      ["Total", null, null, 210],
+    ])
+    expect(getCell(result.cells, 3, 3)?.formulaResult).toBe(210)
+    expect(getCell(result.cells, 3, 3)?.formula).toBe("SUM(D2:D3)")
+    expect(rows).toEqual(before)
+  })
+}
 
 interface ScenarioSheet {
   name: string

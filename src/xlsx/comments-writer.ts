@@ -3,16 +3,23 @@ import type { CellStore } from "../_types"
 // ── Comments & VML Writer ─────────────────────────────────────────────
 // Generates xl/commentsN.xml and xl/drawings/vmlDrawingN.vml for XLSX.
 
-import type { Cell } from "../_types"
+import type { Cell, CellComment } from "../_types"
 import { xmlDocument, xmlElement, xmlEscape } from "../xml/writer"
-import { cellRef } from "./worksheet-writer"
+import { cellRef, serializeRichTextRuns } from "./worksheet-writer"
 
 // ── Types ────────────────────────────────────────────────────────────
 
 export interface CommentsResult {
   commentsXml: string
   vmlXml: string
-  comments: Array<{ ref: string; row: number; col: number; author: string; text: string }>
+  comments: CommentEntry[]
+}
+
+interface CommentEntry extends CellComment {
+  ref: string
+  row: number
+  col: number
+  author: string
 }
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -30,22 +37,18 @@ export function writeComments(
   sheetIndex: number,
 ): CommentsResult | null {
   // Collect comments from cells
-  const commentEntries: Array<{
-    ref: string
-    row: number
-    col: number
-    author: string
-    text: string
-  }> = []
+  const commentEntries: CommentEntry[] = []
 
   for (const [row, col, cell] of cellEntries(cells)) {
     if (!cell.comment) continue
 
-    const ref = cellRef(row, col)
-    const author = cell.comment.author ?? ""
-    const text = cell.comment.text
-
-    commentEntries.push({ ref, row, col, author, text })
+    commentEntries.push({
+      ...cell.comment,
+      ref: cellRef(row, col),
+      row,
+      col,
+      author: cell.comment.author ?? "",
+    })
   }
 
   if (commentEntries.length === 0) return null
@@ -61,37 +64,35 @@ export function writeComments(
     }
   }
 
-  // Generate comments.xml
-  const commentsXml = buildCommentsXml(commentEntries, authorMap)
-
-  // Generate VML drawing
-  const vmlXml = buildVmlDrawing(commentEntries, sheetIndex)
-
-  return { commentsXml, vmlXml, comments: commentEntries }
+  return {
+    commentsXml: buildCommentsXml(commentEntries, authorMap),
+    vmlXml: buildVmlDrawing(commentEntries, sheetIndex),
+    comments: commentEntries,
+  }
 }
 
 // ── Comments XML Builder ─────────────────────────────────────────────
 
-function buildCommentsXml(
-  entries: Array<{ ref: string; author: string; text: string }>,
-  authorMap: Map<string, number>,
-): string {
+function buildCommentsXml(entries: CommentEntry[], authorMap: Map<string, number>): string {
   // Build <authors> section
-  const authorElements: string[] = []
-  for (const [authorName] of authorMap) {
-    authorElements.push(xmlElement("author", undefined, xmlEscape(authorName)))
-  }
-  const authorsXml = xmlElement("authors", undefined, authorElements)
+  const authorsXml = xmlElement(
+    "authors",
+    undefined,
+    [...authorMap.keys()].map((author) => xmlElement("author", undefined, xmlEscape(author))),
+  )
 
   // Build <commentList> section
-  const commentElements: string[] = []
-  for (const entry of entries) {
+  const commentElements = entries.map((entry) => {
     const authorId = authorMap.get(entry.author) ?? 0
-    const textXml = xmlElement("text", undefined, [
-      xmlElement("r", undefined, [xmlElement("t", undefined, xmlEscape(entry.text))]),
-    ])
-    commentElements.push(xmlElement("comment", { ref: entry.ref, authorId }, [textXml]))
-  }
+    // Notes use the same run encoding as cells, including font properties
+    // and xml:space. Flattening here silently discarded comment.richText.
+    const textXml = xmlElement(
+      "text",
+      undefined,
+      serializeRichTextRuns(entry.richText?.length ? entry.richText : [{ text: entry.text }]),
+    )
+    return xmlElement("comment", { ref: entry.ref, authorId }, textXml)
+  })
   const commentListXml = xmlElement("commentList", undefined, commentElements)
 
   return xmlDocument("comments", { xmlns: NS_SPREADSHEET }, [authorsXml, commentListXml])
@@ -103,31 +104,23 @@ function buildVmlDrawing(
   entries: Array<{ ref: string; row: number; col: number }>,
   sheetIndex: number,
 ): string {
-  const parts: string[] = []
+  // Fold static markup into one prefix instead of retaining each fragment.
+  const parts: string[] = [
+    '<xml xmlns:v="urn:schemas-microsoft-com:vml"' +
+      ' xmlns:o="urn:schemas-microsoft-com:office:office"' +
+      ' xmlns:x="urn:schemas-microsoft-com:office:excel">' +
+      '<o:shapelayout v:ext="edit">' +
+      `<o:idmap v:ext="edit" data="${sheetIndex + 1}"/>` +
+      "</o:shapelayout>" +
+      '<v:shapetype id="_x0000_t202" coordsize="21600,21600" o:spt="202"' +
+      ' path="m,l,21600r21600,l21600,xe">' +
+      '<v:stroke joinstyle="miter"/>' +
+      '<v:path gradientshapeok="t" o:connecttype="rect"/>' +
+      "</v:shapetype>",
+  ]
 
-  // XML prologue (VML is not standard XML — uses a custom <xml> root)
-  parts.push(
-    '<xml xmlns:v="urn:schemas-microsoft-com:vml"',
-    ' xmlns:o="urn:schemas-microsoft-com:office:office"',
-    ' xmlns:x="urn:schemas-microsoft-com:office:excel">',
-  )
-
-  // Shape layout
-  parts.push(
-    '<o:shapelayout v:ext="edit">',
-    `<o:idmap v:ext="edit" data="${sheetIndex + 1}"/>`,
-    "</o:shapelayout>",
-  )
-
-  // Shape type definition (standard comment shape type)
-  parts.push(
-    '<v:shapetype id="_x0000_t202" coordsize="21600,21600" o:spt="202"',
-    ' path="m,l,21600r21600,l21600,xe">',
-    '<v:stroke joinstyle="miter"/>',
-    '<v:path gradientshapeok="t" o:connecttype="rect"/>',
-    "</v:shapetype>",
-  )
-
+  // One fragment per note keeps VML construction from retaining a dozen
+  // attribute/text fragments for every comment in a large streamed sheet.
   // Generate a shape for each comment
   const baseShapeId = (sheetIndex + 1) * 1024 + 1
   for (let i = 0; i < entries.length; i++) {
@@ -147,25 +140,25 @@ function buildVmlDrawing(
     const marginTop = entry.row * 15
 
     parts.push(
-      `<v:shape id="_x0000_s${shapeId}" type="#_x0000_t202"`,
-      ` style="position:absolute;margin-left:${marginLeft}pt;margin-top:${marginTop}pt;`,
-      `width:108pt;height:59.25pt;z-index:${i + 1};visibility:hidden"`,
-      ` fillcolor="#ffffe1" o:insetmode="auto">`,
-      '<v:fill color2="#ffffe1"/>',
-      '<v:shadow on="t" color="black" obscured="t"/>',
-      '<v:path o:connecttype="none"/>',
-      '<v:textbox style="mso-direction-alt:auto">',
-      '<div style="text-align:left"/>',
-      "</v:textbox>",
-      '<x:ClientData ObjectType="Note">',
-      "<x:MoveWithCells/>",
-      "<x:SizeWithCells/>",
-      `<x:Anchor>${anchorCol},15,${anchorRow},2,${rightCol},31,${bottomRow},4</x:Anchor>`,
-      "<x:AutoFill>False</x:AutoFill>",
-      `<x:Row>${entry.row}</x:Row>`,
-      `<x:Column>${entry.col}</x:Column>`,
-      "</x:ClientData>",
-      "</v:shape>",
+      `<v:shape id="_x0000_s${shapeId}" type="#_x0000_t202"` +
+        ` style="position:absolute;margin-left:${marginLeft}pt;margin-top:${marginTop}pt;` +
+        `width:108pt;height:59.25pt;z-index:${i + 1};visibility:hidden"` +
+        ` fillcolor="#ffffe1" o:insetmode="auto">` +
+        '<v:fill color2="#ffffe1"/>' +
+        '<v:shadow on="t" color="black" obscured="t"/>' +
+        '<v:path o:connecttype="none"/>' +
+        '<v:textbox style="mso-direction-alt:auto">' +
+        '<div style="text-align:left"/>' +
+        "</v:textbox>" +
+        '<x:ClientData ObjectType="Note">' +
+        "<x:MoveWithCells/>" +
+        "<x:SizeWithCells/>" +
+        `<x:Anchor>${anchorCol},15,${anchorRow},2,${rightCol},31,${bottomRow},4</x:Anchor>` +
+        "<x:AutoFill>False</x:AutoFill>" +
+        `<x:Row>${entry.row}</x:Row>` +
+        `<x:Column>${entry.col}</x:Column>` +
+        "</x:ClientData>" +
+        "</v:shape>",
     )
   }
 

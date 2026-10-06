@@ -239,10 +239,10 @@ export interface Cell {
 /**
  * What a writer accepts where a cell goes: a bare value, or a cell
  * object — `{ value, style }`, `{ formula }`, anything a {@link Cell}
- * carries. One type for every writer; v1 had four spellings of it
+ * carries, or the {@link HyperlinkValue} returned by link(). One type for every writer; v1 had four spellings of it
  * (`Partial<Cell>`, `StreamStyledCell`, `OdsStyledCell`, `OdsWriteCell`).
  */
-export type CellInput = CellValue | Partial<Cell>
+export type CellInput = CellValue | Partial<Cell> | HyperlinkValue
 
 // ── Column Definition ──────────────────────────────────────────────
 
@@ -1765,7 +1765,7 @@ export interface SheetInput extends Omit<
   /** Positional rows; supply either rows or data, never both. */
   rows?: CellInput[][]
   /** Object rows. Omitted columns are inferred from all own keys in first-seen order. */
-  data?: Array<Record<string, CellValue | HyperlinkValue>>
+  data?: Array<Record<string, CellInput>>
   cells?: CellStore<Partial<Cell>>
   merges?: Array<MergeRange | string>
   charts?: Array<Chart | SheetChart>
@@ -1781,6 +1781,8 @@ export interface WorkbookInput extends Omit<Workbook, "sheets"> {
 export interface WriteModelDrop {
   field: string
   sheet?: string
+  /** A1 coordinate when a cell feature is omitted. */
+  cell?: string
   reason: string
 }
 

@@ -221,17 +221,9 @@ export async function writeXlsx(
 
   for (let i = 0; i < sheets.length; i++) {
     const sheet = sheets[i]
-    if (sheet.cells) {
-      const result = writeComments(sheet.cells, i)
-      if (result) {
-        commentsResults.push(result)
-        commentIndices.push(i + 1)
-      } else {
-        commentsResults.push(null)
-      }
-    } else {
-      commentsResults.push(null)
-    }
+    const result = sheet.cells ? writeComments(sheet.cells, i) : null
+    commentsResults.push(result)
+    if (result) commentIndices.push(i + 1)
   }
 
   // Collect all table indices for content types

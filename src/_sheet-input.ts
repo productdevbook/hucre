@@ -5,7 +5,6 @@
 import type { CellInput, CellStyle, ColumnDef, SheetInput } from "./_types"
 import { collectHeaders } from "./_objects"
 import { splitInlineCells } from "./_inline-cells"
-import { isHyperlinkValue } from "./xlsx/hyperlink"
 import { InvalidArgumentError } from "./errors"
 
 /** A column numFmt is a default; the explicit style's format wins. */
@@ -45,16 +44,7 @@ export function normalizeSheetInput<T extends SheetInput>(
     rows.push(
       columns.map((col) => {
         const key = col.key ?? col.header
-        const value = key !== undefined && Object.hasOwn(record, key) ? (record[key] ?? null) : null
-        if (!isHyperlinkValue(value)) return value
-        const hyperlink = value.hyperlink.startsWith("#")
-          ? { target: "", location: value.hyperlink.slice(1), display: value.text }
-          : { target: value.hyperlink, display: value.text }
-        return {
-          value: value.text,
-          hyperlink:
-            value.tooltip === undefined ? hyperlink : { ...hyperlink, tooltip: value.tooltip },
-        }
+        return key !== undefined && Object.hasOwn(record, key) ? (record[key] ?? null) : null
       }),
     )
   }

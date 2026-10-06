@@ -138,7 +138,7 @@ try {
     writeFileSync(
       probe,
       [
-        `import { read, ParseError, readXlsx, writeXlsx, insertRows, replaceCells, readObjects, sheetToObjects, toJson, write } from "hucre"`,
+        `import { read, ParseError, readXlsx, writeXlsx, insertRows, replaceCells, readObjects, sheetToObjects, toJson, write, writeXlsxStream, XlsxStreamWriter, writeOds, readOds as readOdsRoot, writeOdsStream, OdsStreamWriter, link } from "hucre"`,
         `import { writeXlsx as x } from "hucre/xlsx"`,
         `import { parseCsv } from "hucre/csv"`,
         `import { readOds } from "hucre/ods"`,
@@ -179,6 +179,16 @@ try {
         `bounded = false`,
         `try { parseJson('[{"a":1,"b":2},{"a":3}]', { maxTotalCells: 3 }) } catch (error) { bounded = error instanceof ParseError }`,
         `if (!bounded) throw new Error("installed JSON expansion ignored its bound")`,
+        `const inline = [[{ value: 1, formula: "6*7", formulaResult: 42 }, link("Open", "https://example.com/a"), { value: true, checkbox: true, comment: { text: "Note" } }]]`,
+        `const inc = new XlsxStreamWriter({ name: "S" }); inc.addRow(inline[0])`,
+        `for (const out of [await inc.finish(), new Uint8Array(await new Response(writeXlsxStream(inline, { name: "S" })).arrayBuffer())]) {`,
+        `  const s = (await readXlsx(out)).sheets[0]`,
+        `  if (s.rows[0][0] !== 42 || getCell(s.cells, 0, 1)?.hyperlink?.target !== "https://example.com/a" || getCell(s.cells, 0, 2)?.comment?.text !== "Note" || !getCell(s.cells, 0, 2)?.checkbox) throw new Error("installed XLSX stream discarded inline metadata")`,
+        `}`,
+        `const oi = new OdsStreamWriter({ name: "S" }); oi.addRow(inline[0])`,
+        `for (const out of [await writeOds({ sheets: [{ name: "S", rows: inline }] }), await oi.finish(), new Uint8Array(await new Response(writeOdsStream(inline, { name: "S" })).arrayBuffer())]) {`,
+        `  if ((await readOdsRoot(out)).sheets[0].rows[0][0] !== 42) throw new Error("installed ODS writer discarded the explicit cache")`,
+        `}`,
         `console.log("entry points ok")`,
       ].join("\n"),
     )

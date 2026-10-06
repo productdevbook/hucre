@@ -1,7 +1,7 @@
 // ── Incremental ODS Writer ──────────────────────────────────────────
 //
 // The last empty cell in the streaming matrix. `writeOdsStream` covers
-// the constant-memory case and carries values only, because ODF puts
+// the constant-memory case and carries unstyled cells, because ODF puts
 // `<office:automatic-styles>` *before* the body: a style first seen on
 // row 900,000 has nowhere to be declared once the body has gone out.
 //
@@ -12,10 +12,13 @@
 // memory, `XlsxStreamWriter` for a buffer you can style. See #467.
 
 import { InvalidArgumentError } from "../errors"
-import { isInlineCell } from "../_inline-cells"
+import { resolveCellInput } from "../_inline-cells"
+import { columnCellStyle } from "../_sheet-input"
+import { reportOdsCellDrops } from "./cell-drops"
 import type {
-  CellValue,
   CellStyle,
+  ColumnDef,
+  WorkbookWriteOptions,
   WorkbookProperties,
   CellInput,
   SpreadsheetStreamWriter,
@@ -39,7 +42,7 @@ const encoder = /* @__PURE__ */ new TextEncoder()
 
 /** A cell that brings its own formatting, or just a value. */
 
-export interface OdsStreamWriterOptions {
+export interface OdsStreamWriterOptions extends WorkbookWriteOptions {
   /** Sheet name. Excel's limits apply — LibreOffice enforces them too. */
   name?: string
   /**
@@ -47,7 +50,7 @@ export interface OdsStreamWriterOptions {
    * are carried, unlike in `writeOdsStream` where the body has already
    * gone out by the time a style is known.
    */
-  columns?: Array<{ header?: string; key?: string; width?: number; style?: CellStyle }>
+  columns?: Array<Pick<ColumnDef, "header" | "key" | "width" | "style" | "numFmt">>
   /** Document properties written to `meta.xml`. */
   properties?: WorkbookProperties
 }
@@ -59,7 +62,7 @@ export interface OdsStreamWriterOptions {
  * is built — but every serialized row is retained until {@link finish}
  * assembles the archive, so peak memory scales with the data. For
  * constant-memory output use `writeOdsStream` instead, and accept that
- * it carries values only.
+ * it carries unstyled values, formulas, rich text and links.
  *
  * ```ts
  * const writer = new OdsStreamWriter({
@@ -70,7 +73,7 @@ export interface OdsStreamWriterOptions {
  * const bytes = await writer.finish()
  * ```
  *
- * Implements the same `addRow` / `addObject` / `finish` / `toStream`
+ * Implements the same `addRow` / `addObject` / `finish`
  * vocabulary as the other incremental writers, so a format-agnostic
  * helper written against `SpreadsheetStreamWriter` takes it unchanged.
  */
@@ -79,6 +82,8 @@ export class OdsStreamWriter implements SpreadsheetStreamWriter {
   private columns: OdsStreamWriterOptions["columns"]
   private properties: WorkbookProperties | undefined
   private collector = createStyleCollector()
+  private columnCellStyles: Array<CellStyle | undefined>
+  private onDrop: WorkbookWriteOptions["onDrop"]
   private rowFragments: string[] = []
   private maxCols = 0
   private done = false
@@ -87,6 +92,8 @@ export class OdsStreamWriter implements SpreadsheetStreamWriter {
     this.sheetName = options?.name ?? "Sheet1"
     validateSheetNames([{ name: this.sheetName }])
     this.columns = options?.columns
+    this.columnCellStyles = this.columns?.map(columnCellStyle) ?? []
+    this.onDrop = options?.onDrop
     this.properties = options?.properties
 
     // A header row is written immediately, the same as XlsxStreamWriter
@@ -106,23 +113,18 @@ export class OdsStreamWriter implements SpreadsheetStreamWriter {
 
     const cells: string[] = []
     for (let i = 0; i < values.length; i++) {
-      const raw = values[i]
-      const styled = isInlineCell(raw) ? raw : undefined
-      const value = styled ? (styled.value ?? null) : (raw as CellValue)
+      const cell = resolveCellInput(values[i])
+      reportOdsCellDrops(cell, this.onDrop, this.sheetName, this.rowFragments.length, i)
 
       // A cell's own style wins over its column's, which is the same
       // precedence XlsxStreamWriter uses.
-      const style = styled?.style ?? this.columns?.[i]?.style
-      const ctx: CellContext = {}
+      const style = cell.style ?? this.columnCellStyles[i]
+      const ctx: CellContext = { cellOverride: cell }
       if (style) {
         const name = getOrCreateStyleName(this.collector, style)
         if (name) ctx.styleName = name
       }
-      if (styled?.formula !== undefined) {
-        ctx.cellOverride = { formula: styled.formula }
-      }
-
-      cells.push(cellToOds(value, ctx, this.collector))
+      cells.push(cellToOds(cell.value, ctx, this.collector))
     }
 
     this.rowFragments.push(`<table:table-row>${cells.join("")}</table:table-row>`)

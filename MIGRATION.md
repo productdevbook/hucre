@@ -328,7 +328,27 @@ and every one is an `AsyncGenerator`, so one `for await` loop works across forma
 + return new Response(await writer.finish())
 ```
 
-Every writer takes `CellInput` — `CellValue | Partial<Cell>` — where a cell goes. `StreamStyledCell`, `OdsStyledCell`, `OdsIncrementalCell`, `OdsWriteCell` and `OdsWriteRow` were five names for that one shape and are removed; a `{ value, style }` object is written where it always was. The CSV and NDJSON writers take it too and keep the value, since those formats carry nothing else.
+Every writer takes `CellInput` — `CellValue | Partial<Cell> | HyperlinkValue` — where a cell goes. `StreamStyledCell`, `OdsStyledCell`, `OdsIncrementalCell`, `OdsWriteCell` and `OdsWriteRow` were five names for that one shape and are removed; a `{ value, style }` object is written where it always was. The CSV and NDJSON writers take it too and keep the value, since those formats carry nothing else.
+
+An explicit `formulaResult`, including null, now wins over `value` in every
+spreadsheet writer. When a formula omits its cache, `value` remains the cache
+fallback. `link()` works in positional rows as well as object data; object
+data can also contain the same partial cell shapes as rows. Inputs are not
+mutated. XLSX streams forward shared/array/dynamic formulas, checkbox flags,
+rich text, links and comments, including the required ZIP parts. Repeated
+headers capture nested metadata when they are first written.
+
+ODS buffered and incremental writers retain supported styles, rich-text
+content and links. True ODS streaming preserves unstyled text/links/formulas
+and reports cell styles and rich-text fonts it omits through `onDrop`.
+All three ODS writers report XLSX formula metadata, checkboxes and comments
+as `cells.<field>` drops with `sheet` and A1 `cell` coordinates. These are
+cell-field decisions, not a claim that every nested style property maps to ODF.
+
+XLSX streaming does not retain source rows, but links and comments must wait
+for the current physical sheet's separate parts. Memory includes these,
+distinct styles, optional shared strings, a captured header and ZIP records.
+Metadata on every row therefore consumes memory proportional to its count.
 
 `OdsStreamWriter` now declares `implements SpreadsheetStreamWriter`; it satisfied the interface in v1 without saying so.
 

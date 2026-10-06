@@ -25,6 +25,8 @@ import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape as escapeXmlText } fro
 import { replaceA1Ranges, toRanges } from "../cell-utils"
 import { toCellValues } from "../_inline-cells"
 import { columnCellStyle } from "../_sheet-input"
+import { effectiveValue } from "../_sheet-values"
+import { reportOdsCellDrops } from "./cell-drops"
 
 const encoder = /* @__PURE__ */ new TextEncoder()
 
@@ -1122,6 +1124,7 @@ function rowToOds(
   styleCollector: StyleCollector,
   maxCol: number,
   columnStyles: Array<CellStyle | undefined>,
+  onDrop?: WorkbookWriteOptions["onDrop"],
 ): string {
   const cellElements: string[] = []
 
@@ -1180,13 +1183,11 @@ function rowToOds(
 
     // Get cell override for values, formulas, hyperlinks, styles
     const cellOverride = getCell(sheet.cells, rowIndex, i)
+    if (cellOverride) reportOdsCellDrops(cellOverride, onDrop, sheet.name, rowIndex, i)
 
-    // The override's value wins, matching resolveRows in the XLSX writer.
-    // Reading only from `row` meant an override past the row's last value
-    // serialized as an empty cell even once the grid had been grown to
-    // reach it. See #393.
-    const cell =
-      cellOverride?.value !== undefined ? cellOverride.value : i < row.length ? row[i] : null
+    // Match the shared model's precedence, including explicit formula
+    // caches and sparse values beyond the dense row's last column.
+    const cell = effectiveValue(cellOverride, i < row.length ? row[i] : null)
 
     // Build cell context
     const ctx: CellContext = {}
@@ -1243,7 +1244,10 @@ function rowToOds(
 
 // ── content.xml ─────────────────────────────────────────────────────
 
-function writeContentXml(options: WritableWorkbook): string {
+function writeContentXml(
+  options: WritableWorkbook,
+  onDrop?: WorkbookWriteOptions["onDrop"],
+): string {
   const { sheets } = options
 
   const styleCollector = createStyleCollector()
@@ -1315,7 +1319,9 @@ function writeContentXml(options: WritableWorkbook): string {
     // Emit rows (extend to cover merged rows beyond data)
     for (let r = 0; r < rowCount; r++) {
       const row = r < rows.length ? rows[r] : []
-      children.push(rowToOds(row, r, sheet, mergeMap, styleCollector, colCount - 1, columnStyles))
+      children.push(
+        rowToOds(row, r, sheet, mergeMap, styleCollector, colCount - 1, columnStyles, onDrop),
+      )
     }
 
     sheetXmlParts.push(children)
@@ -1545,7 +1551,7 @@ export async function writeOds(
   zip.add("META-INF/manifest.xml", encoder.encode(writeManifestXml()))
 
   // content.xml — main spreadsheet data
-  zip.add("content.xml", encoder.encode(writeContentXml(options)))
+  zip.add("content.xml", encoder.encode(writeContentXml(options, writeOptions?.onDrop)))
 
   // meta.xml — document metadata
   zip.add("meta.xml", encoder.encode(writeMetaXml(options.properties)))
