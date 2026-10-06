@@ -3,7 +3,8 @@
 // Parses shared strings and styles upfront (small), then streams
 // worksheet rows without buffering the entire sheet in memory.
 
-import type { CellValue, ReadOptions, StreamRow } from "../_types"
+import { cellError } from "../cell-error"
+import type { CellValue, XlsxReadOptions, StreamRow } from "../_types"
 import type { SharedString } from "./shared-strings"
 import type { ParsedStyles } from "./styles"
 import type { Relationship } from "./relationships"
@@ -28,6 +29,9 @@ import { serialToDate } from "../_date"
 // the two had near-identical shapes under two names. Re-exported here so
 // `import type { StreamRow } from "hucre/xlsx"` keeps working.
 export type { StreamRow } from "../_types"
+
+/** A row as the SAX layer builds it; the sheet index is added on the way out. */
+type RawRow = { index: number; values: CellValue[] }
 
 // ── Range filter ────────────────────────────────────────────────────
 
@@ -96,7 +100,7 @@ interface SheetInfo {
 
 function parseWorkbookXml(
   xml: string,
-  options?: ReadOptions,
+  options?: XlsxReadOptions,
 ): { sheets: SheetInfo[]; dateSystem: "1900" | "1904" } {
   const doc = parseXml(xml)
   const sheets: SheetInfo[] = []
@@ -297,7 +301,7 @@ function handleCloseTag(
   sharedStrings: SharedString[],
   styles: ParsedStyles | null,
   dateSystem: "1900" | "1904",
-): StreamRow | null {
+): RawRow | null {
   const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag
 
   switch (local) {
@@ -307,7 +311,7 @@ function handleCloseTag(
     case "row":
       if (s.inRow) {
         const values = buildRowFromCells(s.currentRowCells)
-        const row: StreamRow = { index: s.currentRowIndex, values }
+        const row: RawRow = { index: s.currentRowIndex, values }
         s.inRow = false
         return row
       }
@@ -374,7 +378,7 @@ function handleCloseTag(
  * masked to `null` rather than removed, so callers can still address
  * `row.values[colIndex]` for columns inside the range.
  */
-function applyRangeFilter(row: StreamRow, range: RangeFilter): StreamRow | null {
+function applyRangeFilter(row: RawRow, range: RangeFilter): RawRow | null {
   if (row.index < range.startRow || row.index > range.endRow) return null
   const len = Math.max(row.values.length, range.endCol + 1)
   const out: CellValue[] = Array.from({ length: len }, () => null)
@@ -392,9 +396,10 @@ async function* parseWorksheetRowsStreaming(
   sharedStrings: SharedString[],
   styles: ParsedStyles | null,
   dateSystem: "1900" | "1904",
-  filters: { range?: RangeFilter; maxRows?: number } = {},
+  filters: { range?: RangeFilter; maxRows?: number; sheet?: number } = {},
 ): AsyncGenerator<StreamRow, void, undefined> {
   const s = createRowSaxState()
+  const sheet = filters.sheet ?? 0
   const pendingRows: StreamRow[] = []
   let resolve: (() => void) | null = null
   let done = false
@@ -461,7 +466,7 @@ async function* parseWorksheetRowsStreaming(
         }
         const filtered = range ? applyRangeFilter(row, range) : row
         if (filtered) {
-          pendingRows.push(filtered)
+          pendingRows.push({ index: filtered.index, sheet, values: filtered.values })
           emittedDataRows++
           if (resolve) {
             resolve()
@@ -562,8 +567,7 @@ function resolveStreamCellValue(
       return valueText === "1" || valueText.toLowerCase() === "true"
     }
     case "e": {
-      // Error
-      return valueText
+      return cellError(valueText)
     }
     case "d": {
       // ISO 8601 date (ECMA-376 §18.18.11 ST_CellType), which openpyxl
@@ -592,7 +596,7 @@ function resolveStreamCellValue(
       if (!Number.isNaN(num)) {
         // Check if this is a date via style
         if (styles && styleIndex >= 0 && isDateStyle(styles, styleIndex)) {
-          return serialToDate(num, dateSystem === "1904")
+          return serialToDate(num, dateSystem)
         }
         return num
       }
@@ -613,7 +617,7 @@ function resolveStreamCellValue(
  * central directory, then the worksheet entry is stream-decompressed
  * and piped through the SAX parser in chunks.
  *
- * Honored {@link ReadOptions} fields:
+ * Honored {@link XlsxReadOptions} fields:
  * - `sheet` — target sheet (number index or name). Default: first sheet.
  * - `dateSystem` — `"1900"` / `"1904"` / `"auto"`. Default: auto-detect.
  * - `range` — A1-style range filter (e.g. `"B2:D10"`). Rows outside the
@@ -629,6 +633,8 @@ function resolveStreamCellValue(
 
 interface ResolvedMeta {
   wsPath: string
+  /** 0-based position of the target sheet in the workbook. */
+  sheetIndex: number
   sharedStrings: SharedString[]
   parsedStyles: ParsedStyles | null
   dateSystem: "1900" | "1904"
@@ -654,7 +660,7 @@ function shouldCollectEntry(name: string): boolean {
  */
 function resolveFromParts(
   parts: Map<string, Uint8Array>,
-  options?: ReadOptions & { sheet?: number | string },
+  options?: XlsxReadOptions & { sheet?: number | string },
 ): ResolvedMeta | null {
   const ct = parts.get("[Content_Types].xml")
   const rootRelsBytes = parts.get("_rels/.rels")
@@ -718,7 +724,13 @@ function resolveFromParts(
     parsedStyles = parseStyles(decodeUtf8Unchecked(stylesBytes))
   }
 
-  return { wsPath, sharedStrings, parsedStyles, dateSystem }
+  return {
+    wsPath,
+    sheetIndex: sheetInfos.indexOf(targetSheet),
+    sharedStrings,
+    parsedStyles,
+    dateSystem,
+  }
 }
 
 type PrepareResult =
@@ -733,7 +745,7 @@ type PrepareResult =
  */
 async function prepareStreaming(
   input: ReadableStream<Uint8Array>,
-  options?: ReadOptions & { sheet?: number | string },
+  options?: XlsxReadOptions & { sheet?: number | string },
 ): Promise<PrepareResult> {
   const zr = new ZipStreamReader(input)
   const parts = new Map<string, Uint8Array>()
@@ -780,7 +792,7 @@ async function prepareStreaming(
 
 export async function* streamXlsxRows(
   input: Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>,
-  options?: ReadOptions & { sheet?: number | string },
+  options?: XlsxReadOptions & { sheet?: number | string },
 ): AsyncGenerator<StreamRow, void, undefined> {
   // Normalize input to Uint8Array for ZIP central directory parsing.
   let data: Uint8Array
@@ -807,6 +819,7 @@ export async function* streamXlsxRows(
         {
           range: rangeFilter,
           maxRows: maxRowsLimit > 0 ? maxRowsLimit : undefined,
+          sheet: prep.meta.sheetIndex,
         },
       )
       return
@@ -929,7 +942,7 @@ export async function* streamXlsxRows(
     throw new ParseError(`Invalid XLSX: missing worksheet file for sheet "${targetSheet.name}"`)
   }
 
-  // 10. Build optional row/cell filters from ReadOptions.
+  // 10. Build optional row/cell filters from XlsxReadOptions.
   // `range` and `maxRows` mirror the batch-reader semantics: range filters
   // both rows (skip outside) and cells (mask outside columns), maxRows
   // caps the number of yielded rows. Both stop pulling from the worksheet
@@ -948,5 +961,6 @@ export async function* streamXlsxRows(
   yield* parseWorksheetRowsStreaming(wsStream, sharedStrings, parsedStyles, dateSystem, {
     range: rangeFilter,
     maxRows: maxRowsLimit > 0 ? maxRowsLimit : undefined,
+    sheet: sheetInfos.indexOf(targetSheet),
   })
 }

@@ -1,3 +1,4 @@
+import { HucreError } from "../errors"
 import type { CsvReadOptions, CellValue } from "../_types"
 import { parseCsv } from "./reader"
 
@@ -13,7 +14,7 @@ import { parseCsv } from "./reader"
  */
 export async function fetchCsv(url: string, options?: CsvReadOptions): Promise<CellValue[][]> {
   const response = await fetch(url)
-  if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`)
+  if (!response.ok) throw new HucreError(`Failed to fetch: ${response.status}`)
 
   const declared = charsetOf(response.headers.get("content-type"))
   const bytes = new Uint8Array(await response.arrayBuffer())

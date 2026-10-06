@@ -1,3 +1,4 @@
+import { createCellStore } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip"
@@ -6,7 +7,7 @@ import { cloneChart } from "../src/xlsx/chart-clone"
 import { ZipReader } from "../src/zip/reader"
 import { ZipWriter } from "../src/zip/writer"
 import { EncryptedFileError } from "../src/errors"
-import type { CellValue, Chart, SheetChart, WritePivotTable, WriteSheet } from "../src/_types"
+import type { CellValue, Chart, SheetChart, WritePivotTable, SheetInput } from "../src/_types"
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder("utf-8")
@@ -40,7 +41,7 @@ async function withParts(
 }
 
 // Declared as its own grid rather than read back off `SALES` — a
-// `WriteSheet` row may now hold a cell object as well as a value (#433),
+// `SheetInput` row may now hold a cell object as well as a value (#433),
 // and `resolvePivotSource` takes values.
 const SALES_ROWS: CellValue[][] = [
   ["Region", "Product", "Quarter", "Revenue"],
@@ -50,7 +51,7 @@ const SALES_ROWS: CellValue[][] = [
   ["US", "Gadget", "Q2", 75],
 ]
 
-const SALES: WriteSheet = { name: "Data", rows: SALES_ROWS }
+const SALES: SheetInput = { name: "Data", rows: SALES_ROWS }
 
 // ═══════════════════════════════════════════════════════════════════════
 // pivot-writer — axis placement
@@ -301,19 +302,27 @@ describe("pivot input validation", () => {
 
 describe("openXlsx on an encrypted workbook", () => {
   it("refuses to open a password-protected file without the password", async () => {
-    const enc = await writeXlsx({
-      sheets: [{ name: "S", rows: [["a"]] }],
-      encryption: { password: "pw", spinCount: 64 },
-    })
+    const enc = await writeXlsx(
+      {
+        sheets: [{ name: "S", rows: [["a"]] }],
+      },
+      {
+        encryption: { password: "pw", spinCount: 64 },
+      },
+    )
 
     await expect(openXlsx(enc)).rejects.toBeInstanceOf(EncryptedFileError)
   })
 
   it("decrypts up front so the preserved raw entries are plaintext parts", async () => {
-    const enc = await writeXlsx({
-      sheets: [{ name: "S", rows: [["kept"]] }],
-      encryption: { password: "pw", spinCount: 64 },
-    })
+    const enc = await writeXlsx(
+      {
+        sheets: [{ name: "S", rows: [["kept"]] }],
+      },
+      {
+        encryption: { password: "pw", spinCount: 64 },
+      },
+    )
     const wb = await openXlsx(enc, { password: "pw" })
     const saved = await saveXlsx(wb)
 
@@ -330,7 +339,7 @@ describe("openXlsx on an encrypted workbook", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("openXlsx → saveXlsx keeps Excel tables", () => {
-  const withTable: WriteSheet = {
+  const withTable: SheetInput = {
     name: "S",
     rows: [
       ["Name", "Price"],
@@ -357,7 +366,7 @@ describe("openXlsx → saveXlsx keeps Excel tables", () => {
   })
 
   it("numbers tables across sheets from a single global counter", async () => {
-    const second: WriteSheet = { ...withTable, name: "S2" }
+    const second: SheetInput = { ...withTable, name: "S2" }
     second.tables = [{ name: "Second", range: "A1:B3", columns: [{ name: "Name" }] }]
     const saved = await saveXlsx(await openXlsx(await writeXlsx({ sheets: [withTable, second] })))
 
@@ -498,7 +507,7 @@ describe("openXlsx → saveXlsx re-declares foreign workbook parts", () => {
   })
 
   it("keeps two pivot caches and their pivot tables", async () => {
-    const pivotSheet: WriteSheet = {
+    const pivotSheet: SheetInput = {
       name: "Pivots",
       pivotTables: [
         {
@@ -634,7 +643,7 @@ describe("chart parts survive the roundtrip", () => {
   it("inserts the re-anchored <drawing> before <tableParts>", async () => {
     // CT_Worksheet fixes the child order: `drawing` precedes `tableParts`.
     // Appending at the end of the body would make Excel reject the sheet.
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       ...SALES,
       charts: [chartOn(7, "Sales")],
       tables: [
@@ -691,10 +700,12 @@ describe("chart parts survive the roundtrip", () => {
     // Sheet rels list hyperlinks first, and some producers ship an
     // unnumbered `drawing.xml`. Neither may stop the scan that maps the
     // sheet onto its chart-bearing drawing.
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       ...SALES,
       charts: [chartOn(7, "Sales")],
-      cells: new Map([["0,0", { value: "Region", hyperlink: { target: "https://example.com" } }]]),
+      cells: createCellStore([
+        [0, 0, { value: "Region", hyperlink: { target: "https://example.com" } }],
+      ]),
     }
     const base = await writeXlsx({ sheets: [sheet] })
     const relsPath = "xl/worksheets/_rels/sheet1.xml.rels"

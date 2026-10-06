@@ -1,3 +1,4 @@
+import { createCellStore } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { parseXml, parseSax } from "../src/xml/parser"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
@@ -5,11 +6,11 @@ import { createSharedStrings, writeWorksheetXml } from "../src/xlsx/worksheet-wr
 import { writeWorkbookXml } from "../src/xlsx/workbook-writer"
 import { writeAppProperties } from "../src/xlsx/doc-props-writer"
 import { parseStyles } from "../src/xlsx/styles"
-import type { WriteSheet, WriteOptions } from "../src/_types"
+import type { SheetInput, WorkbookInput } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function writeXml(sheet: WriteSheet): string {
+function writeXml(sheet: SheetInput): string {
   const styles = createStylesCollector()
   const ss = createSharedStrings()
   const result = writeWorksheetXml(sheet, styles, ss)
@@ -59,7 +60,7 @@ describe("#125: dxfs element when count is 0", () => {
 
 describe("#90: Active sheet index write", () => {
   it("writes activeTab from activeSheet parameter", () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       { name: "Sheet1", rows: [["a"]] },
       { name: "Sheet2", rows: [["b"]] },
     ]
@@ -74,7 +75,7 @@ describe("#90: Active sheet index write", () => {
   })
 
   it("defaults activeTab to 0 when not specified", () => {
-    const sheets: WriteSheet[] = [{ name: "Sheet1", rows: [["a"]] }]
+    const sheets: SheetInput[] = [{ name: "Sheet1", rows: [["a"]] }]
 
     const xml = writeWorkbookXml(sheets)
     const doc = parseXml(xml)
@@ -89,7 +90,7 @@ describe("#90: Active sheet index write", () => {
 
 describe("#87: Tab color support", () => {
   it("writes tabColor inside sheetPr", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       view: { tabColor: { rgb: "FF0000" } },
@@ -111,12 +112,13 @@ describe("#87: Tab color support", () => {
 
 describe("#89: Rich text writing", () => {
   it("writes inline rich text with font properties", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [],
-      cells: new Map([
+      cells: createCellStore([
         [
-          "0,0",
+          0,
+          0,
           {
             richText: [
               { text: "Hello ", font: { bold: true } },
@@ -154,7 +156,7 @@ describe("#89: Rich text writing", () => {
 
 describe("#128: Worksheet element ordering per OOXML spec", () => {
   it("follows correct order: sheetPr, dimension, sheetViews, sheetFormatPr, cols, sheetData, ...", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [
         ["A", "B"],
@@ -196,7 +198,7 @@ describe("#128: Worksheet element ordering per OOXML spec", () => {
   })
 
   it("dimension comes before sheetViews", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
     }
@@ -277,7 +279,7 @@ describe("#121: XML parser BOM handling", () => {
 
 describe("#94: Workbook calcPr", () => {
   it("includes <calcPr> element in workbook.xml", () => {
-    const sheets: WriteSheet[] = [{ name: "Sheet1", rows: [["a"]] }]
+    const sheets: SheetInput[] = [{ name: "Sheet1", rows: [["a"]] }]
     const xml = writeWorkbookXml(sheets)
     const doc = parseXml(xml)
 
@@ -288,7 +290,7 @@ describe("#94: Workbook calcPr", () => {
   })
 
   it("calcPr comes after sheets and definedNames", () => {
-    const sheets: WriteSheet[] = [{ name: "Sheet1", rows: [["a"]] }]
+    const sheets: SheetInput[] = [{ name: "Sheet1", rows: [["a"]] }]
     const xml = writeWorkbookXml(sheets, [{ name: "MyRange", range: "Sheet1!$A$1:$A$10" }])
     const doc = parseXml(xml)
 
@@ -371,7 +373,7 @@ describe("#99: Range-scoped reading", () => {
     const { writeXlsx, readXlsx } = await import("../src/index")
 
     // Create a workbook with known data
-    const options: WriteOptions = {
+    const options: WorkbookInput = {
       sheets: [
         {
           name: "Test",

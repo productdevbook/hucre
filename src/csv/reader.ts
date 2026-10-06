@@ -1,5 +1,6 @@
 import type { CellValue, CsvReadOptions } from "../_types"
 import { rowsToObjects } from "../_objects"
+import type { GridProjectionOptions } from "../_sheet-grid"
 import { unescapeFormula } from "./formula"
 import { inferType } from "../_infer"
 import { decodeCsvInput, type CsvInput } from "./encoding"
@@ -154,15 +155,15 @@ export function parseCsv(input: CsvInput, options?: CsvReadOptions): CellValue[]
   // streamCsvRows it rewrites the header row itself, which then names the
   // columns `transformValue` sees. See #439 §V.
   const transformHeader = options?.transformHeader
-  if (opts.header && transformHeader && filtered.length > 0) {
+  if (opts.hasHeaderRow && transformHeader && filtered.length > 0) {
     filtered = [
       filtered[0]!.map((value, index) => transformHeader(String(value ?? ""), index)),
       ...filtered.slice(1),
     ]
   }
 
-  const headerRow = opts.header && filtered.length > 0 ? filtered[0]! : null
-  if (opts.header && opts.skipHeaderRow && filtered.length > 0) {
+  const headerRow = opts.hasHeaderRow && filtered.length > 0 ? filtered[0]! : null
+  if (opts.hasHeaderRow && opts.skipHeaderRow && filtered.length > 0) {
     filtered = filtered.slice(1)
   }
 
@@ -214,19 +215,22 @@ export interface CsvObjectsResult<T extends Record<string, CellValue> = Record<s
   headers: string[]
 }
 
+/** CSV parsing knobs plus the bound on rectangular object output. */
+export interface CsvObjectsReadOptions extends CsvReadOptions, GridProjectionOptions {}
+
 /**
  * Parse CSV with a header row, returning an array of objects
  * and the detected headers.
  */
 export function parseCsvObjects<T extends Record<string, CellValue> = Record<string, CellValue>>(
   input: CsvInput,
-  options?: CsvReadOptions & { header: true },
+  options?: CsvObjectsReadOptions,
 ): CsvObjectsResult<T> {
   // Pass through without transformValue/transformHeader to parseCsv — we handle them here
-  const { transformHeader, transformValue, ...restOptions } = options ?? {}
+  const { transformHeader, transformValue, maxRows, maxTotalCells, ...restOptions } = options ?? {}
   const rows = parseCsv(input, {
     ...restOptions,
-    header: false,
+    hasHeaderRow: false,
     transformValue: undefined,
     transformHeader: undefined,
   })
@@ -239,6 +243,8 @@ export function parseCsvObjects<T extends Record<string, CellValue> = Record<str
     skipEmptyRows: false,
     transformHeader,
     transformValue,
+    maxRows,
+    maxTotalCells,
   })
 }
 
@@ -375,7 +381,7 @@ function normalizeReadOptions(options?: CsvReadOptions) {
     preserveLeadingZeros: options?.preserveLeadingZeros !== false,
     skipEmptyRows: options?.skipEmptyRows ?? false,
     comment: options?.comment,
-    header: options?.header ?? false,
+    hasHeaderRow: options?.hasHeaderRow ?? false,
     skipHeaderRow: options?.skipHeaderRow ?? false,
     unescapeFormulae: options?.unescapeFormulae ?? false,
     maxRows: options?.maxRows,

@@ -5,7 +5,7 @@ import { readXlsx } from "../src/xlsx/reader"
 import { ZipReader } from "../src/zip/reader"
 
 // ═══════════════════════════════════════════════════════════════════════
-// #404 — `WriteSheet.threadedComments` was a shipped, typed field that
+// #404 — `SheetInput.threadedComments` was a shipped, typed field that
 // nothing wrote. A caller could pass a full thread and get a workbook
 // with no `xl/threadedComments/` part and no error. The field is gone;
 // these tests keep it gone, and keep the two README lines that
@@ -14,33 +14,23 @@ import { ZipReader } from "../src/zip/reader"
 
 const readme = (): string => readFileSync(new URL("../README.md", import.meta.url), "utf-8")
 
-describe("WriteSheet has no threadedComments field", () => {
-  it("does not accept one — the type is the guard", () => {
-    const sheet: import("../src/_types").WriteSheet = {
-      name: "S",
-      rows: [["a"]],
-      // @ts-expect-error — removed in #404. If this ever compiles again,
-      // the field is back, and the writer had better write it this time.
-      threadedComments: [{ id: "{c1}", ref: "A1", personId: "{p1}", text: "hi" }],
-    }
-    expect(sheet.name).toBe("S")
-  })
-
-  it("would have produced no part even if it were passed", async () => {
-    // The reason the field had to go rather than stay as a no-op: the
-    // output looks entirely successful.
-    const buf = await writeXlsx({
-      sheets: [
-        {
-          name: "S",
-          rows: [["a"]],
-          threadedComments: [{ id: "{c1}", ref: "A1", personId: "{p1}", text: "hi" }],
-        } as never,
-      ],
-    })
-    const parts = new ZipReader(buf).entries()
-    expect(parts.some((p) => p.includes("threadedComment"))).toBe(false)
-    expect(parts.some((p) => p.includes("person"))).toBe(false)
+describe("threaded comments at the authoring boundary", () => {
+  it("accepts reader metadata and reports that authoring cannot carry it", async () => {
+    const drops: string[] = []
+    const buf = await writeXlsx(
+      {
+        sheets: [
+          {
+            name: "S",
+            rows: [["a"]],
+            threadedComments: [{ id: "{c1}", ref: "A1", personId: "{p1}", text: "hi" }],
+          },
+        ],
+      },
+      { onDrop: (drop) => drops.push(drop.field) },
+    )
+    expect(drops).toEqual(["threadedComments"])
+    expect(new ZipReader(buf).entries().some((p) => p.includes("threadedComment"))).toBe(false)
   })
 })
 
@@ -62,10 +52,14 @@ describe("the README no longer contradicts the code", () => {
     expect(text).not.toContain("- VBA/macro injection")
 
     // …and it works, which is why the roadmap entry had to go.
-    const buf = await writeXlsx({
-      sheets: [{ name: "S", rows: [["a"]] }],
-      vbaProject: new Uint8Array([1, 2, 3]),
-    })
+    const buf = await writeXlsx(
+      {
+        sheets: [{ name: "S", rows: [["a"]] }],
+      },
+      {
+        vbaProject: new Uint8Array([1, 2, 3]),
+      },
+    )
     expect(new ZipReader(buf).entries()).toContain("xl/vbaProject.bin")
   })
 
@@ -76,6 +70,6 @@ describe("the README no longer contradicts the code", () => {
   })
 
   it("says threaded comments are not silently accepted", () => {
-    expect(readme()).toMatch(/`WriteSheet` has no `threadedComments` field/)
+    expect(readme()).toContain("onDrop")
   })
 })

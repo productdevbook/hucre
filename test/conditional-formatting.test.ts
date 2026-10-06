@@ -5,7 +5,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
 import { createSharedStrings, writeWorksheetXml } from "../src/xlsx/worksheet-writer"
 import { readXlsx } from "../src/xlsx/reader"
-import type { WriteSheet, ConditionalRule } from "../src/_types"
+import type { SheetInput, ConditionalRule } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ function getElementText(el: { children: Array<unknown> }): string {
   return el.children.filter((c: unknown) => typeof c === "string").join("")
 }
 
-function writeXml(sheet: WriteSheet): { xml: string; stylesXml: string } {
+function writeXml(sheet: SheetInput): { xml: string; stylesXml: string } {
   const styles = createStylesCollector()
   const ss = createSharedStrings()
   const result = writeWorksheetXml(sheet, styles, ss)
@@ -44,7 +44,7 @@ function parseWorksheetXml(xml: string) {
 
 describe("conditional formatting — writing", () => {
   it("writes cellIs rule with operator and formula", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -78,7 +78,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes cellIs rule with style → dxfId in cfRule and dxf in styles.xml", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -127,7 +127,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes expression rule with custom formula", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -153,7 +153,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes 2-color colorScale", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -163,7 +163,7 @@ describe("conditional formatting — writing", () => {
           range: "A1:A100",
           colorScale: {
             cfvo: [{ type: "min" }, { type: "max" }],
-            colors: ["FF63BE7B", "FFF8696B"],
+            colors: [{ rgb: "63BE7B" }, { rgb: "F8696B" }],
           },
         },
       ],
@@ -191,7 +191,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes 3-color colorScale", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -201,7 +201,7 @@ describe("conditional formatting — writing", () => {
           range: "B1:B100",
           colorScale: {
             cfvo: [{ type: "min" }, { type: "percentile", value: "50" }, { type: "max" }],
-            colors: ["FFF8696B", "FFFFEB84", "FF63BE7B"],
+            colors: [{ rgb: "F8696B" }, { rgb: "FFEB84" }, { rgb: "63BE7B" }],
           },
         },
       ],
@@ -224,7 +224,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes dataBar", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -234,7 +234,7 @@ describe("conditional formatting — writing", () => {
           range: "C1:C100",
           dataBar: {
             cfvo: [{ type: "min" }, { type: "max" }],
-            color: "FF638EC6",
+            color: { rgb: "638EC6" },
           },
         },
       ],
@@ -258,7 +258,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes iconSet", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -298,7 +298,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes containsText rule", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -326,7 +326,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes beginsWith rule", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -350,7 +350,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes endsWith rule", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -374,7 +374,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes duplicateValues rule", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -395,7 +395,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes uniqueValues rule", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -416,7 +416,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes top10 rule", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -437,7 +437,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes aboveAverage rule", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -458,7 +458,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes multiple rules on same range (priorities)", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -496,7 +496,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes multiple ranges", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["A", "B"]],
       conditionalRules: [
@@ -513,7 +513,7 @@ describe("conditional formatting — writing", () => {
           range: "B1:B100",
           colorScale: {
             cfvo: [{ type: "min" }, { type: "max" }],
-            colors: ["FF63BE7B", "FFF8696B"],
+            colors: [{ rgb: "63BE7B" }, { rgb: "F8696B" }],
           },
         },
       ],
@@ -537,7 +537,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("writes stopIfTrue attribute", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       conditionalRules: [
@@ -561,7 +561,7 @@ describe("conditional formatting — writing", () => {
   })
 
   it("does not emit conditionalFormatting when none are provided", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
     }
@@ -695,7 +695,7 @@ describe("conditional formatting — reading (round-trip)", () => {
               range: "A1:A100",
               colorScale: {
                 cfvo: [{ type: "min" }, { type: "max" }],
-                colors: ["FF63BE7B", "FFF8696B"],
+                colors: [{ rgb: "63BE7B" }, { rgb: "F8696B" }],
               },
             },
           ],
@@ -711,8 +711,8 @@ describe("conditional formatting — reading (round-trip)", () => {
     expect(rule.colorScale!.cfvo[0].type).toBe("min")
     expect(rule.colorScale!.cfvo[1].type).toBe("max")
     expect(rule.colorScale!.colors.length).toBe(2)
-    expect(rule.colorScale!.colors[0]).toBe("FF63BE7B")
-    expect(rule.colorScale!.colors[1]).toBe("FFF8696B")
+    expect(rule.colorScale!.colors[0]).toEqual({ rgb: "63BE7B" })
+    expect(rule.colorScale!.colors[1]).toEqual({ rgb: "F8696B" })
   })
 
   it("round-trips colorScale (3-color)", async () => {
@@ -728,7 +728,7 @@ describe("conditional formatting — reading (round-trip)", () => {
               range: "A1:A100",
               colorScale: {
                 cfvo: [{ type: "min" }, { type: "percentile", value: "50" }, { type: "max" }],
-                colors: ["FFF8696B", "FFFFEB84", "FF63BE7B"],
+                colors: [{ rgb: "F8696B" }, { rgb: "FFEB84" }, { rgb: "63BE7B" }],
               },
             },
           ],
@@ -757,7 +757,7 @@ describe("conditional formatting — reading (round-trip)", () => {
               range: "A1:A100",
               dataBar: {
                 cfvo: [{ type: "min" }, { type: "max" }],
-                color: "FF638EC6",
+                color: { rgb: "638EC6" },
               },
             },
           ],
@@ -770,7 +770,7 @@ describe("conditional formatting — reading (round-trip)", () => {
     expect(rule.type).toBe("dataBar")
     expect(rule.dataBar).toBeDefined()
     expect(rule.dataBar!.cfvo.length).toBe(2)
-    expect(rule.dataBar!.color).toBe("FF638EC6")
+    expect(rule.dataBar!.color).toEqual({ rgb: "638EC6" })
   })
 
   it("round-trips iconSet", async () => {
@@ -935,7 +935,7 @@ describe("conditional formatting — reading (round-trip)", () => {
               range: "B1:B100",
               colorScale: {
                 cfvo: [{ type: "min" }, { type: "max" }],
-                colors: ["FF63BE7B", "FFF8696B"],
+                colors: [{ rgb: "63BE7B" }, { rgb: "F8696B" }],
               },
             },
           ],
@@ -984,7 +984,7 @@ describe("conditional formatting — integration (ZIP verification)", () => {
               range: "B2:B100",
               colorScale: {
                 cfvo: [{ type: "min" }, { type: "max" }],
-                colors: ["FF63BE7B", "FFF8696B"],
+                colors: [{ rgb: "63BE7B" }, { rgb: "F8696B" }],
               },
             },
           ],

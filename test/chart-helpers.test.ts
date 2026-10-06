@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { addChart, getCharts } from "../src/xlsx/chart-helpers"
 import { writeXlsx } from "../src/xlsx/writer"
 import { ZipReader } from "../src/zip/reader"
-import type { Chart, SheetChart, Workbook, WriteSheet } from "../src/_types"
+import type { Chart, SheetChart, Workbook, SheetInput } from "../src/_types"
 
 const decoder = new TextDecoder("utf-8")
 
@@ -133,7 +133,7 @@ describe("addChart", () => {
   }
 
   it("creates the `charts` array on first call", () => {
-    const sheet: WriteSheet = { name: "Dashboard" }
+    const sheet: SheetInput = { name: "Dashboard" }
     expect(sheet.charts).toBeUndefined()
     const chart = validChart()
     addChart(sheet, chart)
@@ -146,7 +146,7 @@ describe("addChart", () => {
     const c2 = validChart()
     c2.title = "Second"
 
-    const sheet: WriteSheet = { name: "S", charts: [c1] }
+    const sheet: SheetInput = { name: "S", charts: [c1] }
     addChart(sheet, c2)
 
     expect(sheet.charts).toHaveLength(2)
@@ -155,14 +155,14 @@ describe("addChart", () => {
   })
 
   it("returns the chart instance for inline use", () => {
-    const sheet: WriteSheet = { name: "S" }
+    const sheet: SheetInput = { name: "S" }
     const chart = validChart()
     const returned = addChart(sheet, chart)
     expect(returned).toBe(chart)
   })
 
   it("rejects a missing chart argument", () => {
-    const sheet: WriteSheet = { name: "S" }
+    const sheet: SheetInput = { name: "S" }
     // @ts-expect-error — testing runtime guard
     expect(() => addChart(sheet, undefined)).toThrow(/chart is required/)
     // @ts-expect-error — testing runtime guard for non-object input
@@ -170,7 +170,7 @@ describe("addChart", () => {
   })
 
   it("rejects a chart that is missing required fields", () => {
-    const sheet: WriteSheet = { name: "S" }
+    const sheet: SheetInput = { name: "S" }
     expect(() =>
       addChart(sheet, {
         // @ts-expect-error — missing type on purpose
@@ -217,7 +217,7 @@ describe("addChart", () => {
   })
 
   it("end-to-end — addChart → writeXlsx emits a chart part", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Dashboard",
       rows: [
         ["Quarter", "Revenue"],

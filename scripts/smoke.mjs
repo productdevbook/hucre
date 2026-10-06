@@ -11,12 +11,37 @@
 
 import {
   parseCsv,
+  read,
+  ParseError,
+  InvalidArgumentError,
   readXlsx,
   writeCsv,
   writeXlsx,
   writeXlsxStream,
+  writeXlsxStreamSheets,
+  XlsxStreamWriter,
+  OdsStreamWriter,
+  writeOdsStream,
+  link,
   readOds,
   writeOds,
+  createCellStore,
+  getCell,
+  setCell,
+  hasCell,
+  deleteCell,
+  cellEntries,
+  insertRows,
+  deleteRows,
+  insertColumns,
+  deleteColumns,
+  findCells,
+  replaceCells,
+  fillTemplate,
+  readObjects,
+  sheetToObjects,
+  toJson,
+  write,
 } from "../dist/index.mjs"
 
 let failures = 0
@@ -54,11 +79,161 @@ const ROWS = [
   ["Ada", 1234.5, new Date(Date.UTC(2024, 0, 15))],
 ]
 
+console.log("model projection")
+{
+  const authored = { sheets: [{ name: "Data", data: [{ Name: "Ada" }, { Score: 42 }] }] }
+  const dataRows = (await readXlsx(await writeXlsx(authored))).sheets[0].rows
+  check("object data infers every field", dataRows[0][1] === "Score" && dataRows[2][1] === 42)
+  check(
+    "object data uses the same text rows",
+    new TextDecoder().decode(await write(authored, { format: "csv" })) ===
+      "Name,Score\r\nAda,\r\n,42",
+  )
+  let ambiguous = false
+  try {
+    await write({ sheets: [{ name: "S", data: [], rows: [] }] }, { format: "csv" })
+  } catch (error) {
+    ambiguous = error instanceof InvalidArgumentError
+  }
+  check("competing row sources reject", ambiguous)
+  const bytes = await writeXlsx({
+    sheets: [
+      {
+        name: "S",
+        rows: [
+          ["Name", "Score"],
+          ["Ada", 42],
+        ],
+      },
+    ],
+  })
+  const sparse = (await readXlsx(bytes, { sparse: true })).sheets[0]
+  const result = await readObjects(bytes, { sparse: true })
+  check("sparse object projection", result.data[0]?.Name === "Ada" && result.data[0]?.Score === 42)
+  check("sparse JSON projection", JSON.parse(toJson(sparse))[0]?.Score === 42)
+  check(
+    "sparse CSV projection",
+    new TextDecoder()
+      .decode(await write({ sheets: [sparse] }, { format: "csv" }))
+      .includes("Ada,42"),
+  )
+  const far = {
+    name: "Far",
+    rows: [],
+    cells: createCellStore([
+      [0, 0, { value: "Name", type: "string" }],
+      [1048575, 0, { value: "last", type: "string" }],
+    ]),
+  }
+  check(
+    "far-away values without dense gaps",
+    sheetToObjects(far).data[0]?.Name === "last" && far.rows.length === 0,
+  )
+}
+
+console.log("cell metadata")
+{
+  const cells = createCellStore([[127, 1, { value: 42, type: "number" }]])
+  setCell(cells, 128, 2, { value: 7, type: "number" })
+  const cloned = structuredClone(cells)
+  deleteCell(cloned, 127, 1)
+  check(
+    "numeric blocks survive structured clone",
+    cells.size === 2 &&
+      cloned.size === 1 &&
+      hasCell(cloned, 128, 2) &&
+      getCell(cloned, 128, 2)?.value === 7 &&
+      [...cellEntries(cloned)].length === 1,
+  )
+  const bytes = await writeXlsx({ sheets: [{ name: "Metadata", cells }] })
+  const wb = await readXlsx(bytes, { sparse: true })
+  check(
+    "sparse metadata round trip",
+    wb.sheets[0].rows.length === 0 &&
+      getCell(wb.sheets[0].cells, 127, 1)?.value === 42 &&
+      getCell(wb.sheets[0].cells, 128, 2)?.value === 7,
+  )
+}
+
+console.log("sheet editing")
+{
+  const sheet = {
+    name: "Edit",
+    rows: [
+      [1, 2],
+      [3, 4],
+    ],
+    cells: createCellStore([[1, 1, { value: 4, type: "formula", formula: "Edit!A2" }]]),
+  }
+  insertRows(sheet, 0, 1)
+  insertColumns(sheet, 0, 1)
+  check(
+    "values and own-sheet references move together",
+    sheet.rows.length === 3 &&
+      sheet.rows[2][2] === 4 &&
+      getCell(sheet.cells, 2, 2)?.formula === "Edit!B3",
+  )
+  deleteRows(sheet, 0, 1)
+  deleteColumns(sheet, 0, 1)
+  check(
+    "deletion uses the same coordinate rules",
+    sheet.rows.length === 2 &&
+      sheet.rows[1][1] === 4 &&
+      getCell(sheet.cells, 1, 1)?.formula === "Edit!A2",
+  )
+}
+
 console.log("csv")
 {
   const csv = writeCsv(ROWS)
   const back = parseCsv(csv, { typeInference: true })
   check("round trip", back[1][0] === "Ada" && back[1][1] === 1234.5)
+}
+
+console.log("value editing")
+{
+  const cell = {
+    value: "{{value}}",
+    type: "formula",
+    formula: '"unchanged"',
+    formulaResult: "{{value}}",
+  }
+  const sheet = { name: "Values", rows: [["{{value}}"]], cells: createCellStore([[0, 0, cell]]) }
+  fillTemplate({ sheets: [sheet] }, { value: 7 })
+  check(
+    "template keeps the formula cache synchronized",
+    sheet.rows[0][0] === 7 && cell.formulaResult === 7 && cell.type === "formula",
+  )
+  const sparse = {
+    name: "Sparse",
+    rows: [],
+    cells: createCellStore([[1048575, 16383, { value: "old", type: "string" }]]),
+  }
+  check(
+    "find and replace includes sparse values",
+    findCells(sparse, "old").length === 1 && replaceCells(sparse, "old", false) === 1,
+  )
+  check(
+    "sparse edits keep the grid empty",
+    sparse.rows.length === 0 && getCell(sparse.cells, 1048575, 16383).type === "boolean",
+  )
+}
+
+console.log("dense text bounds")
+{
+  const input = new TextEncoder().encode("a,b,c\nx\nx")
+  let bounded = false
+  try {
+    await read(input, { maxTotalCells: 8 })
+  } catch (error) {
+    bounded = error instanceof ParseError
+  }
+  check("read forwards the dense cell bound", bounded)
+  const sheet = (await read(input, { maxTotalCells: 9 })).sheets[0]
+  check(
+    "the exact boundary remains rectangular",
+    sheet.rows.length === 3 && sheet.rows[2].length === 3,
+  )
 }
 
 console.log("xlsx")
@@ -84,6 +259,97 @@ console.log("ods")
   const bytes = await writeOds({ sheets: [{ name: "S", rows: ROWS }] })
   const wb = await readOds(bytes)
   check("round trip", wb.sheets[0].rows[1][0] === "Ada")
+}
+
+console.log("shared inline cells")
+{
+  const rows = [
+    [
+      { value: 1, formula: "6*7", formulaResult: 42 },
+      link("Open", "https://example.com/a"),
+      { value: true, checkbox: true, comment: { text: "Note", author: "Test" } },
+    ],
+  ]
+  const before = structuredClone(rows)
+  const incremental = new XlsxStreamWriter({ name: "S" })
+  incremental.addRow(rows[0])
+  for (const [mode, bytes] of [
+    ["buffered XLSX", await writeXlsx({ sheets: [{ name: "S", rows }] })],
+    ["incremental XLSX", await incremental.finish()],
+    ["streamed XLSX", await drain(writeXlsxStream(rows, { name: "S" }))],
+    ["multi-sheet XLSX", await drain(writeXlsxStreamSheets([{ name: "S", rows }]))],
+  ]) {
+    const sheet = (await readXlsx(bytes)).sheets[0]
+    check(
+      mode + " caches and package metadata",
+      sheet.rows[0][0] === 42 &&
+        getCell(sheet.cells, 0, 0)?.formulaResult === 42 &&
+        getCell(sheet.cells, 0, 1)?.hyperlink?.target === "https://example.com/a" &&
+        getCell(sheet.cells, 0, 2)?.checkbox === true &&
+        getCell(sheet.cells, 0, 2)?.comment?.text === "Note",
+    )
+  }
+  const drops = []
+  const onDrop = (drop) => drops.push(drop)
+  const ods = new OdsStreamWriter({ name: "S", onDrop })
+  ods.addRow(rows[0])
+  for (const [mode, bytes] of [
+    ["buffered ODS", await writeOds({ sheets: [{ name: "S", rows }] }, { onDrop })],
+    ["incremental ODS", await ods.finish()],
+    ["streamed ODS", await drain(writeOdsStream(rows, { name: "S", onDrop }))],
+  ]) {
+    const sheet = (await readOds(bytes)).sheets[0]
+    check(
+      mode + " caches and links",
+      sheet.rows[0][0] === 42 &&
+        getCell(sheet.cells, 0, 0)?.formulaResult === 42 &&
+        getCell(sheet.cells, 0, 1)?.hyperlink?.target === "https://example.com/a",
+    )
+  }
+  check(
+    "ODS cell drops identify physical coordinates",
+    drops.length === 6 && drops.every((drop) => drop.sheet === "S" && drop.cell === "C1"),
+  )
+  check("inline input remains immutable", JSON.stringify(rows) === JSON.stringify(before))
+}
+
+console.log("streaming columns")
+{
+  const columns = [
+    { header: "", key: "", width: 12, collapsed: true },
+    { key: "Amount", style: { numFmt: "0.00" } },
+  ]
+  const row = Object.assign(Object.create({ Amount: 99 }), { "": "own" })
+  const result = (
+    await readXlsx(await drain(writeXlsxStream([row], { name: "S", columns })), {
+      readStyles: true,
+    })
+  ).sheets[0]
+  check(
+    "blank headers and own fields",
+    JSON.stringify(result.rows) ===
+      JSON.stringify([
+        ["", "Amount"],
+        ["own", null],
+      ]),
+  )
+  check(
+    "streamed column layout",
+    result.columns[0].collapsed === true && result.columns[1].style.numFmt === "0.00",
+  )
+  const writer = new XlsxStreamWriter({ name: "S", columns: [{ autoWidth: true }] })
+  writer.addRow(["A long display value for an automatic column"])
+  check(
+    "incremental auto width",
+    (await readXlsx(await writer.finish())).sheets[0].columns[0].width > 40,
+  )
+  let rejected = false
+  try {
+    new XlsxStreamWriter({ name: "S", maxRowsPerSheet: NaN })
+  } catch (error) {
+    rejected = error instanceof InvalidArgumentError
+  }
+  check("NaN rollover rejects", rejected)
 }
 
 if (failures > 0) {

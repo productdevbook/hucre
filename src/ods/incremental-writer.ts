@@ -1,7 +1,7 @@
 // ── Incremental ODS Writer ──────────────────────────────────────────
 //
 // The last empty cell in the streaming matrix. `writeOdsStream` covers
-// the constant-memory case and carries values only, because ODF puts
+// the constant-memory case and carries unstyled cells, because ODF puts
 // `<office:automatic-styles>` *before* the body: a style first seen on
 // row 900,000 has nowhere to be declared once the body has gone out.
 //
@@ -11,8 +11,19 @@
 // is the same one XLSX already offers: `writeXlsxStream` for constant
 // memory, `XlsxStreamWriter` for a buffer you can style. See #467.
 
-import type { CellValue, CellStyle, WorkbookProperties } from "../_types"
-import { validateSheetNames } from "../_validate"
+import { InvalidArgumentError } from "../errors"
+import { resolveCellInput } from "../_inline-cells"
+import { columnCellStyle, columnHeaders, objectRow } from "../_sheet-input"
+import { reportOdsCellDrops } from "./cell-drops"
+import type {
+  CellStyle,
+  ColumnDef,
+  WorkbookWriteOptions,
+  WorkbookProperties,
+  CellInput,
+  SpreadsheetStreamWriter,
+} from "../_types"
+import { validateSheetNames, validateRowSize } from "../_validate"
 import { xmlElement, xmlSelfClose } from "../xml/writer"
 import { ZipWriter } from "../zip/writer"
 import {
@@ -30,10 +41,8 @@ import type { CellContext } from "./writer"
 const encoder = /* @__PURE__ */ new TextEncoder()
 
 /** A cell that brings its own formatting, or just a value. */
-export type OdsStyledCell = { value?: CellValue; style?: CellStyle; formula?: string }
-export type OdsIncrementalCell = CellValue | OdsStyledCell
 
-export interface OdsStreamWriterOptions {
+export interface OdsStreamWriterOptions extends WorkbookWriteOptions {
   /** Sheet name. Excel's limits apply — LibreOffice enforces them too. */
   name?: string
   /**
@@ -41,7 +50,7 @@ export interface OdsStreamWriterOptions {
    * are carried, unlike in `writeOdsStream` where the body has already
    * gone out by the time a style is known.
    */
-  columns?: Array<{ header?: string; key?: string; width?: number; style?: CellStyle }>
+  columns?: Array<Pick<ColumnDef, "header" | "key" | "width" | "style" | "numFmt">>
   /** Document properties written to `meta.xml`. */
   properties?: WorkbookProperties
 }
@@ -53,7 +62,7 @@ export interface OdsStreamWriterOptions {
  * is built — but every serialized row is retained until {@link finish}
  * assembles the archive, so peak memory scales with the data. For
  * constant-memory output use `writeOdsStream` instead, and accept that
- * it carries values only.
+ * it carries unstyled values, formulas, rich text and links.
  *
  * ```ts
  * const writer = new OdsStreamWriter({
@@ -64,15 +73,17 @@ export interface OdsStreamWriterOptions {
  * const bytes = await writer.finish()
  * ```
  *
- * Implements the same `addRow` / `addObject` / `finish` / `toStream`
+ * Implements the same `addRow` / `addObject` / `finish`
  * vocabulary as the other incremental writers, so a format-agnostic
  * helper written against `SpreadsheetStreamWriter` takes it unchanged.
  */
-export class OdsStreamWriter {
+export class OdsStreamWriter implements SpreadsheetStreamWriter {
   private sheetName: string
   private columns: OdsStreamWriterOptions["columns"]
   private properties: WorkbookProperties | undefined
   private collector = createStyleCollector()
+  private columnCellStyles: Array<CellStyle | undefined>
+  private onDrop: WorkbookWriteOptions["onDrop"]
   private rowFragments: string[] = []
   private maxCols = 0
   private done = false
@@ -80,43 +91,40 @@ export class OdsStreamWriter {
   constructor(options?: OdsStreamWriterOptions) {
     this.sheetName = options?.name ?? "Sheet1"
     validateSheetNames([{ name: this.sheetName }])
+    validateRowSize(0, options?.columns?.length ?? 0)
     this.columns = options?.columns
+    this.columnCellStyles = this.columns?.map(columnCellStyle) ?? []
+    this.onDrop = options?.onDrop
     this.properties = options?.properties
 
     // A header row is written immediately, the same as XlsxStreamWriter
     // does, so `addRow` starts at the first data row either way.
-    const headers = this.columns?.map((c) => c.header)
-    if (headers?.some((h) => h !== undefined)) {
-      this.addRow(headers.map((h) => h ?? null))
-    }
+    const headers = columnHeaders(this.columns)
+    if (headers) this.addRow(headers)
   }
 
   /** Append a row of positional values, each optionally styled. */
-  addRow(values: OdsIncrementalCell[]): void {
+  addRow(values: CellInput[]): void {
     if (this.done) {
-      throw new Error("Cannot write to OdsStreamWriter after finish()")
+      throw new InvalidArgumentError("Cannot write to OdsStreamWriter after finish()")
     }
+    validateRowSize(this.rowFragments.length, values.length)
     if (values.length > this.maxCols) this.maxCols = values.length
 
     const cells: string[] = []
     for (let i = 0; i < values.length; i++) {
-      const raw = values[i]
-      const styled = isStyled(raw) ? raw : undefined
-      const value = styled ? (styled.value ?? null) : (raw as CellValue)
+      const cell = resolveCellInput(values[i])
+      reportOdsCellDrops(cell, this.onDrop, this.sheetName, this.rowFragments.length, i)
 
       // A cell's own style wins over its column's, which is the same
       // precedence XlsxStreamWriter uses.
-      const style = styled?.style ?? this.columns?.[i]?.style
-      const ctx: CellContext = {}
+      const style = cell.style ?? this.columnCellStyles[i]
+      const ctx: CellContext = { cellOverride: cell }
       if (style) {
         const name = getOrCreateStyleName(this.collector, style)
         if (name) ctx.styleName = name
       }
-      if (styled?.formula !== undefined) {
-        ctx.cellOverride = { formula: styled.formula }
-      }
-
-      cells.push(cellToOds(value, ctx, this.collector))
+      cells.push(cellToOds(cell.value, ctx, this.collector))
     }
 
     this.rowFragments.push(`<table:table-row>${cells.join("")}</table:table-row>`)
@@ -129,11 +137,11 @@ export class OdsStreamWriter {
    * `XlsxStreamWriter.addObject` does: an object's values have no
    * position without one.
    */
-  addObject(item: Record<string, CellValue>): void {
+  addObject(item: Record<string, CellInput>): void {
     if (!this.columns) {
-      throw new Error("addObject requires columns with key accessors")
+      throw new InvalidArgumentError("addObject requires columns with key accessors")
     }
-    this.addRow(this.columns.map((c) => (c.key ? (item[c.key] ?? null) : null)))
+    this.addRow(objectRow(item, this.columns))
   }
 
   /** Finalize and return the ODS document. */
@@ -149,23 +157,6 @@ export class OdsStreamWriter {
     zip.add("styles.xml", encoder.encode(writeStylesXml()))
     zip.add("settings.xml", encoder.encode(writeSettingsXml()))
     return zip.build()
-  }
-
-  /**
-   * Emit the finished document as a `ReadableStream<Uint8Array>`.
-   *
-   * Like `XlsxStreamWriter.toStream()`, this does **not** bound memory —
-   * everything is buffered until `finish()` and the stream hands you the
-   * result. `writeOdsStream` is the constant-memory path.
-   */
-  toStream(): ReadableStream<Uint8Array> {
-    const finish = (): Promise<Uint8Array> => this.finish()
-    return new ReadableStream<Uint8Array>({
-      async pull(controller) {
-        controller.enqueue(await finish())
-        controller.close()
-      },
-    })
   }
 
   /**
@@ -234,16 +225,6 @@ export class OdsStreamWriter {
   }
 }
 
-function isStyled(value: OdsIncrementalCell): value is OdsStyledCell {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    !(value instanceof Date) &&
-    !Array.isArray(value) &&
-    ("value" in value || "style" in value || "formula" in value)
-  )
-}
-
 /** The `office:document-content` shell, with the namespaces ODF wants. */
 function xmlDocumentContent(children: string[]): string {
   return (
@@ -257,6 +238,7 @@ function xmlDocumentContent(children: string[]): string {
     ' xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"' +
     ' xmlns:xlink="http://www.w3.org/1999/xlink"' +
     ' xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2"' +
+    ' xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0"' +
     ' office:version="1.3">' +
     children.join("") +
     "</office:document-content>"

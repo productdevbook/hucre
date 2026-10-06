@@ -1,6 +1,6 @@
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { cloneSheet, copySheetToWorkbook } from "../src/sheet-ops"
-import { deserializeWorkbook, serializeWorkbook } from "../src/worker"
 import type { Cell, Sheet, Workbook } from "../src/_types"
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -48,7 +48,7 @@ const FULL_SHEET: Required<Sheet> = {
     ["a", 1],
     ["b", 2],
   ],
-  cells: new Map<string, Cell>([["0,0", FULL_CELL]]),
+  cells: createCellStore<Cell>([[0, 0, FULL_CELL]]),
   columns: [{ width: 12, style: { font: { name: "Arial" } } }],
   rowDefs: new Map([[0, { height: 30, hidden: true }]]),
   defaultRowHeight: 24,
@@ -138,7 +138,7 @@ describe("cloneSheet carries every field of Sheet", () => {
 
   it("carries the whole cell, formula shape included", () => {
     const copy = cloneSheet(FULL_SHEET, "Copy")
-    const cell = copy.cells!.get("0,0")!
+    const cell = getCell(copy.cells!, 0, 0)!
 
     // A shared-formula slave is `{ formula: "", formulaType: "shared", si }`.
     // Losing the type and the index left `{ formula: "" }`, which the
@@ -170,7 +170,13 @@ describe("copySheetToWorkbook carries the same fields", () => {
   })
 })
 
-describe("serializeWorkbook survives the whole sheet and the whole workbook", () => {
+describe("a Workbook is plain data and survives structuredClone", () => {
+  // v1 shipped serializeWorkbook / deserializeWorkbook on the claim that
+  // structured clone "does NOT handle Map". It does — Map, Date and
+  // Uint8Array are all in the algorithm — so v2 removed them, and this
+  // is the promise that replaces them: the model is plain data, and
+  // postMessage carries it as-is. A class instance added to the model
+  // would come back as a bare object here and fail.
   /** Every field of `Workbook`, so the type stops us forgetting one. */
   const FULL_WORKBOOK: Required<Workbook> = {
     sheets: [FULL_SHEET],
@@ -189,45 +195,7 @@ describe("serializeWorkbook survives the whole sheet and the whole workbook", ()
     timelineCaches: [{ name: "tc1", sourceName: "Date" }],
   }
 
-  it("round-trips every workbook field", () => {
-    const back = deserializeWorkbook(serializeWorkbook(FULL_WORKBOOK))
-
-    expect(back).toEqual(FULL_WORKBOOK)
-  })
-
-  it("leaves no workbook field behind", () => {
-    const back = deserializeWorkbook(serializeWorkbook(FULL_WORKBOOK)) as unknown as Record<
-      string,
-      unknown
-    >
-
-    expect(Object.keys(FULL_WORKBOOK).filter((k) => back[k] === undefined)).toEqual([])
-  })
-
-  it("leaves no sheet field behind", () => {
-    const back = deserializeWorkbook(serializeWorkbook(FULL_WORKBOOK))
-      .sheets[0] as unknown as Record<string, unknown>
-
-    expect(Object.keys(FULL_SHEET).filter((k) => back[k] === undefined)).toEqual([])
-  })
-
-  it("keeps the formula shape, so a shared-formula slave stays one", () => {
-    const back = deserializeWorkbook(serializeWorkbook(FULL_WORKBOOK))
-    const cell = back.sheets[0]!.cells!.get("0,0")!
-
-    expect(cell).toEqual(FULL_CELL)
-  })
-
-  it("restores byte buffers as Uint8Array, not plain arrays", () => {
-    const back = deserializeWorkbook(serializeWorkbook(FULL_WORKBOOK))
-
-    expect(back.sheets[0]!.backgroundImage).toBeInstanceOf(Uint8Array)
-    expect(back.cellImages![0]!.data).toBeInstanceOf(Uint8Array)
-  })
-
-  it("stays JSON-safe, not only structured-clone safe", () => {
-    const throughJson = JSON.parse(JSON.stringify(serializeWorkbook(FULL_WORKBOOK)))
-
-    expect(deserializeWorkbook(throughJson)).toEqual(FULL_WORKBOOK)
+  it("round-trips every field of the full workbook", () => {
+    expect(structuredClone(FULL_WORKBOOK)).toEqual(FULL_WORKBOOK)
   })
 })

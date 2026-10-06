@@ -49,7 +49,7 @@ describe("every *Objects reader returns { data, headers }", () => {
 
   it("parseCsvObjects", () => {
     const result = parseCsvObjects("Name,Age\nAlice,30\nBob,25", {
-      header: true,
+      hasHeaderRow: true,
       typeInference: true,
     })
     expect(Object.keys(result).sort()).toEqual(["data", "headers"])
@@ -116,7 +116,7 @@ describe("shared projection semantics", () => {
 
     const viaRead = await readObjects(xlsx)
     const viaXlsx = await readXlsxObjects(xlsx)
-    const viaCsv = parseCsvObjects("A,,B\n1,2,3", { header: true, typeInference: true })
+    const viaCsv = parseCsvObjects("A,,B\n1,2,3", { hasHeaderRow: true, typeInference: true })
 
     expect(viaRead).toEqual(viaXlsx)
     expect(viaRead.data).toEqual([{ A: 1, "": 2, B: 3 }])

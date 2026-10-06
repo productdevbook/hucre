@@ -54,9 +54,10 @@ describe("writeOdsStream produces a file hucre's own reader accepts", () => {
     expect(wb.sheets[0]!.rows[0]![2]).toBe(true)
     expect(wb.sheets[0]!.rows[0]![3]).toBeInstanceOf(Date)
     expect(wb.sheets[0]!.rows[1]![1]).toBe(7.5)
-    // A trailing null is not written, so the row comes back short — the
-    // same thing `writeOds` + `readOds` do, which is the bar here.
-    expect(wb.sheets[0]!.rows[1]).toHaveLength(3)
+    // A trailing null is not written; the reader pads the row back to
+    // the sheet's width, as it does for `writeOds` + `readOds`.
+    expect(wb.sheets[0]!.rows[1]).toHaveLength(4)
+    expect(wb.sheets[0]!.rows[1]![3]).toBeNull()
   })
 
   it("is a valid ODF package, mimetype first and stored", async () => {

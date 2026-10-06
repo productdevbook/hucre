@@ -1,6 +1,10 @@
-import type { Sheet, CellValue } from "../_types"
+import { sheetGrid, type GridProjectionOptions } from "../_sheet-grid"
+import { assertGridSize } from "../_grid"
+import type { ValueSheet } from "../_sheet-values"
+import { isCellError } from "../cell-error"
+import type { Cell, CellValue } from "../_types"
 
-export interface MarkdownExportOptions {
+export interface MarkdownExportOptions extends GridProjectionOptions {
   /**
    * Treat the first row as the table header. Default: true.
    *
@@ -8,8 +12,6 @@ export interface MarkdownExportOptions {
    * row *index*. See #365.
    */
   hasHeaderRow?: boolean
-  /** @deprecated Renamed to {@link MarkdownExportOptions.hasHeaderRow}. */
-  headerRow?: boolean
   /** Alignment per column. Default: left for strings, right for numbers */
   alignment?: Array<"left" | "center" | "right">
   /** Max column width (truncate with ...). Default: 50 */
@@ -62,6 +64,7 @@ function formatCellValue(value: CellValue, escapeInline: boolean): string {
   }
   if (typeof value === "boolean") return String(value)
   if (typeof value === "number") return String(value)
+  if (isCellError(value)) return value.error
   return escapeCell(String(value), escapeInline)
 }
 
@@ -74,12 +77,12 @@ function truncate(str: string, maxWidth: number): string {
 
 /** Detect the default alignment for a column based on the data types */
 function detectAlignment(
-  rows: CellValue[][],
+  grid: ReturnType<typeof sheetGrid>,
   colIndex: number,
   startRow: number,
 ): "left" | "right" {
-  for (let r = startRow; r < rows.length; r++) {
-    const val = rows[r]?.[colIndex]
+  for (let r = startRow; r < grid.height; r++) {
+    const val = grid.value(r, colIndex)
     if (val !== null && val !== undefined) {
       if (typeof val === "number") return "right"
       return "left"
@@ -118,32 +121,28 @@ function padCell(value: string, width: number, align: "left" | "center" | "right
 /**
  * Export a sheet as a Markdown table string.
  */
-export function toMarkdown(sheet: Sheet, options?: MarkdownExportOptions): string {
-  // `headerRow` is omitted: deprecated spelling of `hasHeaderRow`,
-  // folded into it below.
-  const opts: Required<Omit<MarkdownExportOptions, "headerRow">> = {
-    // Accept the deprecated name for one major. See #365.
-    hasHeaderRow: options?.hasHeaderRow ?? options?.headerRow ?? true,
+export function toMarkdown(
+  sheet: ValueSheet<Partial<Cell>>,
+  options?: MarkdownExportOptions,
+): string {
+  const opts: Required<Omit<MarkdownExportOptions, "maxTotalCells">> = {
+    hasHeaderRow: options?.hasHeaderRow ?? true,
     alignment: options?.alignment ?? [],
     maxWidth: options?.maxWidth ?? 50,
     escapeInline: options?.escapeInline ?? true,
   }
 
-  const rows = sheet.rows
-  if (!rows || rows.length === 0) return ""
-
-  // Determine number of columns
-  let numCols = 0
-  for (const row of rows) {
-    if (row.length > numCols) numCols = row.length
-  }
+  const grid = sheetGrid(sheet)
+  assertGridSize(grid.height, grid.width, options?.maxTotalCells)
+  const numCols = grid.width
+  if (grid.height === 0) return ""
   if (numCols === 0) return ""
 
   // Format all cell values
-  const formatted: string[][] = rows.map((row) => {
+  const formatted: string[][] = Array.from({ length: grid.height }, (_, row) => {
     const result: string[] = []
     for (let c = 0; c < numCols; c++) {
-      const raw = formatCellValue(row[c], opts.escapeInline)
+      const raw = formatCellValue(grid.value(row, c), opts.escapeInline)
       result.push(truncate(raw, opts.maxWidth))
     }
     return result
@@ -158,7 +157,7 @@ export function toMarkdown(sheet: Sheet, options?: MarkdownExportOptions): strin
     if (opts.alignment && opts.alignment[c]) {
       alignments.push(opts.alignment[c])
     } else {
-      alignments.push(detectAlignment(rows, c, dataStartRow))
+      alignments.push(detectAlignment(grid, c, dataStartRow))
     }
   }
 

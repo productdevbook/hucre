@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { ZipReader } from "../src/zip/reader"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
-import type { WriteSheet } from "../src/_types"
+import type { SheetInput } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -40,7 +40,7 @@ function fakePng(size = 64): Uint8Array {
 
 describe("TextBox", () => {
   it("should write textbox as sp element in drawing XML", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Hello"]],
       textBoxes: [
@@ -67,7 +67,7 @@ describe("TextBox", () => {
   })
 
   it("should write textbox with bold style", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Test"]],
       textBoxes: [
@@ -87,7 +87,7 @@ describe("TextBox", () => {
   })
 
   it("should write textbox with custom font size", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Test"]],
       textBoxes: [
@@ -107,7 +107,7 @@ describe("TextBox", () => {
   })
 
   it("should write textbox with custom text color", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Test"]],
       textBoxes: [
@@ -127,7 +127,7 @@ describe("TextBox", () => {
   })
 
   it("should write textbox with fill and border colors", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Test"]],
       textBoxes: [
@@ -147,7 +147,7 @@ describe("TextBox", () => {
   })
 
   it("should write worksheet drawing reference", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Test"]],
       textBoxes: [
@@ -167,7 +167,7 @@ describe("TextBox", () => {
   })
 
   it("should round-trip textbox (write then read)", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Data"]],
       textBoxes: [
@@ -210,7 +210,7 @@ describe("TextBox", () => {
   })
 
   it("should write textbox alongside images", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Test"]],
       images: [
@@ -250,7 +250,7 @@ describe("TextBox", () => {
   })
 
   it("should handle textbox without explicit to anchor", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Test"]],
       textBoxes: [
@@ -272,7 +272,7 @@ describe("TextBox", () => {
   })
 
   it("should generate unique shape ids when mixing images and textboxes", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Test"]],
       images: [
@@ -310,7 +310,7 @@ describe("TextBox", () => {
   })
 
   it("should escape special XML characters in text", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Test"]],
       textBoxes: [

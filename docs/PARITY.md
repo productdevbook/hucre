@@ -23,14 +23,14 @@ XLSX has **two** write paths, and they have different fidelity. Most
 confusion about what hucre preserves comes from conflating them.
 
 (Both, and the streaming writers, now serialize a cell through one
-implementation — so an error value, `xml:space` handling and formula
-result typing mean the same thing whichever writer you use. What differs
-between the paths is what the _model_ can express, not how a cell is
-written.)
+implementation for error values, `xml:space` and formula-result typing.
+The adapters now resolve the complete inline cell before serialization;
+links, comments, checkboxes and dynamic formulas also emit their related
+package parts. Streaming still has a smaller sheet-option surface.)
 
 |                | entry points             | behaviour                                                                                                                         |
 | -------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| **Authoring**  | `readXlsx` / `writeXlsx` | the workbook is rebuilt from the model. Only what `WriteSheet` and `WriteOptions` describe comes out                              |
+| **Authoring**  | `readXlsx` / `writeXlsx` | the workbook is rebuilt from the model. Only what `SheetInput` and `WorkbookInput` describe comes out                             |
 | **Round-trip** | `openXlsx` / `saveXlsx`  | parts hucre does not regenerate are copied byte-for-byte, with relationships and content types re-declared so they stay reachable |
 
 So `readXlsx` → `writeXlsx` on a workbook with charts, macros or pivot
@@ -40,32 +40,66 @@ same file keeps them, whether or not hucre understands them.
 Pick the round-trip path when you are **editing someone's file**. Pick the
 authoring path when you are **producing a new one**.
 
-### Getting from one model to the other
+### One model at the writer boundary
 
-`readXlsx` returns a `Workbook` and `writeXlsx` takes `WriteOptions`, and
-neither is assignable to the other — `Chart` is not `SheetChart`, and
-`PivotTable` is not `WritePivotTable`. `toWriteOptions` converts, drops
-what the authoring model has no field for, and tells you what went:
+`readXlsx` returns a `Workbook`; buffered writers accept it directly as
+`WorkbookInput`. `SheetInput` derives its metadata from `Sheet` and adds
+inline cells, object rows and A1 merges. No caller-side converter is needed.
 
 ```ts
-import { readXlsx, toWriteOptions, writeXlsx } from "hucre"
+import { readXlsx, writeXlsx } from "hucre"
 
 const wb = await readXlsx(bytes)
-wb.sheets[0].rows[0][0] = "edited"
-
-const out = await writeXlsx(
-  toWriteOptions(wb, {
-    onDrop: ({ field, sheet, reason }) => console.warn(`dropped ${field}`, sheet, reason),
-  }),
-)
+const out = await writeXlsx(wb, {
+  onDrop: ({ field, sheet, reason }) => console.warn(`dropped ${field}`, sheet, reason),
+})
 ```
 
-It drops exactly the fields listed below — `slicers`, `timelines`,
-`threadedComments`, `charts`, `pivotTables` per sheet, and `themeColors`,
-`externalLinks`, `cellImages`, `persons`, `pivotCaches`, `slicerCaches`,
-`timelineCaches` per workbook — and `test/write-model.test.ts` derives
-that set from the types, so a new field with no counterpart fails until
-someone decides.
+Authoring still omits `slicers`, `timelines`, `threadedComments`, reader
+`charts` and reader `pivotTables` per sheet, plus `themeColors`,
+`externalLinks`, `cellImages`, `persons`, `pivotCaches`, `slicerCaches`
+and `timelineCaches` per workbook. Non-worksheet `kind` is reported too.
+Authoring chart and pivot specifications remain supported. Empty
+collections do not count as losses. Normalization leaves the input intact.
+
+ODS reports the additional metadata it cannot write, such as images,
+filters, freeze panes, tables and workbook protection. The ODS capability
+register is exhaustive at compile time. `onDrop` is a callback, not saved
+data. It can throw to refuse a lossy conversion before output is built.
+
+String storage, encryption and VBA embedding are `XlsxWriteOptions` in
+the second argument; they are container choices rather than model fields.
+
+### Inline cell capability register
+
+Every spreadsheet writer shares `CellInput` resolution. Explicit
+`formulaResult` wins over `value`, including null; a formula with no cache
+uses its effective value. `link()` is accepted in rows and object data.
+The register below accounts for all 13 `Cell` fields, including inferred
+`type`; it describes writer output, not byte-for-byte reader preservation.
+
+| Cell fields                                                         | Buffered/incremental/streamed XLSX                 | Buffered/incremental ODS                          | True streamed ODS                |
+| ------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------- | -------------------------------- |
+| `value`, `type`                                                     | Effective value; type inferred                     | Effective value; type inferred                    | Effective value; type inferred   |
+| `formula`, `formulaResult`                                          | Formula and typed cache                            | Ordinary formula and typed cache                  | Ordinary formula and typed cache |
+| `style`                                                             | Existing XLSX cell-style support                   | Existing ODF style subset                         | Omitted; `onDrop` reports it     |
+| `richText`                                                          | Text and supported run fonts                       | Text and supported ODF run fonts                  | Text only; run fonts reported    |
+| `hyperlink`                                                         | External/internal link, display and tooltip        | Link target/location and display; tooltip omitted | Same ODF link support            |
+| `comment`                                                           | Legacy comment and VML parts, including run fonts  | Omitted; reported                                 | Omitted; reported                |
+| `checkbox`                                                          | Boolean and feature-property-bag parts             | Boolean only; flag reported                       | Boolean only; flag reported      |
+| `formulaType`, `formulaSharedIndex`, `formulaRef`, `formulaDynamic` | Shared/array/dynamic attributes and metadata parts | Ordinary formula only; populated fields reported  | Same ODF limit                   |
+
+ODS drops include `field`, `sheet`, A1 `cell` and `reason`. A callback can
+reject a lossy cell before its row is emitted, although earlier bytes of a
+true stream may already have been consumed. Nested style capabilities
+remain the existing ODF subset, not an exhaustive conversion guarantee.
+The ODS reader flattens formatted spans, and the XLSX comment reader
+flattens comment runs; writer regressions inspect emitted XML for fonts.
+
+XLSX streams retain no source rows. They do retain distinct styles,
+optional shared strings, the header, current physical sheet links/comments
+and ZIP part records. Link/comment metadata is released after those
+related parts are emitted; metadata on every row still grows memory.
 
 ## XLSX
 
@@ -196,8 +230,7 @@ Two answers, and the error now names both:
 - **`streamXlsxRows`** already read that file, a row at a time, and the
   message never said so. It is the better answer when you only need to
   walk the rows once.
-- **`readXlsx(input, { sparse: true })`** returns `cells` keyed
-  `"row,col"` and leaves `rows` empty. Memory tracks the values rather
+- **`readXlsx(input, { sparse: true })`** returns a numeric `CellStore` in `cells` and leaves `rows` empty. Memory tracks the values rather
   than the box, the bounding-box limit does not apply because nothing
   dense is built, and you get a `Workbook` — which is what streaming
   cannot give you.
@@ -206,30 +239,25 @@ The error also reports how full the box actually is, which is what turns
 "your sheet is too large" into "your sheet is mostly nothing" — a
 different problem with a different answer.
 
-`sparse` is XLSX-only and off by default. With it on, anything that reads
-`Sheet.rows` — `sheetToObjects`, `readObjects`, the writers — sees an
-empty sheet; `cells` is the whole answer.
+`sparse` is XLSX-only and off by default. The grid stays empty, while
+object readers, sheet projections, JSON/HTML/Markdown exports and text
+`write()` consume the values in `cells`. Object projection skips implicit
+blank rows by default; opting into blank rows includes physical gaps.
+Buffered XLSX and ODS writers also read
+`cells` and can write that data, but may materialize its bounding box.
+Sparse reading does not make buffered writing memory-bounded.
 
-**`sparse` has a ceiling of its own: 16,777,216 filled cells.** `cells`
-is a `Map`, and V8 caps a `Map` at 2^24 entries. That is not a bound
-hucre chose and it cannot raise it without `Sheet.cells` ceasing to be a
-`Map`, which would break every caller using it as one.
+In v2, `cells` uses numeric blocks rather than one flat `Map`. Within
+Excel's coordinate bounds each block has at most 2,097,152 entries and the
+block directory has at most 8,192. The former 16,777,216-filled-cell limit
+of one V8 `Map` no longer limits the whole sheet. Use `getCell(cells, row,
+column)` and `cellEntries(cells)` from `hucre/cell` rather than string keys.
 
-It matters because the two ways a sheet can be over the bounding-box
-limit want different answers, and only one of them is `sparse`:
-
-| the sheet is…             | example                    | use              |
-| ------------------------- | -------------------------- | ---------------- |
-| a large box, mostly empty | 82k values over 305M slots | `sparse: true`   |
-| genuinely dense and large | 28.4M filled of 30.2M      | `streamXlsxRows` |
-
-For the second, the cell count that blew the box limit is the same count
-that blows the `Map`, so `sparse` cannot work by construction. The
-oversize error now says which case it is looking at and stops offering
-`sparse` when the filled count is already past what a `Map` holds; going
-over anyway is a `ParseError` naming the sheet, not a raw
-`RangeError: Map maximum size exceeded`. `streamXlsxRows` has no such
-bound. See #527.
+Sparse storage still retains every filled cell and its metadata. A genuinely
+dense sheet can therefore require substantial memory; `streamXlsxRows` is
+the better choice when rows can be processed once. The dense bounding-box
+limit, ZIP limits and Excel coordinate bounds remain in effect. Sparse
+storage removes a container limit, not the need to budget memory.
 
 ### A style-only cell does not widen the sheet
 
@@ -347,7 +375,7 @@ A non-worksheet tab now reads as an empty `Sheet` carrying
 `kind: "chartsheet"` (or `"dialogsheet"`). It is kept rather than skipped
 so `sheets: [2]` still selects Excel's third tab — renumbering would be a
 quieter kind of wrong. `kind` is **read-only**: hucre writes worksheets,
-and `toWriteOptions` reports it as a drop.
+and `onDrop` reports it as a drop.
 
 `streamXlsxRows` on a non-worksheet tab yields nothing rather than
 throwing. A missing worksheet _part_ is still a `ParseError`, because
@@ -362,7 +390,7 @@ Ranges are A1 strings on `DataValidation.range`, `ConditionalRule.range`,
 rule to hold in your head about which a field wanted.
 
 The authoring surfaces that take a rectangle now take either —
-`WriteSheet.merges`, `XlsxStreamWriter`'s `merges`, and `copyRange` — and
+`SheetInput.merges`, `XlsxStreamWriter`'s `merges`, and `copyRange` — and
 `toRange` / `toRanges` are exported for anywhere else. `Sheet.merges`
 stays coordinates, because that is what the reader produces and a read
 model with two spellings would push the normalising onto every consumer.
@@ -370,8 +398,8 @@ model with two spellings would push the normalising onto every consumer.
 `SheetImage.anchor` is a different shape — a corner plus an optional
 second corner, not a rectangle — and is unchanged.
 
-`test/xlsx-write-read-parity.test.ts` holds every field of `WriteSheet`
-and `WriteOptions` in a register typed over `keyof Required<…>`. Adding a
+`test/xlsx-write-read-parity.test.ts` holds every field of `SheetInput`
+and `WorkbookInput` in a register typed over `keyof Required<…>`. Adding a
 field to either interface fails `tsc` until it is registered — as a probe
 that round-trips, or as a one-way entry with its reason. That register,
 not this list, is the thing that stays current.
@@ -384,7 +412,9 @@ objects inside it are **the parsed records themselves** — one per distinct
 format in `xl/styles.xml`, referenced by every cell that uses it. So
 
 ```ts
-cells.get("0,0").style.font === cells.get("5,3").style.font // true, same format
+import { getCell } from "hucre/cell"
+
+getCell(cells, 0, 0)?.style?.font === getCell(cells, 5, 3)?.style?.font // true, same format
 ```
 
 and writing through one changes every cell that shares it. Copying per
@@ -419,9 +449,9 @@ These are parsed into the model and preserved through `openXlsx` →
 | WPS DISPIMG cell images                 | `Workbook.cellImages`                                                       |
 | Theme colours from the file             | `Workbook.themeColors` — `writeXlsx` always emits the standard Office theme |
 
-`WriteSheet` has no fields for these, deliberately: a typed field that is
-silently discarded is worse than no field at all, which is why
-`WriteSheet.threadedComments` was removed rather than left in place.
+`SheetInput` accepts these reader fields so a complete read workbook can
+be passed to a writer. Authoring writers report their loss through
+`onDrop`; use `openXlsx` / `saveXlsx` to preserve their original parts.
 
 ### Charts
 
@@ -457,11 +487,11 @@ the workbook-level caches, and has no write counterpart because
 
 | field                                                     | why                                                                                                                                                                        |
 | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WriteOptions.vbaProject`                                 | attaches a macro project; `Workbook` has no counterpart, so `readXlsx` → `writeXlsx` **drops macros silently**. Use `openXlsx`/`saveXlsx` to edit a macro-enabled workbook |
-| `WriteOptions.encryption`                                 | a property of the container, not of the workbook. Read back with `ReadOptions.password`                                                                                    |
-| `WriteOptions.stringMode`                                 | an encoding choice with nothing to surface on read                                                                                                                         |
-| `WriteSheet.data`                                         | the object form of `rows`; comes back as `rows`                                                                                                                            |
-| `WriteSheet.a11y`                                         | authoring metadata. `a11y.summary` is promoted to `properties.description` and does survive; `a11y.headerRow` has no cell to live in                                       |
+| `WorkbookInput.vbaProject`                                | attaches a macro project; `Workbook` has no counterpart, so `readXlsx` → `writeXlsx` **drops macros silently**. Use `openXlsx`/`saveXlsx` to edit a macro-enabled workbook |
+| `WorkbookInput.encryption`                                | a property of the container, not of the workbook. Read back with `ReadOptions.password`                                                                                    |
+| `WorkbookInput.stringMode`                                | an encoding choice with nothing to surface on read                                                                                                                         |
+| `SheetInput.data`                                         | the object form of `rows`; comes back as `rows`                                                                                                                            |
+| `SheetInput.a11y`                                         | authoring metadata. `a11y.summary` is promoted to `properties.description` and does survive; `a11y.headerRow` has no cell to live in                                       |
 | `SheetProtection.password`, `workbookProtection.password` | the file holds a one-way digest, never the password. The digest is read; the password cannot be                                                                            |
 
 ### Losses inside fields that otherwise round-trip
@@ -511,7 +541,37 @@ components everywhere, which is what keeps the readers, the writers and
 `formatValue` consistent; it does not infer a calendar day from a
 timezone. Use `Date.UTC(...)` when you mean a day.
 
+## Authoring headers, columns and bounds
+
+Defined headers (including an empty string), key fallbacks and own-property
+object lookup are shared across buffered data and streaming paths. Unnamed
+columns retain their positions. Buffered positional rows do not inject a
+header. XLSX buffered/incremental/true streams share column default styles,
+collapsed groups and frozen-pane XML. Buffered and incremental XLSX share
+one auto-width collector; true XLSX streams accept fixed-width columns and
+reject unsupported automatic sizing before consuming rows.
+
+All spreadsheet authoring paths enforce physical Excel row/column bounds.
+Incremental rejection leaves existing rows usable. Rollover accepts bounded
+integer caps or Infinity, which disables splitting without disabling grid
+validation. Known column metadata rejects upfront; true streams can have
+emitted earlier rows before a later invalid row rejects. ODS column layout
+and nested style capability decisions remain a separate audit item.
+
 ## ODS
+
+Buffered authoring resolves `rows` or object `data` before either XLSX or
+ODS serialization, and text `write()` uses that same boundary. Supplying
+both sources is an argument error. Omitted columns are inferred from all
+own object keys in first-seen order; explicit columns read `key ?? header`
+and exclude inherited fields. A defined header, including `""`, creates the
+header row; key-only columns do not. Data hyperlink values retain their
+display text and link metadata. Column style defaults apply to array and
+object rows, including trailing null cells; the generated header receives
+`column.style` while `column.numFmt` formats the data. Explicit cell styles
+override column defaults. Text object-data expansion observes its output
+bound before reading values. Worksheet values and pivot source headers/caches
+share the effective model; null pivot headers receive positional names.
 
 ODS reads and writes the same narrow model, so **ODS → ODS is lossless**.
 The loss is in conversion _into_ ODS from a format that models more.
@@ -520,6 +580,21 @@ Carried: cell values, formulas (including cross-sheet references), merges,
 hyperlinks on any cell type, rich text, multi-section number formats,
 document properties (six fields), and six style facets — bold, italic,
 font size, font colour, background colour, number format.
+
+ODF row repeats carry values and cell metadata together, including cached
+formula results and horizontal merges. The dense allocation bound counts
+the widest row and deferred interior blanks before expansion. `maxRows`
+limits repeated values and metadata together. Excess row/column repeats
+are clamped to the remaining Excel grid capacity; non-numeric and
+nonpositive counts occupy no coordinates. Trailing empty LibreOffice
+padding remains unallocated.
+
+An error cell has no value type of its own in ODF. hucre writes it the way
+LibreOffice does — a string cell carrying the token, marked
+`calcext:value-type="error"` — and reads that mark back into a `CellError`,
+so errors round-trip through ODS. A producer that writes the token as a
+plain string, without the mark, is read as text; there is nothing else in
+the file to go on.
 
 Not modelled in **either** direction: borders, alignment, font name,
 underline, strikethrough, column widths, row heights, hidden rows and
@@ -594,29 +669,29 @@ above.
 See [What ODS carries](../README.md#what-ods-carries) for the consequences
 worth knowing before relying on it.
 
-## `Sheet.rows` is not guaranteed rectangular
+## `Sheet.rows` is a rectangle
 
-Every reader returns `rows: CellValue[][]`, and they do not agree on the
-shape of an empty row. `readXlsx` pads to the sheet's bounding box, so an
-all-empty row comes back as `[null, null, …]`; `readOds` returns `[]` for
-it, and `parseCsv` returns whatever the file had, so a short line stays
-short.
+Every reader that returns a `Sheet` pads `rows` to the sheet's bounding
+box: every row is an array of the same length, every slot is a
+`CellValue`, and `rows[r][c]` is safe without a guard on either index.
+`readXlsx` always did this; `readOds`, `fromHtml` and the CSV path of
+`read()` used to return `[]` for an empty row and leave a short line
+short, so one sheet read three ways had three shapes. They now agree.
 
-Code that walks a sheet generically — `sheetToObjects`, `toHtml`,
-`toMarkdown`, `a11y.audit`, the schema validator — has to read
-`row[i] ?? null` rather than assume a slot exists. That is what they all
-do; it is written down here because nothing said so.
+`parseCsv` is the exception, on purpose: it returns the file's lines as
+the file had them, and padding would change the data. It returns
+`CellValue[][]`, not a `Sheet`.
 
-The streaming readers _do_ agree: `streamXlsxRows` and `streamOdsRows`
-both skip an entirely empty row and keep the true index on `StreamRow`,
-so a gap in the indexes is the signal.
+The streaming readers skip an entirely empty row and keep the true index
+on `StreamRow`, so a gap in the indexes is the signal there; they do not
+pad, because the sheet's width is not known until the last row.
 
-They do **not** agree on how many sheets they walk. `streamXlsxRows`
-yields one sheet — the first, unless `sheet` names another —
-while `streamOdsRows` walks every sheet in the document and tags each row
-with `sheetIndex`. So the same loop over a three-sheet workbook gives you
-one sheet of it as `.xlsx` and all three as `.ods`, silently. Pass
-`sheet` when you mean one, and read `row.sheetIndex` when you mean all.
+Every `stream*Rows` reader yields the same `StreamRow<T>` —
+`{ index, sheet, values }` — and every one is async. `streamXlsxRows` and
+`streamOdsRows` both stream the first sheet unless `sheet` names another;
+`streamOdsRows` also takes `sheet: "all"`, since ODS holds every table in
+one `content.xml` and can walk them in a single pass, which a ZIP of
+worksheet parts cannot.
 
 ### `streamXmlRows` gives you a row's own keys, not a rectangle
 
@@ -681,33 +756,55 @@ _wrong_.
 
 ## Read options, per reader
 
-`ReadOptions` is one interface for `readXlsx`, `readOds`, `readXlsb`,
-`readXls` and `read`. Not every option means something to every format:
+Value editing (`findCells`, `replaceCells`, `fillTemplate`) uses metadata
+overrides and formula cached values when present, then dense row values.
+Each materialized coordinate is visited once; sparse values remain sparse.
+Replacements update value/type/cache together. Formula text and unrelated
+metadata survive, while changed text removes its obsolete rich-text runs.
+These operations do not calculate formulas. Partial authoring cell metadata
+inherits undefined fields and preserves explicit null values.
 
-| option                 | `readXlsx` | `readOds` | `readXlsb` | `readXls` |
-| ---------------------- | :--------: | :-------: | :--------: | :-------: |
-| `maxInputBytes`        |    yes     |    yes    |    yes     |    yes    |
-| `maxTotalCells`        |    yes     |    yes    |     —      |    yes    |
-| `maxDecompressedBytes` |    yes     |    yes    |    yes     |    n/a    |
-| `maxSpinCount`         |    yes     |    n/a    |    yes     |    n/a    |
-| `sheets`               |    yes     |    yes    |     —      |     —     |
-| `readStyles`           |    yes     |    yes    |    n/a     |    n/a    |
-| `dateSystem`           |    yes     |    n/a    |    yes     |    yes    |
-| `password`             |    yes     |     —     |    yes     |     —     |
-| `maxRows`              |    yes     |    yes    |     —      |     —     |
-| `range`                |    yes     |    yes    |     —      |     —     |
+Object readers, `sheetToObjects`, `sheetToArrays`, `toJson`,
+`workbookToJson`, HTML/Markdown exports and text `write()` share effective
+metadata/cache values. Projection preserves source row indexes for transforms,
+sorts sparse rows by coordinate and does not mutate the workbook. Duplicate
+headers are disambiguated; prototype-looking labels are ordinary data keys.
+Arrays are rectangular copies rather than aliases of the source rows.
 
-`n/a` means the option cannot apply: ODS stores ISO date strings, so
-there is no 1900/1904 system to pick, neither legacy reader surfaces
-styles at all, `.xls` is a CFB container rather than a ZIP, and ODS
-encryption is not implemented (#156). A `—` is a gap, not a decision.
+`maxTotalCells` bounds projected cells including the header, with a default
+of 20,000,000. With empty rows skipped, the bound counts returned rows rather
+than physical gaps. Arrays/JSON keep blank rows by default; object readers
+skip them. `skipEmptyRows`, `maxRows` and `headerRow` configure table
+projection. With blanks kept, the selected output size is checked before
+header materialization or user transforms. HTML/Markdown and CSV/TSV output pay for the full rectangle and
+check that bound before expanding it. HTML includes merge extents in its
+layout bound before constructing the hidden-cell map. Sparse reading does not make a dense
+presentation export memory-bounded. Accessibility uses the same effective
+values and reports a contiguous blank-row gap once, with its physical range.
+
+Each reader has its own options type, and the type is the statement of
+what it honours: `XlsxReadOptions`, `OdsReadOptions`, `XlsbReadOptions`,
+`XlsReadOptions`, all extending `ReadOptionsBase` (`maxInputBytes`,
+`maxTotalCells`). `read()` takes `ReadOptions`, the widest of them, because
+it does not know the format until it has looked at the bytes.
+
+Passing a reader an option it does not honour is a compile error rather
+than a silent no-op — `readXls(bytes, { password })` used to type-check
+and do nothing. `test/read-options-per-reader.test.ts` reads each
+reader's source and fails if a declared field is never looked at, so the
+type cannot drift from the behaviour.
+
+What is absent is absent for a reason: ODS stores ISO date strings, so
+there is no 1900/1904 system to pick; neither legacy reader surfaces
+styles at all; `.xls` is a CFB container rather than a ZIP; ODS encryption
+is not implemented (#156); and the two binary readers read every sheet,
+so there is no `sheets`, `maxRows` or `range`.
 
 ### Resource limits
 
 The bounds in `src/limits.ts` are exported from the root, so a caller can
 quote `MAX_TOTAL_CELLS` in their own message instead of hard-coding
-20,000,000. Three of them are also `ReadOptions` fields, per the table
-above; the defaults do not change.
+20,000,000. Three of them are also read-option fields; the defaults do not change.
 
 Two are still constants only, because both clamp rather than throw — a
 file over the bound is read with the excess trimmed, not rejected, so
@@ -720,6 +817,13 @@ there is nothing for a caller to rescue:
 
 `MAX_SPAN_CELLS` also belongs to `fromHtml`, which takes its own options
 type rather than `ReadOptions`.
+
+`read()` forwards `maxTotalCells` for detected text formats as well. CSV
+padding and HTML growth count the dense bounding rectangle. `parseJson`,
+`parseNdjson` and `readXml` check data rows × union headers before filling
+missing fields; `jsonToWorkbook` also counts its header row. These text
+entry points and `fromHtml` accept `maxTotalCells` with the same 20,000,000
+default. Streaming rows do not build a document-wide rectangle.
 
 ## XLS and XLSB — read only
 

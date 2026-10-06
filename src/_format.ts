@@ -6,6 +6,7 @@
 // locale prefixes.
 // ─────────────────────────────────────────────────────────────────────
 
+import { isCellError } from "./cell-error"
 import { isDateFormat, formatDate, serialToDate, dateToSerial } from "./_date"
 import { InvalidArgumentError } from "./errors"
 import { MAX_FORMAT_DECIMALS, MAX_NUMBER_FORMAT_LENGTH } from "./limits"
@@ -149,7 +150,8 @@ export interface FormatOptions {
    * Use the 1904 date system (Excel for Mac legacy). When true, date serials
    * are interpreted/produced relative to 1904-01-01 instead of 1900-01-01.
    */
-  is1904?: boolean
+  /** The workbook's date system, for serial → date. Default: `"1900"`. */
+  dateSystem?: "1900" | "1904"
 }
 
 /**
@@ -171,6 +173,11 @@ export function formatValue(value: unknown, numFmt: string, options?: FormatOpti
   // Boolean → "TRUE"/"FALSE"
   if (typeof value === "boolean") {
     return value ? "TRUE" : "FALSE"
+  }
+
+  // An error shows its token whatever the format says.
+  if (isCellError(value)) {
+    return value.error
   }
 
   // A long placeholder run makes fraction detection quadratic even
@@ -202,7 +209,7 @@ export function formatValue(value: unknown, numFmt: string, options?: FormatOpti
   // Convert Date to serial for numeric formatting
   let numValue: number
   if (value instanceof Date) {
-    numValue = dateToSerial(value, options?.is1904)
+    numValue = dateToSerial(value, options?.dateSystem)
   } else if (typeof value === "number") {
     numValue = value
   } else {
@@ -248,7 +255,7 @@ export function formatValue(value: unknown, numFmt: string, options?: FormatOpti
   }
 
   const localeInfo = resolveLocale(options?.locale)
-  return applyNumberSection(numValue, section, localeInfo, options?.is1904)
+  return applyNumberSection(numValue, section, localeInfo, options?.dateSystem)
 }
 
 // ── Section Parsing ─────────────────────────────────────────────────
@@ -415,7 +422,7 @@ function applyNumberSection(
   value: number,
   section: string,
   locale?: LocaleFormat,
-  is1904?: boolean,
+  dateSystem?: "1900" | "1904",
 ): string {
   const cleaned = cleanSection(section)
 
@@ -426,7 +433,7 @@ function applyNumberSection(
 
   // Check if it's a date format — delegate to formatDate
   if (isDateFormat(cleaned)) {
-    const date = serialToDate(value, is1904)
+    const date = serialToDate(value, dateSystem)
     return formatDate(date, section, value) // Pass original section + serial for elapsed time
   }
 

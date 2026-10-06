@@ -25,22 +25,18 @@ export {
   XLSX_MAX_ROWS_PER_SHEET,
 } from "./xlsx/stream-writer"
 export type {
-  StreamWriterOptions,
   XlsxStreamWriterOptions,
+  XlsxStreamColumn,
   XlsxWriteStreamOptions,
   XlsxWriteStreamWorkbookOptions,
   XlsxStreamRow,
   XlsxStreamSheet,
-  StreamStyledCell,
 } from "./xlsx/stream-writer"
 
 // ── Sizing & theme helpers ─────────────────────────────────────────
 export { cloneCellStyle } from "./_style"
-export { toWriteOptions, toWriteSheet } from "./write-model"
-export type { WriteModelDrop, ToWriteOptionsOptions } from "./write-model"
 export { calculateColumnWidth, measureValueWidth } from "./xlsx/auto-width"
 export { calculateRowHeight } from "./xlsx/auto-size"
-export { parseThemeColors, resolveThemeColor } from "./xlsx/theme"
 
 // ── Cell Utilities ─────────────────────────────────────────────────
 //
@@ -53,21 +49,21 @@ export { parseThemeColors, resolveThemeColor } from "./xlsx/theme"
 export {
   parseCellRef,
   colToLetter,
+  letterToCol,
   cellRef,
   rangeRef,
-  letterToCol,
   parseRange,
   isInRange,
   r1c1ToA1,
   a1ToR1C1,
-  // Normalise either spelling of a range to coordinates (#474).
   toRange,
   toRanges,
 } from "./cell-utils"
 export type { RangeLike } from "./cell-utils"
+export { createCellStore, getCell, setCell, hasCell, deleteCell, cellEntries } from "./cell-store"
 
 // ── Shared types used by this entry point's signatures ──────────────
-// Re-exported so `import type { WriteSheet } from "hucre/xlsx"` works
+// Re-exported so `import type { SheetInput } from "hucre/xlsx"` works
 // without a second import from the root, which would pull the whole
 // type graph back in and defeat the point of a format subpath.
 export type {
@@ -80,6 +76,8 @@ export type {
   MergeRange,
   ReadInput,
   ReadOptions,
+  XlsxReadOptions,
+  XlsbReadOptions,
   ReadWarning,
   Sheet,
   SheetChart,
@@ -88,6 +86,17 @@ export type {
   TableDefinition,
   Workbook,
   WorkbookProperties,
-  WriteOptions,
-  WriteSheet,
+  WorkbookInput,
+  CellStore,
+  WorkbookWriteOptions,
+  XlsxWriteOptions,
+  WriteModelDrop,
+  SheetInput,
 } from "./_types"
+
+// A cell may hold an error value; every writer takes one, and the spreadsheet readers produce them.
+export { cellError, isCellError } from "./cell-error"
+export type { CellError, CellErrorCode } from "./cell-error"
+
+// What a writer takes where a cell goes: a value, or a cell object.
+export type { CellInput } from "./_types"

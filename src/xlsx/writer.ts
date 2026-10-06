@@ -1,15 +1,19 @@
+import { prepareWorkbook } from "../_write-model"
 // ── XLSX Writer ──────────────────────────────────────────────────────
 // Generates valid Office Open XML spreadsheet files (XLSX).
 
+import { InvalidArgumentError } from "../errors"
 import type {
   CellValue,
   WorkbookProperties,
-  WriteOptions,
+  WorkbookInput,
+  WritableWorkbook,
+  WritableSheet,
+  XlsxWriteOptions,
   WriteOutput,
-  WriteSheet,
 } from "../_types"
 import { ZipWriter } from "../zip/writer"
-import { splitInlineCellsInSheets, toCellValue } from "../_inline-cells"
+import { effectiveValue } from "../_sheet-values"
 import { writeContentTypes } from "./content-types-writer"
 import { FPB_PART_PATH, writeFeaturePropertyBagXml } from "./feature-property-bag"
 import { METADATA_PART_PATH, writeMetadataXml } from "./metadata"
@@ -17,9 +21,13 @@ import type { ContentTypesOptions } from "./content-types-writer"
 import { writeRootRels, writeWorkbookXml, writeWorkbookRels } from "./workbook-writer"
 import type { PivotCacheRef, PivotCacheRel } from "./workbook-writer"
 import { createStylesCollector } from "./styles-writer"
-import { createSharedStrings, writeSharedStringsXml, writeWorksheetXml } from "./worksheet-writer"
+import {
+  createSharedStrings,
+  writeSharedStringsXml,
+  writeWorksheetXml,
+  resolveRows,
+} from "./worksheet-writer"
 import type { WorksheetResult } from "./worksheet-writer"
-import { unwrapCellValue } from "./hyperlink"
 import { assignBackgroundImagePaths } from "./background-image"
 import { writeDrawing } from "./drawing-writer"
 import type { DrawingResult } from "./drawing-writer"
@@ -55,7 +63,7 @@ const REL_PIVOT_TABLE =
  * `properties.description` when the workbook does not already declare one.
  * This is what screen readers announce when the file is opened.
  */
-function effectiveProperties(options: WriteOptions): WorkbookProperties | undefined {
+function effectiveProperties(options: WritableWorkbook): WorkbookProperties | undefined {
   const props = options.properties
   if (props?.description) return props
 
@@ -72,12 +80,14 @@ function effectiveProperties(options: WriteOptions): WorkbookProperties | undefi
  * Write a Workbook to XLSX format.
  * Returns a Uint8Array containing the ZIP archive.
  */
-export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
-  // A cell object written inline in `rows` becomes a `cells` entry before
-  // anything reads the grid, so every consumer below still sees values.
-  // See #433 and `src/_inline-cells.ts`.
-  const sheets = splitInlineCellsInSheets(options.sheets)
-  const { defaultFont, dateSystem, namedRanges, activeSheet, workbookProtection } = options
+export async function writeXlsx(
+  input: WorkbookInput,
+  writeOptions?: XlsxWriteOptions,
+): Promise<WriteOutput> {
+  const options = { ...prepareWorkbook(input, writeOptions?.onDrop), ...writeOptions }
+  // The shared boundary has resolved object rows and lifted inline cells
+  // before worksheet, pivot, comment or layout consumers read the grid.
+  const { sheets, defaultFont, dateSystem, namedRanges, activeSheet, workbookProtection } = options
 
   // Before any bytes are produced, so a rejected workbook leaves no
   // half-written output. See #364.
@@ -211,17 +221,9 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
 
   for (let i = 0; i < sheets.length; i++) {
     const sheet = sheets[i]
-    if (sheet.cells) {
-      const result = writeComments(sheet.cells, i)
-      if (result) {
-        commentsResults.push(result)
-        commentIndices.push(i + 1)
-      } else {
-        commentsResults.push(null)
-      }
-    } else {
-      commentsResults.push(null)
-    }
+    const result = sheet.cells ? writeComments(sheet.cells, i) : null
+    commentsResults.push(result)
+    if (result) commentIndices.push(i + 1)
   }
 
   // Collect all table indices for content types
@@ -252,7 +254,7 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
       const sourceSheetName = pivot.sourceSheet ?? sheet.name
       const sourceSheet = sheets.find((s) => s.name === sourceSheetName)
       if (!sourceSheet) {
-        throw new Error(
+        throw new InvalidArgumentError(
           `Pivot "${pivot.name}" sourceSheet "${sourceSheetName}" not found in workbook`,
         )
       }
@@ -590,33 +592,7 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
 
 // ── Pivot Source Resolution ────────────────────────────────────────────
 
-/**
- * Pull the source data out of a `WriteSheet`. Pivot tables can source
- * from either `rows` (raw 2-D arrays) or `data` (objects keyed by
- * `columns[].key`); we normalise both shapes into a single `CellValue[][]`.
- *
- * Returns `[]` when the sheet has no row-shaped data — `resolvePivotSource`
- * will throw a clearer error in that case.
- */
-function collectSourceRows(sheet: WriteSheet): CellValue[][] {
-  if (sheet.rows && sheet.rows.length > 0) {
-    // A pivot sources values; `writeXlsx` has already lifted any inline
-    // cell objects, and `toCellValue` keeps this correct on its own.
-    return sheet.rows.map((row) => row.map(toCellValue))
-  }
-  if (sheet.data && sheet.data.length > 0 && sheet.columns && sheet.columns.length > 0) {
-    const out: CellValue[][] = []
-    const headerRow: CellValue[] = sheet.columns.map((c) => c.header ?? c.key ?? "")
-    out.push(headerRow)
-    for (const obj of sheet.data) {
-      const row: CellValue[] = sheet.columns.map((c) => {
-        if (!c.key) return null
-        const v = obj[c.key]
-        return v === undefined ? null : unwrapCellValue(v)
-      })
-      out.push(row)
-    }
-    return out
-  }
-  return []
+/** Pivots consume the same effective rows/caches as text presentation. */
+function collectSourceRows(sheet: WritableSheet): CellValue[][] {
+  return resolveRows(sheet).map((row) => row.map((cell) => effectiveValue(cell ?? undefined, null)))
 }

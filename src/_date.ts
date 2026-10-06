@@ -32,11 +32,11 @@ const LOTUS_BUG_SERIAL = 60
  * All conversions use UTC to avoid timezone issues.
  *
  * @param serial - Excel date serial number (can include fractional time)
- * @param is1904 - Whether to use the 1904 date system (default: false = 1900)
+ * @param dateSystem - `"1900"` (default) or `"1904"`, the workbook's date system
  * @returns JavaScript Date in UTC
  */
-export function serialToDate(serial: number, is1904?: boolean): Date {
-  if (is1904) {
+export function serialToDate(serial: number, dateSystem?: "1900" | "1904"): Date {
+  if (dateSystem === "1904") {
     // 1904 system: no Lotus bug, serial 0 = Jan 1, 1904
     const ms = EPOCH_1904 + Math.round(serial * MS_PER_DAY)
     return new Date(ms)
@@ -89,13 +89,13 @@ export function serialToDate(serial: number, is1904?: boolean): Date {
  * calendar day.
  *
  * @param date - JavaScript Date; its instant is converted
- * @param is1904 - Whether to use the 1904 date system (default: false = 1900)
+ * @param dateSystem - `"1900"` (default) or `"1904"`, the workbook's date system
  * @returns Excel serial number (with fractional time portion)
  */
-export function dateToSerial(date: Date, is1904?: boolean): number {
+export function dateToSerial(date: Date, dateSystem?: "1900" | "1904"): number {
   const timeMs = date.getTime()
 
-  if (is1904) {
+  if (dateSystem === "1904") {
     return (timeMs - EPOCH_1904) / MS_PER_DAY
   }
 

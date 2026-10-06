@@ -91,14 +91,7 @@ function declarationOf(iface: string): { extends: string[]; body: string } {
   if (depth !== 0) throw new Error(`interface ${iface} has no closing brace`)
 
   const heritage = head[1]!.trim()
-  const bases = heritage.startsWith("extends")
-    ? heritage
-        .slice("extends".length)
-        .split(",")
-        // `extends Foo<Bar>` — the base's own name is what we can look up.
-        .map((b) => b.trim().replace(/<.*$/, ""))
-        .filter(Boolean)
-    : []
+  const bases = heritage.startsWith("extends") ? splitTypes(heritage.slice(7)) : []
 
   return { extends: bases, body: text.slice(open, i - 1) }
 }
@@ -151,29 +144,41 @@ export function ownFieldsOf(iface: string): string[] {
  * rather than throwing, because it is not part of hucre's model and no
  * test derives expectations from it.
  */
+/** Split generic arguments without treating the comma inside Omit as heritage. */
+function splitTypes(text: string): string[] {
+  const parts: string[] = []
+  let depth = 0
+  let start = 0
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "<") depth++
+    else if (text[i] === ">") depth--
+    else if (text[i] === "," && depth === 0) {
+      parts.push(text.slice(start, i).trim())
+      start = i + 1
+    }
+  }
+  parts.push(text.slice(start).trim())
+  return parts.filter(Boolean)
+}
+
 export function fieldsOf(iface: string): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-
-  const visit = (name: string, guard: Set<string>): void => {
-    if (guard.has(name)) return
-    guard.add(name)
-
+  const visit = (name: string, guard: Set<string>): string[] => {
+    if (guard.has(name)) return []
+    const nextGuard = new Set([...guard, name])
+    const utility = /^(Omit|Partial)<([\s\S]+)>$/.exec(name)
+    if (utility) {
+      const [base, keys] = splitTypes(utility[2]!)
+      const fields = visit(base!, nextGuard)
+      const excluded = new Set([...(keys ?? "").matchAll(/"([^"\n]+)"/g)].map((m) => m[1]))
+      return utility[1] === "Omit" ? fields.filter((field) => !excluded.has(field)) : fields
+    }
     let decl: { extends: string[]; body: string }
     try {
       decl = declarationOf(name)
     } catch {
-      return
+      return []
     }
-    for (const base of decl.extends) visit(base, guard)
-    for (const field of ownFieldsOf(name)) {
-      if (!seen.has(field)) {
-        seen.add(field)
-        out.push(field)
-      }
-    }
+    return [...decl.extends.flatMap((base) => visit(base, nextGuard)), ...ownFieldsOf(name)]
   }
-
-  visit(iface, new Set())
-  return out
+  return [...new Set(visit(iface, new Set()))]
 }

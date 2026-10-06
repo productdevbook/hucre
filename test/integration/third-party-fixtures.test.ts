@@ -1,10 +1,12 @@
+import { getCell } from "../../src/cell-store"
+import { cellError } from "../../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { readFileSync, readdirSync } from "node:fs"
-import { readXlsx } from "../src/xlsx/reader"
-import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip"
-import { streamXlsxRows } from "../src/xlsx/stream-reader"
-import { ZipReader } from "../src/zip/reader"
-import type { CellValue } from "../src/_types"
+import { readXlsx } from "../../src/xlsx/reader"
+import { openXlsx, saveXlsx } from "../../src/xlsx/roundtrip"
+import { streamXlsxRows } from "../../src/xlsx/stream-reader"
+import { ZipReader } from "../../src/zip/reader"
+import type { CellValue } from "../../src/_types"
 
 // ═══════════════════════════════════════════════════════════════════════
 // #464 — the suite parsed 9,934 assertions' worth of hucre's own output
@@ -22,7 +24,7 @@ import type { CellValue } from "../src/_types"
 // See test/fixtures/third-party/README.md for provenance and licensing.
 // ═══════════════════════════════════════════════════════════════════════
 
-const DIR = new URL("./fixtures/third-party/", import.meta.url)
+const DIR = new URL("../fixtures/third-party/", import.meta.url)
 
 function load(name: string): Uint8Array {
   return new Uint8Array(readFileSync(new URL(name, DIR)))
@@ -129,17 +131,17 @@ describe("whitespace-strings", () => {
 describe("styled", () => {
   it("reads fonts, fills, borders and number formats another tool wrote", async () => {
     const sheet = (await readXlsx(load("styled.xlsx"), { readStyles: true })).sheets[0]!
-    const cell = (key: string) => sheet.cells?.get(key)?.style
+    const cell = (row: number, col: number) => getCell(sheet.cells, row, col)?.style
 
-    expect(cell("0,0")?.font?.bold).toBe(true)
-    expect(cell("0,1")?.font).toMatchObject({ italic: true, size: 14, name: "Georgia" })
-    const fill = cell("0,2")?.fill
+    expect(cell(0, 0)?.font?.bold).toBe(true)
+    expect(cell(0, 1)?.font).toMatchObject({ italic: true, size: 14, name: "Georgia" })
+    const fill = cell(0, 2)?.fill
     expect(fill).toMatchObject({ type: "pattern", pattern: "solid" })
     expect(fill?.type === "pattern" ? fill.fgColor?.rgb : undefined).toBe("FFFF00")
-    expect(cell("0,3")?.border?.left).toMatchObject({ style: "medium" })
-    expect(cell("0,3")?.border?.left?.color?.rgb).toBe("FF0000")
-    expect(cell("0,3")?.border?.bottom?.style).toBe("double")
-    expect(cell("1,4")?.numFmt).toBe("#,##0.00")
+    expect(cell(0, 3)?.border?.left).toMatchObject({ style: "medium" })
+    expect(cell(0, 3)?.border?.left?.color?.rgb).toBe("FF0000")
+    expect(cell(0, 3)?.border?.bottom?.style).toBe("double")
+    expect(cell(1, 4)?.numFmt).toBe("#,##0.00")
   })
 
   it("reads a column width another tool wrote", async () => {
@@ -189,8 +191,8 @@ describe("errors-and-blanks", () => {
   it("reads error values as their token, and gaps as null", async () => {
     const rows = (await readXlsx(load("errors-and-blanks.xlsx"))).sheets[0]!.rows
 
-    expect(rows[1]![0]).toBe("#DIV/0!")
-    expect(rows[1]![2]).toBe("#N/A")
+    expect(rows[1]![0]).toEqual(cellError("#DIV/0!"))
+    expect(rows[1]![2]).toEqual(cellError("#N/A"))
     expect(rows[2]).toEqual([null, null, null])
     expect(rows[3]![0]).toBe("gap above")
   })
@@ -201,8 +203,8 @@ describe("hyperlinks-and-comments", () => {
     const sheet = (await readXlsx(load("hyperlinks-and-comments.xlsx"), { readStyles: true }))
       .sheets[0]!
 
-    expect(sheet.cells?.get("1,0")?.hyperlink?.target).toBe("https://example.com")
-    expect(sheet.cells?.get("2,0")?.comment?.text).toBe("a note from another tool")
+    expect(getCell(sheet.cells, 1, 0)?.hyperlink?.target).toBe("https://example.com")
+    expect(getCell(sheet.cells, 2, 0)?.comment?.text).toBe("a note from another tool")
   })
 })
 

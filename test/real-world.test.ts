@@ -1,3 +1,4 @@
+import { createCellStore, setCell, getCell } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
@@ -11,7 +12,7 @@ import { validateWithSchema } from "../src/_schema"
 import { insertRows, deleteRows, cloneSheet } from "../src/sheet-ops"
 import { ZipReader } from "../src/zip/reader"
 import { ZipWriter } from "../src/zip/writer"
-import type { WriteSheet, CellValue, Cell, Sheet } from "../src/_types"
+import type { SheetInput, CellValue, Cell, Sheet } from "../src/_types"
 import type { StreamRow } from "../src/xlsx/stream-reader"
 
 // ── Shared Helpers ──────────────────────────────────────────────────
@@ -105,7 +106,7 @@ describe("Real World: Product Catalog Export", () => {
   it("writes and reads 50+ products with all features", async () => {
     const rows = generateProducts(55)
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Products",
       rows,
       columns: [
@@ -161,7 +162,7 @@ describe("Real World: Product Catalog Export", () => {
           },
         },
       ],
-      cells: new Map<string, Partial<Cell>>(),
+      cells: createCellStore<Partial<Cell>>(),
       tables: [
         {
           name: "ProductCatalog",
@@ -183,10 +184,10 @@ describe("Real World: Product Catalog Export", () => {
       ],
     }
 
-    // Apply bold header style via cells map
+    // Apply bold header style via cell store
     const headers = rows[0]!
     for (let c = 0; c < headers.length; c++) {
-      sheet.cells!.set(`0,${c}`, {
+      setCell(sheet.cells!, 0, c, {
         style: {
           font: { bold: true },
           fill: {
@@ -265,7 +266,7 @@ describe("Real World: Product Catalog Export", () => {
 
     // Verify styled header cell
     expect(s.cells).toBeDefined()
-    const headerCell = s.cells!.get("0,0")
+    const headerCell = getCell(s.cells!, 0, 0)
     expect(headerCell).toBeDefined()
     expect(headerCell!.style).toBeDefined()
     expect(headerCell!.style!.font?.bold).toBe(true)
@@ -273,7 +274,7 @@ describe("Real World: Product Catalog Export", () => {
 
   it("auto width columns round-trip", async () => {
     const rows = generateProducts(10)
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "AutoWidth",
       rows,
       columns: [
@@ -321,9 +322,9 @@ describe("Real World: Financial Report", () => {
       ["Total", null, null, null],
     ]
 
-    const summaryCells = new Map<string, Partial<Cell>>()
+    const summaryCells = createCellStore<Partial<Cell>>()
     // Title: bold, large
-    summaryCells.set("0,0", {
+    setCell(summaryCells, 0, 0, {
       style: {
         font: { bold: true, size: 16 },
         alignment: { horizontal: "center" },
@@ -331,7 +332,7 @@ describe("Real World: Financial Report", () => {
     })
     // Header row: bold
     for (let c = 0; c < 4; c++) {
-      summaryCells.set(`2,${c}`, {
+      setCell(summaryCells, 2, c, {
         style: {
           font: { bold: true },
           fill: {
@@ -343,15 +344,15 @@ describe("Real World: Financial Report", () => {
       })
     }
     // Formulas for Total row
-    summaryCells.set("8,1", { formula: "SUM(B4:B7)" })
-    summaryCells.set("8,2", { formula: "SUM(C4:C7)" })
-    summaryCells.set("8,3", { formula: "SUM(D4:D7)" })
+    setCell(summaryCells, 8, 1, { formula: "SUM(B4:B7)" })
+    setCell(summaryCells, 8, 2, { formula: "SUM(C4:C7)" })
+    setCell(summaryCells, 8, 3, { formula: "SUM(D4:D7)" })
 
     // Revenue column: currency format
     for (let r = 3; r <= 8; r++) {
       for (let c = 1; c <= 3; c++) {
-        const existing = summaryCells.get(`${r},${c}`)
-        summaryCells.set(`${r},${c}`, {
+        const existing = getCell(summaryCells, r, c)
+        setCell(summaryCells, r, c, {
           ...existing,
           style: {
             ...existing?.style,
@@ -361,7 +362,7 @@ describe("Real World: Financial Report", () => {
       }
     }
 
-    function makeQuarterSheet(name: string, base: number): WriteSheet {
+    function makeQuarterSheet(name: string, base: number): SheetInput {
       const months = ["Month 1", "Month 2", "Month 3"]
       const rows: CellValue[][] = [
         [`${name} Breakdown`, null, null],
@@ -374,17 +375,17 @@ describe("Real World: Financial Report", () => {
       rows.push([null, null, null])
       rows.push(["Total", null, null])
 
-      const cells = new Map<string, Partial<Cell>>()
-      cells.set("0,0", {
+      const cells = createCellStore<Partial<Cell>>()
+      setCell(cells, 0, 0, {
         style: { font: { bold: true, size: 14 } },
       })
       for (let c = 0; c < 3; c++) {
-        cells.set(`2,${c}`, {
+        setCell(cells, 2, c, {
           style: { font: { bold: true } },
         })
       }
-      cells.set("6,1", { formula: "SUM(B4:B6)" })
-      cells.set("6,2", { formula: "SUM(C4:C6)" })
+      setCell(cells, 6, 1, { formula: "SUM(B4:B6)" })
+      setCell(cells, 6, 2, { formula: "SUM(C4:C6)" })
 
       return {
         name,
@@ -398,7 +399,7 @@ describe("Real World: Financial Report", () => {
       }
     }
 
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       {
         name: "Summary",
         rows: summaryRows,
@@ -469,7 +470,7 @@ describe("Real World: Financial Report", () => {
     expect(titleMerge.endCol).toBe(3)
 
     // Verify formulas
-    const totalRevenueCell = summary.cells?.get("8,1")
+    const totalRevenueCell = getCell(summary.cells, 8, 1)
     expect(totalRevenueCell).toBeDefined()
     expect(totalRevenueCell!.formula).toBe("SUM(B4:B7)")
 
@@ -530,16 +531,16 @@ describe("Real World: Employee Directory", () => {
       ],
     ]
 
-    const cells = new Map<string, Partial<Cell>>()
+    const cells = createCellStore<Partial<Cell>>()
 
     // Rich text for name column
-    cells.set("1,0", {
+    setCell(cells, 1, 0, {
       richText: [
         { text: "Alice ", font: { bold: true } },
         { text: "Johnson", font: { italic: true, color: { rgb: "666666" } } },
       ],
     })
-    cells.set("2,0", {
+    setCell(cells, 2, 0, {
       richText: [
         { text: "Bob ", font: { bold: true } },
         { text: "Smith", font: { italic: true, color: { rgb: "666666" } } },
@@ -547,29 +548,29 @@ describe("Real World: Employee Directory", () => {
     })
 
     // Hyperlinks for email
-    cells.set("1,2", {
+    setCell(cells, 1, 2, {
       hyperlink: { target: "mailto:alice@acme.com", tooltip: "Email Alice" },
     })
-    cells.set("2,2", {
+    setCell(cells, 2, 2, {
       hyperlink: { target: "mailto:bob@acme.com", tooltip: "Email Bob" },
     })
 
     // Hyperlinks for website
-    cells.set("1,3", {
+    setCell(cells, 1, 3, {
       hyperlink: { target: "https://acme.com/alice", tooltip: "Alice's profile" },
     })
 
     // Comments
-    cells.set("1,5", {
+    setCell(cells, 1, 5, {
       comment: { author: "Manager", text: "Consider for promotion" },
     })
-    cells.set("3,5", {
+    setCell(cells, 3, 5, {
       comment: { author: "HR", text: "On VP track, review Q2" },
     })
 
     // Bold header
     for (let c = 0; c < 6; c++) {
-      cells.set(`0,${c}`, {
+      setCell(cells, 0, c, {
         style: { font: { bold: true } },
       })
     }
@@ -577,7 +578,7 @@ describe("Real World: Employee Directory", () => {
     // Small PNG placeholder image
     const pngData = fakePng(128)
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Directory",
       rows,
       cells,
@@ -616,23 +617,23 @@ describe("Real World: Employee Directory", () => {
     expect(s.rows).toHaveLength(4)
 
     // Verify hyperlinks
-    const emailCell = s.cells?.get("1,2")
+    const emailCell = getCell(s.cells, 1, 2)
     expect(emailCell).toBeDefined()
     expect(emailCell!.hyperlink).toBeDefined()
     expect(emailCell!.hyperlink!.target).toBe("mailto:alice@acme.com")
 
-    const websiteCell = s.cells?.get("1,3")
+    const websiteCell = getCell(s.cells, 1, 3)
     expect(websiteCell).toBeDefined()
     expect(websiteCell!.hyperlink).toBeDefined()
     expect(websiteCell!.hyperlink!.target).toBe("https://acme.com/alice")
 
     // Verify comments
-    const notesCell1 = s.cells?.get("1,5")
+    const notesCell1 = getCell(s.cells, 1, 5)
     expect(notesCell1).toBeDefined()
     expect(notesCell1!.comment).toBeDefined()
     expect(notesCell1!.comment!.text).toContain("promotion")
 
-    const notesCell3 = s.cells?.get("3,5")
+    const notesCell3 = getCell(s.cells, 3, 5)
     expect(notesCell3).toBeDefined()
     expect(notesCell3!.comment).toBeDefined()
     expect(notesCell3!.comment!.text).toContain("VP track")
@@ -670,7 +671,7 @@ describe("Real World: Data Import Template", () => {
       rows.push([null, null, null, null, null])
     }
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Import Template",
       rows,
       columns: [
@@ -739,12 +740,13 @@ describe("Real World: Data Import Template", () => {
           errorStyle: "information",
         },
       ],
-      cells: new Map<string, Partial<Cell>>(
+      cells: createCellStore<Partial<Cell>>(
         Array.from(
           { length: 5 },
           (_, c) =>
             [
-              `0,${c}`,
+              0,
+              c,
               {
                 style: {
                   font: { bold: true, color: { rgb: "FFFFFF" } },
@@ -755,7 +757,7 @@ describe("Real World: Data Import Template", () => {
                   },
                 },
               },
-            ] as [string, Partial<Cell>],
+            ] as [number, number, Partial<Cell>],
         ),
       ),
     }
@@ -1159,7 +1161,7 @@ describe("Real World: Schema Validation", () => {
 describe("Real World: Round-trip Preservation", () => {
   it("preserves unknown parts (e.g. chart) while modifying cell data", async () => {
     // Create initial XLSX
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Product", "Sales"],
@@ -1211,7 +1213,7 @@ describe("Real World: Round-trip Preservation", () => {
   })
 
   it("preserves multiple unknown parts across round-trip", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Data",
       rows: [
         ["A", "B"],

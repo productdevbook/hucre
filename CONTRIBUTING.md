@@ -28,8 +28,9 @@ number that caused it. A PR moves on; the comment stays with the line
 someone will be reading in a year.
 
 **No silently accepted options.** A typed field that is discarded is worse
-than no field at all — that is why `WriteSheet.threadedComments` and
-`CsvReadOptions.schema` were removed rather than left in place. If the
+than no field at all — that is why `CsvReadOptions.schema` was removed rather than left in place.
+Workbook inputs may carry read-only metadata; writers report authoring
+losses through `onDrop` instead of requiring callers to strip fields. If the
 code cannot honour something, do not accept it.
 
 ## The registers
@@ -38,13 +39,13 @@ Several tests exist to fail when someone adds a field and forgets a place
 that has to carry it. If one of these breaks, it is doing its job — fix
 the thing it points at rather than the test:
 
-| test                                  | guards                                                                                                  |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `test/xlsx-write-read-parity.test.ts` | every `WriteSheet` / `WriteOptions` field either round-trips or is registered one-way **with a reason** |
-| `test/parity-statement.test.ts`       | `docs/PARITY.md` and the README still describe the types as they are                                    |
-| `test/clone-sheet-coverage.test.ts`   | `cloneSheet`, `cloneCell` and the worker serializer carry every field of `Sheet`, `Cell` and `Workbook` |
-| `test/write-model.test.ts`            | `toWriteOptions` names every read-model field that has no write counterpart                             |
-| `test/exports.test.ts`                | the public surface of each entry point                                                                  |
+| test                                  | guards                                                                                                                        |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `test/xlsx-write-read-parity.test.ts` | every `SheetInput` / `WorkbookInput` field either round-trips or is registered one-way **with a reason**                      |
+| `test/parity-statement.test.ts`       | `docs/PARITY.md` and the README still describe the types as they are                                                          |
+| `test/clone-sheet-coverage.test.ts`   | `cloneSheet` and `cloneCell` carry every field of `Sheet`, `Cell` and `Workbook`, and a `Workbook` survives `structuredClone` |
+| `test/write-model.test.ts`            | writer normalization reports every unsupported populated model field                                                          |
+| `test/exports.test.ts`                | the public surface of each entry point                                                                                        |
 
 ## Read/write parity
 
@@ -65,8 +66,8 @@ The library core uses Web APIs only — no `node:` imports, no `process`, no
 compile error rather than something that quietly works on your machine.
 The CLI is the exception and is checked by `tsconfig.cli.json`.
 
-Tests that read from disk belong in `tsconfig.cli.json`'s include list for
-the same reason.
+All tests are checked by `tsconfig.test.json`. The library, CLI and test
+projects have distinct environment types; see `test/README.md`.
 
 ## Commits and PRs
 
@@ -86,3 +87,15 @@ the PR, with the shape of the input and how many runs. One process per
 measurement if you are quoting peak RSS — `maxRSS` is a high-water mark
 for the whole process, so a second measurement in the same run inherits
 the first one's peak.
+
+## Real-file tests
+
+Keep external-producer corpus tests in `test/integration/` and shared
+loading/projection/OOXML helpers in `test/support/`. Unit regressions may
+use small raw XML inputs. Corpus expectations must come from authored
+scenarios or independently checked files, never from hucre's output.
+
+New example files need an entry in `examples/scenarios.json` and a checksum
+in `examples/manifest.json`. CI consumes the committed bytes and does not
+install a spreadsheet producer or regenerate fixtures. See
+`examples/README.md` for provenance and regeneration.

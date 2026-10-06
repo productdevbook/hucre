@@ -1,5 +1,7 @@
+import { getCell } from "../src/cell-store"
+import type { CellInput } from "../src/_types"
 import { describe, expect, it } from "vitest"
-import { writeXlsxStream, XlsxStreamWriter, type StreamStyledCell } from "../src/xlsx/stream-writer"
+import { writeXlsxStream, XlsxStreamWriter } from "../src/xlsx/stream-writer"
 import { readXlsx } from "../src/xlsx/reader"
 import type { CellStyle } from "../src/_types"
 
@@ -43,9 +45,9 @@ describe("writeXlsxStream — per-cell formatting", () => {
     const wb = await readXlsx(bytes, { readStyles: true })
     const cells = wb.sheets[0]!.cells!
 
-    expect(cells.get("0,0")!.style!.font!.name).toBe("Manrope")
-    expect(cells.get("0,1")!.style!.font!.name).toBe("Arial")
-    expect(cells.get("1,0")!.style!.font!.name).toBe("Arial")
+    expect(getCell(cells, 0, 0)!.style!.font!.name).toBe("Manrope")
+    expect(getCell(cells, 0, 1)!.style!.font!.name).toBe("Arial")
+    expect(getCell(cells, 1, 0)!.style!.font!.name).toBe("Arial")
   })
 
   it("keeps the column style for cells that do not carry one", async () => {
@@ -59,8 +61,8 @@ describe("writeXlsxStream — per-cell formatting", () => {
     const wb = await readXlsx(bytes, { readStyles: true })
     const cells = wb.sheets[0]!.cells!
 
-    expect(cells.get("0,0")!.style!.font!.size).toBe(8)
-    expect(cells.get("0,1")!.style!.font!.size).toBe(8)
+    expect(getCell(cells, 0, 0)!.style!.font!.size).toBe(8)
+    expect(getCell(cells, 0, 1)!.style!.font!.size).toBe(8)
   })
 
   it("writes a formula, with the cached result when one is given", async () => {
@@ -79,9 +81,9 @@ describe("writeXlsxStream — per-cell formatting", () => {
     const wb = await readXlsx(bytes)
     const cells = wb.sheets[0]!.cells!
 
-    expect(cells.get("0,0")!.formula).toBe("SUM(B1:B9)")
-    expect(cells.get("0,1")!.formula).toBe("1+2")
-    expect(cells.get("0,1")!.value).toBe(3)
+    expect(getCell(cells, 0, 0)!.formula).toBe("SUM(B1:B9)")
+    expect(getCell(cells, 0, 1)!.formula).toBe("1+2")
+    expect(getCell(cells, 0, 1)!.value).toBe(3)
   })
 
   it("applies row heights from rowDefs, including on an otherwise empty row", async () => {
@@ -139,8 +141,8 @@ describe("writeXlsxStream — per-cell formatting", () => {
     const wb = await readXlsx(bytes)
     const cells = wb.sheets[0]!.cells!
 
-    expect(cells.get("0,0")!.value).toBe("ok")
-    expect(cells.get("0,1")!.value).toBe(true)
+    expect(getCell(cells, 0, 0)!.value).toBe("ok")
+    expect(getCell(cells, 0, 1)!.value).toBe(true)
   })
 })
 
@@ -158,7 +160,7 @@ describe("XlsxStreamWriter — the same options the generator takes", () => {
     const wb = await readXlsx(await writer.finish(), { readStyles: true })
     const sheet = wb.sheets[0]!
 
-    expect(sheet.cells!.get("0,0")!.style!.font!.name).toBe("Manrope")
+    expect(getCell(sheet.cells!, 0, 0)!.style!.font!.name).toBe("Manrope")
     expect(sheet.rowDefs!.get(0)!.height).toBe(30)
     expect(sheet.merges).toEqual([{ startRow: 0, startCol: 0, endRow: 0, endCol: 2 }])
   })
@@ -205,10 +207,10 @@ describe("XlsxStreamWriter — the same options the generator takes", () => {
     const wb = await readXlsx(bytes)
     const cells = wb.sheets[0]!.cells!
 
-    expect(cells.get("0,0")!.formula).toBe("0/0")
-    expect(cells.get("0,0")!.value).toBeNull()
-    expect(cells.get("0,1")!.value).toBeNull()
-    expect(cells.get("0,2")!.value).toBe(2)
+    expect(getCell(cells, 0, 0)!.formula).toBe("0/0")
+    expect(getCell(cells, 0, 0)!.value).toBeNull()
+    expect(getCell(cells, 0, 1)!.value).toBeNull()
+    expect(getCell(cells, 0, 2)!.value).toBe(2)
   })
 
   it("serializes every rowDef property, not only the height", async () => {
@@ -244,7 +246,7 @@ describe("XlsxStreamWriter — the same options the generator takes", () => {
   })
 
   it("repeats the header as first emitted, even if the caller reuses the cell object", async () => {
-    const cell: StreamStyledCell = { value: "H", style: title }
+    const cell: CellInput = { value: "H", style: title }
     const writer = new XlsxStreamWriter({
       name: "S",
       maxRowsPerSheet: 2,

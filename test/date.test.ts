@@ -121,11 +121,11 @@ describe("serialToDate (1900 system)", () => {
 
 describe("serialToDate (1904 system)", () => {
   it("serial 0 → Jan 1, 1904", () => {
-    expectSameDate(serialToDate(0, true), utc(1904, 1, 1))
+    expectSameDate(serialToDate(0, "1904"), utc(1904, 1, 1))
   })
 
   it("serial 1 → Jan 2, 1904", () => {
-    expectSameDate(serialToDate(1, true), utc(1904, 1, 2))
+    expectSameDate(serialToDate(1, "1904"), utc(1904, 1, 2))
   })
 
   it("serial 42735 → Jan 1, 2021", () => {
@@ -135,16 +135,16 @@ describe("serialToDate (1904 system)", () => {
     // In 1900 system: Jan 1, 2021 = 44197
     // 1904 serial = 1900 serial - 1462
     // 44197 - 1462 = 42735
-    expectSameDate(serialToDate(42735, true), utc(2021, 1, 1))
+    expectSameDate(serialToDate(42735, "1904"), utc(2021, 1, 1))
   })
 
   it("serial 0.5 → Jan 1, 1904 12:00:00", () => {
-    expectSameDate(serialToDate(0.5, true), utc(1904, 1, 1, 12, 0, 0))
+    expectSameDate(serialToDate(0.5, "1904"), utc(1904, 1, 1, 12, 0, 0))
   })
 
   it("no Lotus bug in 1904 system (serial 60 is a normal date)", () => {
     // Serial 60 in 1904 = Mar 1, 1904
-    expectSameDate(serialToDate(60, true), utc(1904, 3, 1))
+    expectSameDate(serialToDate(60, "1904"), utc(1904, 3, 1))
   })
 })
 
@@ -208,15 +208,15 @@ describe("dateToSerial (1900 system)", () => {
 
 describe("dateToSerial (1904 system)", () => {
   it("Jan 1, 1904 → 0", () => {
-    expect(dateToSerial(utc(1904, 1, 1), true)).toBe(0)
+    expect(dateToSerial(utc(1904, 1, 1), "1904")).toBe(0)
   })
 
   it("Jan 2, 1904 → 1", () => {
-    expect(dateToSerial(utc(1904, 1, 2), true)).toBe(1)
+    expect(dateToSerial(utc(1904, 1, 2), "1904")).toBe(1)
   })
 
   it("Jan 1, 2021 → 42735", () => {
-    expect(dateToSerial(utc(2021, 1, 1), true)).toBe(42735)
+    expect(dateToSerial(utc(2021, 1, 1), "1904")).toBe(42735)
   })
 })
 
@@ -248,8 +248,8 @@ describe("round-trip: dateToSerial → serialToDate", () => {
 
   for (const date of testDates) {
     it(`round-trip ${date.toISOString()} (1904 system)`, () => {
-      const serial = dateToSerial(date, true)
-      const result = serialToDate(serial, true)
+      const serial = dateToSerial(date, "1904")
+      const result = serialToDate(serial, "1904")
       expect(Math.abs(result.getTime() - date.getTime())).toBeLessThan(2)
     })
   }
@@ -269,8 +269,8 @@ describe("round-trip: dateToSerial → serialToDate", () => {
   it("round-trip 100 random dates (1904 system)", () => {
     for (let i = 0; i < 100; i++) {
       const serial = Math.floor((i / 100) * 73050)
-      const date = serialToDate(serial, true)
-      const backSerial = dateToSerial(date, true)
+      const date = serialToDate(serial, "1904")
+      const backSerial = dateToSerial(date, "1904")
       expect(backSerial).toBe(serial)
     }
   })

@@ -10,6 +10,7 @@
 // kinds the write side cannot author yet, so a dedicated converter
 // keeps the type-narrowing explicit.
 
+import { InvalidArgumentError } from "../errors"
 import type {
   Chart,
   ChartAxisCrossBetween,
@@ -2279,7 +2280,7 @@ export interface CloneChartOptions {
  */
 export function cloneChart(source: Chart, options: CloneChartOptions): SheetChart {
   if (!options || !options.anchor) {
-    throw new Error("cloneChart: options.anchor is required")
+    throw new InvalidArgumentError("cloneChart: options.anchor is required")
   }
 
   const type = options.type ?? pickWritableKind(source)
@@ -2356,7 +2357,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   }
 
   if (series.length === 0) {
-    throw new Error(
+    throw new InvalidArgumentError(
       "cloneChart: produced 0 series; pass `series` or ensure the source has at least one series with a valuesRef",
     )
   }
@@ -3281,13 +3282,15 @@ export function chartKindToWriteKind(kind: ChartKind): WriteChartKind | undefine
 
 function pickWritableKind(source: Chart): WriteChartKind {
   if (source.kinds.length === 0) {
-    throw new Error("cloneChart: source chart has no kinds; pass `options.type` explicitly")
+    throw new InvalidArgumentError(
+      "cloneChart: source chart has no kinds; pass `options.type` explicitly",
+    )
   }
   for (const k of source.kinds) {
     const mapped = chartKindToWriteKind(k)
     if (mapped) return mapped
   }
-  throw new Error(
+  throw new InvalidArgumentError(
     `cloneChart: source kind${source.kinds.length > 1 ? "s" : ""} ${source.kinds
       .map((k) => `"${k}"`)
       .join(

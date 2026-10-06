@@ -1,6 +1,11 @@
-import type { Sheet, CellValue, CellStyle, Color, MergeRange } from "../_types"
+import { sheetGrid, type GridProjectionOptions } from "../_sheet-grid"
+import { assertGridSize } from "../_grid"
+import type { ValueSheet } from "../_sheet-values"
+import { getCell } from "../cell-store"
+import { isCellError } from "../cell-error"
+import type { Sheet, CellValue, CellStyle, Cell, Color, MergeRange } from "../_types"
 
-export interface HtmlExportOptions {
+export interface HtmlExportOptions extends GridProjectionOptions {
   /** Include inline CSS styles from cell styles. Default: false */
   styles?: boolean
   /** Add CSS classes for cell types (num, bool, date, null). Default: true */
@@ -13,8 +18,6 @@ export interface HtmlExportOptions {
    * was the sharpest edge in the option set. See #365.
    */
   hasHeaderRow?: boolean
-  /** @deprecated Renamed to {@link HtmlExportOptions.hasHeaderRow}. */
-  headerRow?: boolean
   /** Custom CSS class prefix. Default: "hucre" */
   classPrefix?: string
   /** Include a minimal <style> block. Default: false */
@@ -130,7 +133,7 @@ function formatCellValue(value: CellValue): string {
   }
   if (typeof value === "boolean") return String(value)
   if (typeof value === "number") return String(value)
-  return escapeHtml(String(value))
+  return escapeHtml(isCellError(value) ? value.error : value)
 }
 
 /** Get the CSS class for a cell value type */
@@ -139,6 +142,7 @@ function getCellClass(value: CellValue, prefix: string): string | null {
   if (value instanceof Date) return `${prefix}-date`
   if (typeof value === "number") return `${prefix}-num`
   if (typeof value === "boolean") return `${prefix}-bool`
+  if (isCellError(value)) return `${prefix}-error`
   return null // strings get no special class
 }
 
@@ -179,23 +183,20 @@ function buildMergeMap(
 /**
  * Export a sheet as an HTML <table> string.
  */
-/**
- * Options after defaults are applied. `headerRow` is absent: it is the
- * deprecated spelling of `hasHeaderRow` and is folded into it, so the
- * resolved shape carries one field rather than two that can disagree.
- */
+/** Options after defaults are applied. */
 type ResolvedHtmlOptions = Required<
-  Omit<HtmlExportOptions, "caption" | "ariaLabel" | "headerRow">
+  Omit<HtmlExportOptions, "caption" | "ariaLabel" | "maxTotalCells">
 > &
-  Pick<HtmlExportOptions, "caption" | "ariaLabel">
+  Pick<HtmlExportOptions, "caption" | "ariaLabel" | "maxTotalCells">
 
-export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
+export function toHtml(
+  sheet: Omit<Sheet, "cells"> & ValueSheet<Partial<Cell>>,
+  options?: HtmlExportOptions,
+): string {
   const opts: ResolvedHtmlOptions = {
     styles: options?.styles ?? false,
     classes: options?.classes ?? true,
-    // Accept the deprecated name for one major so existing calls keep
-    // working. See #365.
-    hasHeaderRow: options?.hasHeaderRow ?? options?.headerRow ?? false,
+    hasHeaderRow: options?.hasHeaderRow ?? false,
     classPrefix: options?.classPrefix ?? "hucre",
     includeStyleTag: options?.includeStyleTag ?? false,
     caption: options?.caption,
@@ -209,8 +210,17 @@ export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
   if (opts.ariaLabel) tableAttrs.push(`aria-label="${escapeHtml(opts.ariaLabel)}"`)
   const tableAttrStr = tableAttrs.length > 0 ? " " + tableAttrs.join(" ") : ""
 
-  const rows = sheet.rows
-  if (!rows || rows.length === 0) {
+  const grid = sheetGrid(sheet)
+  let height = grid.height
+  let width = grid.width
+  // Merges can extend beyond values. The hidden-cell map costs their
+  // layout too, so checking only the value box would miss amplification.
+  for (const merge of sheet.merges ?? []) {
+    height = Math.max(height, merge.endRow + 1)
+    width = Math.max(width, merge.endCol + 1)
+  }
+  assertGridSize(height, width, options?.maxTotalCells)
+  if (height === 0) {
     let empty = `<table${tableAttrStr}>`
     if (opts.caption) empty += `<caption>${escapeHtml(opts.caption)}</caption>`
     empty += "</table>"
@@ -237,10 +247,10 @@ export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
   const startRow = opts.hasHeaderRow ? 1 : 0
 
   // Header row
-  if (opts.hasHeaderRow && rows.length > 0) {
+  if (opts.hasHeaderRow) {
     parts.push("<thead>")
     parts.push("<tr>")
-    const row = rows[0]
+    const row = grid.row(0, width)
     for (let c = 0; c < row.length; c++) {
       const mergeInfo = mergeMap.get(`0,${c}`)
       if (mergeInfo?.hidden) continue
@@ -255,9 +265,9 @@ export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
 
   // Body rows
   parts.push("<tbody>")
-  for (let r = startRow; r < rows.length; r++) {
+  for (let r = startRow; r < height; r++) {
     parts.push("<tr>")
-    const row = rows[r]
+    const row = grid.row(r, width)
     for (let c = 0; c < row.length; c++) {
       const mergeInfo = mergeMap.get(`${r},${c}`)
       if (mergeInfo?.hidden) continue
@@ -280,7 +290,7 @@ function buildCellAttrs(
   value: CellValue,
   row: number,
   col: number,
-  sheet: Sheet,
+  sheet: ValueSheet<Partial<Cell>>,
   opts: ResolvedHtmlOptions,
   mergeInfo: { colspan?: number; rowspan?: number; hidden?: boolean } | undefined,
 ): string {
@@ -294,7 +304,7 @@ function buildCellAttrs(
 
   // Inline styles
   if (opts.styles) {
-    const cell = sheet.cells?.get(`${row},${col}`)
+    const cell = getCell(sheet.cells, row, col)
     if (cell?.style) {
       const css = styleToCss(cell.style)
       // Escape for the double-quoted attribute context — style values can

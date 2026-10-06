@@ -1,3 +1,457 @@
+# Migrating to v2
+
+v2 removes what v1 kept for compatibility and fixes the shapes v1 could not change without a major: duplicate read/write models, reader options that silently did nothing, and inconsistent streaming contracts. `Sheet.cells` becomes a portable numeric `CellStore`, removing the per-sheet capacity limit of a flat `Map`.
+
+Every change that can affect existing code is listed. TypeScript flags most of them; the ones it cannot are marked **behaviour**.
+
+## At a glance
+
+| Change                                                            | Affects you if…                                                                                                                       |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| [Deprecated names removed](#deprecated-names-removed)             | you reference `DefterError`, `readNdjsonStream`, `headerRow: true`, `write()`/`end()`, or import a `parse*` part parser from the root |
+| [One workbook model](#one-workbook-model-for-reading-and-writing) | you use `WriteSheet`, `WriteOptions`, `toWriteOptions` or encoding options inside the workbook                                        |
+| [Authoring rows](#authoring-rows-have-one-source)                 | you write object data, omit columns, or supply both `data` and `rows`                                                                 |
+| [Structural edits](#structural-edits-share-reference-handling)    | you insert or delete rows/columns, or inspect range spelling                                                                          |
+| [Value edits](#value-edits-share-one-model)                       | you search, replace or fill templates on a styled/sparse workbook                                                                     |
+| [Table projections](#table-projections-use-effective-values)      | you convert sparse/styled sheets to objects, arrays, JSON, HTML, Markdown or text                                                     |
+| [Numeric cell storage](#numeric-cell-storage)                     | you construct, inspect or mutate `Sheet.cells` using string keys                                                                      |
+
+---
+
+## Authoring rows have one source
+
+**Behaviour:** buffered XLSX, ODS and text `write()` share row resolution.
+Supply either `rows` or `data`; providing both, including empty arrays,
+throws `InvalidArgumentError`. V1 selected different sources by format.
+
+When `data` has no `columns`, columns and a header row are inferred from
+every record's own keys in first-seen order. Explicit columns use `key`,
+falling back to `header`; fields absent from a record become null, and
+inherited properties are excluded. An unnamed column keeps an empty-string
+header and null data, so its declared position survives. An explicitly empty `header: ""` still
+requests a header row. Key-only columns create no header row.
+
+ODS now applies column styles/number formats to both row sources, including
+trailing null cells, and preserves rich hyperlinks in object data. Generated
+headers receive `column.style`; `column.numFmt` applies to data cells.
+Explicit cell styles override these defaults. Neither source is mutated.
+
+Text outputs carry object records rather than returning an empty document.
+Their `maxTotalCells` bound is checked before object records are expanded.
+XLSX pivots consume the worksheet's effective headers and formula caches;
+null headers use positional `Column<N>` names, as array-authored pivots do.
+Buffered spreadsheet authoring keeps its existing materialization limits.
+
+## Streaming columns and physical bounds
+
+Buffered object data and streaming writers now use the same defined-header
+and own-field rules, including `key: ""`. Buffered positional `rows` are
+already complete and do not receive an automatic header.
+
+XLSX column styles apply to empty/future cells as well as written cells;
+collapsed groups and freeze panes use shared serialization. Buffered and
+incremental XLSX share `autoWidth` collection, including rich-text display
+and the explicit style's number-format precedence. True streaming must emit
+column XML before consuming rows, so `XlsxStreamColumn` omits `autoWidth`.
+A wider `ColumnDef` variable requesting it without an explicit `width`
+throws `InvalidArgumentError`; use a fixed width or `XlsxStreamWriter`.
+
+`maxRowsPerSheet` accepts integers from 2 through 1,048,576, or Infinity to
+disable splitting. NaN, fractional and excessive caps throw before output.
+Infinity still enforces Excel's physical row/column bounds. Buffered inputs
+are checked before inline-cell lifting; incremental rows reject before
+changing counters, styles or sheet state. A true stream can have delivered
+earlier rows when a later invalid row rejects. Invalid freeze coordinates
+also throw. ODS streaming retains its documented style limits; this change
+does not add buffered ODS column layout support.
+
+## Deprecated names removed
+
+Everything v1 marked `@deprecated` is gone. Each has a one-line replacement that already worked in v1:
+
+| Removed                                                                                             | Use instead                                         |
+| --------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `DefterError` (class and type)                                                                      | `HucreError` — the same class object                |
+| `readNdjsonStream`                                                                                  | `streamNdjsonRows`                                  |
+| `NdjsonStreamWriter.write()` / `.end()`                                                             | `addObject()` / `finish()`                          |
+| `HtmlExportOptions.headerRow`, `MarkdownExportOptions.headerRow` (boolean)                          | `hasHeaderRow`                                      |
+| `OdsStreamRow`                                                                                      | `StreamRow`                                         |
+| `StreamWriterOptions`                                                                               | `XlsxStreamWriterOptions` — it was always XLSX-only |
+| `parseChart`, `parsePivotTable`, `parseSlicers`, `parseThemeColors`, … from `hucre` or `hucre/xlsx` | the same names from `hucre/ooxml`                   |
+
+The raw-XML part parsers moved to `hucre/ooxml` in v1 and were kept on the root marked deprecated. They are now on `hucre/ooxml` only — it is the entry point outside the stability commitment, and a name that lives on two entry points with two promises is the kind of thing v1 already had to fix once. The model-level chart helpers — `cloneChart`, `addChart`, `getCharts` — take a `Chart`, not an XML string, and stay on the root.
+
+```diff
+- import { parseChart } from "hucre"
++ import { parseChart } from "hucre/ooxml"
+```
+
+## Numeric cell storage
+
+`Sheet.cells` now uses `CellStore<Cell>`; authoring inputs accept
+`CellStore<Partial<Cell>>`. The six helpers are exported from `hucre/cell`,
+`hucre/xlsx` and the root:
+
+```ts
+import { createCellStore, getCell, setCell, hasCell, deleteCell, cellEntries } from "hucre/cell"
+
+const cells = createCellStore([[0, 2, { value: 42, type: "number" as const }]])
+const cell = getCell(cells, 0, 2) // replaces cells.get("0,2")
+setCell(cells, 128, 3, cell!) // replaces cells.set("128,3", cell)
+hasCell(cells, 128, 3) // replaces cells.has("128,3")
+deleteCell(cells, 0, 2) // replaces cells.delete("0,2")
+for (const [row, col, metadata] of cellEntries(cells)) console.log(row, col, metadata)
+console.log(cells.size) // still counts cells
+```
+
+Coordinates are zero-based integers within Excel's bounds. Invalid writes
+throw `InvalidArgumentError`; invalid reads return `undefined` and invalid
+deletions return `false`. Iteration groups entries by block; do not rely
+on the global insertion order of the old flat map.
+
+`insertRows` and `insertColumns` reject moving metadata past Excel's bounds
+before changing the grid. XLSX values, comments and hyperlinks share the
+same reference validation: out-of-grid coordinates throw `ParseError`,
+and malformed references are dropped with a `malformed-cell-ref` warning.
+
+The store is a plain `{ blocks: Map<number, Map<number, T>>, size: number }`
+object, so a workbook still survives `structuredClone` and `postMessage`.
+Use the helpers to mutate it so `size` stays accurate. Metadata edits do
+not change `Sheet.rows`, matching the old map's behavior; update both for
+value edits, or use the builder. Inline cells in writer `rows` remain the
+shortest way to author styles and formulas.
+
+**Behaviour:** numeric blocks remove the 2^24-entry ceiling of a single V8
+Map and the coordinate strings retained by it. The store does not cap
+memory usage; streaming remains appropriate for large dense files. See
+`docs/PARITY.md` for the other bounds.
+
+## Value edits share one model
+
+**Behaviour:** `findCells`, `replaceCells` and `fillTemplate` visit each
+materialized coordinate once. Cell metadata overrides the dense row value;
+a formula's cached result is its effective value. Populated sparse cells
+are included without allocating their bounding box. Implicit blank cells
+outside the materialized grid are not scanned.
+
+Edits synchronize the existing dense slot, cell value, type and formula
+cache. Formula text is retained: these helpers edit stored results and do
+not calculate formulas. A new value clears old rich-text runs so a save
+cannot emit the pre-edit text; styles, links and comments are retained.
+Whole-placeholder null substitutions have type `"empty"`. A global/sticky
+RegExp is reset per cell; the caller's `lastIndex` cannot skip replacements.
+
+Partial `cells` metadata overlays inline cell fields instead of replacing
+the whole cell. `undefined` inherits; explicit `null` clears a value or
+formula cache. A style-only override therefore keeps the inline formula.
+
+## Table projections use effective values
+
+**Behaviour:** object readers and sheet/export helpers now read metadata
+overrides and formula caches rather than only `rows`. `sparse: true` works
+with `readObjects` and `readXlsxObjects`. Sparse records are ordered by
+physical coordinate; transform callbacks keep the source row index. With
+`skipEmptyRows: true`, implicit gaps are skipped without allocating a dense
+grid. With `false`, gaps are returned as blank rows.
+
+`sheetToObjects` accepts the object readers' transform and row-limit options.
+`sheetToArrays`, `toJson` and `workbookToJson` support `headerRow`, `maxRows`
+and `skipEmptyRows`; these array/JSON helpers keep blank rows by default.
+Their arrays are rectangular copies, so modifying output no longer edits
+the original sheet. All record projections disambiguate duplicate headers
+and retain `__proto__` as an ordinary key. Text writers keep positional
+names for null header cells; other projections retain a unique blank key.
+
+`parseCsvObjects` takes `CsvObjectsReadOptions`, which adds an output
+`maxTotalCells` bound to the raw CSV parsing knobs. Its `maxRows` now counts
+data records after the header rather than consuming one slot for headers.
+The raw `parseCsv` and streaming CSV options remain separate from the
+rectangular output bound.
+
+Projection/export options accept `maxTotalCells`, defaulting to 20,000,000
+including headers. For table projection the bound counts selected output
+rows. When blank rows are kept, the selected rectangle is checked before
+headers or transforms run, respecting `headerRow` and `maxRows`.
+HTML/Markdown and CSV/TSV exports require the whole rectangle; they
+check its size before expansion. HTML also includes merge extents in
+its layout bound before constructing the hidden-cell map. Root `write()` accepts this limit for text
+formats. Nested HTML/Markdown limits take precedence for those formats.
+
+Accessibility audit now reads sparse/effective values too. Contiguous blank
+rows produce one finding whose `location.ref` spans the gap, such as
+`"2:1048575"`, instead of a separate finding for every row.
+
+## Structural edits share reference handling
+
+`insertRows`, `deleteRows`, `insertColumns` and `deleteColumns` now use
+one editing path and the same A1 rewriter for formulas and range metadata.
+References qualified with the edited sheet's name move too, including
+quoted names and different letter case; other sheets remain unchanged.
+Deleting one area of a multi-area validation or conditional rule keeps
+its surviving areas. Single-cell ranges keep compact spelling (`A2`)
+instead of being expanded to `A2:A2`.
+
+Edit positions and positive counts must be integers within Excel's bounds.
+Invalid geometry and insertions that would move the dense grid, cell
+metadata or row definitions outside those bounds throw
+`InvalidArgumentError` before changing the sheet. Non-positive counts
+remain no-ops. Valid large row batches no longer depend on a JavaScript
+engine's function argument limit.
+
+## Read options are per reader
+
+`ReadOptions` was one interface for four readers, with a table in its doc comment saying which reader ignored what. `readXls(bytes, { password })` compiled and did nothing.
+
+Each reader now has its own type — `XlsxReadOptions`, `OdsReadOptions`, `XlsbReadOptions`, `XlsReadOptions`, all extending `ReadOptionsBase` — carrying only the fields it reads. An option the reader does not honour is a compile error:
+
+```diff
+- await readXls(bytes, { password: "x" })     // compiled, did nothing
++ await readXls(bytes)                        // .xls has no Agile encryption
+```
+
+`ReadOptions` still exists as the type `read()` takes — it cannot know the format before looking at the bytes — and combines `XlsxReadOptions` and the BIFF code-page fallback from `XlsReadOptions`. Code annotating a bag as `ReadOptions` and passing it to `readXlsx` or `read()` is unaffected. `ReadObjectsOptions` extends it as before.
+
+**Behaviour:** `readXlsb` now honours `maxTotalCells`. It was the one reader with no bounding-box ceiling; a hostile `.xlsb` could allocate a dense grid the size of its two furthest cells.
+
+**Behaviour:** ODS and text normalization enforce `maxTotalCells` before
+expanding the dense rectangle. The widest earlier row counts when a later
+short row is repeated. ODS `maxRows` limits expansion and metadata together;
+repeat counts are bounded by remaining Excel coordinates. Repeated rows
+now retain formulas, cached results, styles, hyperlinks and horizontal
+merges. Malformed repeats no longer corrupt later cell coordinates.
+
+`read(bytes, { maxTotalCells })` also forwards the limit for CSV, JSON,
+NDJSON, XML and HTML. `parseJson`, `parseNdjson`, `jsonToWorkbook`, `readXml`
+and `fromHtml` accept `maxTotalCells`, defaulting to 20,000,000. A tabular
+JSON/XML result counts data rows × union headers; `jsonToWorkbook` also
+counts its header row. Inputs that previously exceeded the bound now throw
+`ParseError`; raise it only when the larger normalized table is intended.
+
+## Colours are `Color` everywhere
+
+Fonts, fills and borders have always taken `Color` — `{ rgb }`, `{ theme, tint }` or `{ indexed }`. Three places took a hex string instead: a colour scale's stops, a data bar's fill, and a sparkline's series colour. Those now take `Color` too.
+
+```diff
+  colorScale: {
+    cfvo: [{ type: "min" }, { type: "max" }],
+-   colors: ["FF63BE7B", "FFF8696B"],
++   colors: [{ rgb: "63BE7B" }, { rgb: "F8696B" }],
+  }
+- dataBar: { cfvo, color: "FF638EC6" }
++ dataBar: { cfvo, color: { rgb: "638EC6" } }
+- sparklines: [{ location: "D1", dataRange: "A1:C1", color: "376092" }]
++ sparklines: [{ location: "D1", dataRange: "A1:C1", color: { rgb: "376092" } }]
+```
+
+An eight-character ARGB string still works inside `rgb`; the reader returns six characters, as it always has for fonts.
+
+**Behaviour:** this was a loss, not only a spelling. A string field could hold an RGB value and nothing else, so a scale or sparkline built from a theme colour — what Excel writes when a colour is picked from the palette — read back as `""` and was written back as `rgb=""`. It now round-trips as `{ theme, tint }`.
+
+## `serializeWorkbook` is gone
+
+`serializeWorkbook` and `deserializeWorkbook` existed because, the file said, structured clone "does NOT handle Map". It does — `Map`, `Date` and `Uint8Array` have been part of the algorithm in every runtime hucre supports — so the two functions converted a `Workbook` into a shape `postMessage` could already carry.
+
+```diff
+- worker.postMessage(serializeWorkbook(wb))
++ worker.postMessage(wb)
+```
+
+```diff
+- const wb = deserializeWorkbook(event.data)
++ const wb = event.data
+```
+
+A channel that carries only JSON — a message queue, a file — takes `workbookToJson` / `jsonToWorkbook`, which existed already. `test/clone-sheet-coverage.test.ts` now asserts that a full `Workbook` survives `structuredClone`, so the model cannot quietly grow a type that would break `postMessage`.
+
+## Error cells are `CellError`
+
+`CellValue` gains a member: `{ error: "#N/A" }`, built with `cellError()` and recognised with `isCellError()`. Every reader — XLSX, XLSB, XLS, the streaming readers, and now ODS, where LibreOffice marks them `calcext:value-type="error"` — produces it for an error cell, and the XLSX writers write `t="e"` for it and for nothing else.
+
+```diff
+- if (cell === "#N/A") …
++ if (isCellError(cell) && cell.error === "#N/A") …
+
+- rows: [["#DIV/0!"]]                 // written as an error cell
++ rows: [[cellError("#DIV/0!")]]      // written as an error cell
++ rows: [["#DIV/0!"]]                 // written as the text "#DIV/0!"
+```
+
+**Behaviour:** v1 could not tell the two apart. An error read from a file arrived in `rows` as the string `"#N/A"`, and any string that spelled an error token was written as `t="e"` — so a cell holding the _text_ `#N/A` came out of `writeXlsx` as an error, and a `#DIV/0!` read from one workbook was indistinguishable from the same text typed into another. `Cell.type` already said `"error"`; the value now does too.
+
+In the text formats — CSV, TSV, JSON, NDJSON, XML, HTML, Markdown — an error is written as its token, exactly as before. `formatValue` returns the token whatever the number format. An ODS file gets the token as a string cell, since ODF has no error value type; that loss is recorded in `docs/PARITY.md`.
+
+It is a plain object, not a class, so it survives `structuredClone` and `JSON.stringify` like the rest of the model. `sortRows` orders errors after booleans and before blanks, as Excel does; `findCells` and `replaceCells` match an error by its token.
+
+## `Sheet.rows` is a rectangle from every reader
+
+**Behaviour.** `Sheet.rows` has been documented as a dense rectangle since v1, and `readXlsx` delivered one. `readOds`, `fromHtml` and the CSV path of `read()` did not: an empty row came back as `[]` and a short line stayed short, so `sheetToObjects`, `toHtml` and every other consumer had to read `row[i] ?? null`. They now pad to the sheet's width, like `readXlsx`.
+
+```diff
+  const wb = await readOds(bytes)   // sheet is 3 columns wide, row 2 empty
+- wb.sheets[0].rows[1]              // []
++ wb.sheets[0].rows[1]              // [null, null, null]
+```
+
+`parseCsv` is unchanged: it returns lines as the file had them, and is a grid function rather than a `Sheet` reader. The streaming readers are unchanged too — they skip an empty row and keep the true index on `StreamRow`.
+
+## One `StreamRow` from every streaming reader
+
+Five `stream*Rows` readers yielded four shapes: `{ index, values }` from XLSX and ODS (with an optional `sheetIndex` on ODS), a bare `CellValue[]` from CSV, a bare object from NDJSON, and `XmlStreamRow` from XML. Every one now yields
+
+```ts
+interface StreamRow<T = CellValue[]> {
+  index: number
+  sheet: number
+  values: T
+}
+```
+
+and every one is an `AsyncGenerator`, so one `for await` loop works across formats.
+
+```diff
+- for (const row of streamCsvRows(text)) use(row)
++ for await (const row of streamCsvRows(text)) use(row.values)
+
+- for await (const record of streamNdjsonRows(body)) use(record)
++ for await (const row of streamNdjsonRows(body)) use(row.values)
+
+- for await (const row of streamOdsRows(bytes)) use(row.sheetIndex, row.values)
++ for await (const row of streamOdsRows(bytes)) use(row.sheet, row.values)
+```
+
+`streamCsvRows` was the one synchronous generator; `[...streamCsvRows(text)]` becomes `await Array.fromAsync(streamCsvRows(text))`. Its `index` is the row's 0-based position in the file, so a row consumed by `skipHeaderRow` or `skipLines` leaves a gap — as a skipped empty row does in XLSX.
+
+`streamNdjsonRows` and `streamXmlRows` take any `ReadInput` or a string, not only a `ReadableStream`. `XmlStreamRow` is gone; `StreamRow<Record<string, CellValue>>` is the same shape.
+
+**Behaviour:** `streamOdsRows` used to walk every sheet while `streamXlsxRows` walked one, so the same loop over a three-sheet workbook gave one sheet as `.xlsx` and three as `.ods`. Both now take `sheet?: number | string`, default the first sheet, and `streamOdsRows` resolves a name (it used to fall back to streaming everything when given one). Pass `sheet: "all"` for the old behaviour.
+
+```diff
+- streamOdsRows(bytes)                       // every sheet
++ streamOdsRows(bytes, { sheet: "all" })     // every sheet
+- streamOdsRows(bytes, { sheets: [1] })
++ streamOdsRows(bytes, { sheet: 1 })
+```
+
+## One writer surface
+
+`SpreadsheetStreamWriter.finish()` was `string | Promise<Uint8Array>`; its own doc comment called converging the two "a real API decision and a breaking one". It is `Promise<Uint8Array>` on all four writers now. The text writers keep a string form under a new name:
+
+```diff
+  const w = new CsvStreamWriter()
+  w.addRow(["a", 1])
+- const csv = w.finish()          // string
++ const csv = w.finishText()      // string
++ const bytes = await w.finish()  // Uint8Array, like every other writer
+```
+
+`toStream()` is gone from `XlsxStreamWriter`, `CsvStreamWriter` and `OdsStreamWriter`. On all three it buffered everything and then handed over one chunk — a stream in name only, and the README had to carry a warning saying so. `NdjsonStreamWriter.toStream()` stays: it releases rows as they are written, which is what the name promises. For constant memory use `writeXlsxStream`, `writeCsvStream`, `writeOdsStream` or `writeNdjsonStream`.
+
+```diff
+- return new Response(writer.toStream())
++ return new Response(await writer.finish())
+```
+
+Every writer takes `CellInput` — `CellValue | Partial<Cell> | HyperlinkValue` — where a cell goes. `StreamStyledCell`, `OdsStyledCell`, `OdsIncrementalCell`, `OdsWriteCell` and `OdsWriteRow` were five names for that one shape and are removed; a `{ value, style }` object is written where it always was. The CSV and NDJSON writers take it too and keep the value, since those formats carry nothing else.
+
+An explicit `formulaResult`, including null, now wins over `value` in every
+spreadsheet writer. When a formula omits its cache, `value` remains the cache
+fallback. `link()` works in positional rows as well as object data; object
+data can also contain the same partial cell shapes as rows. Inputs are not
+mutated. XLSX streams forward shared/array/dynamic formulas, checkbox flags,
+rich text, links and comments, including the required ZIP parts. Repeated
+headers capture nested metadata when they are first written.
+
+ODS buffered and incremental writers retain supported styles, rich-text
+content and links. True ODS streaming preserves unstyled text/links/formulas
+and reports cell styles and rich-text fonts it omits through `onDrop`.
+All three ODS writers report XLSX formula metadata, checkboxes and comments
+as `cells.<field>` drops with `sheet` and A1 `cell` coordinates. These are
+cell-field decisions, not a claim that every nested style property maps to ODF.
+
+XLSX streaming does not retain source rows, but links and comments must wait
+for the current physical sheet's separate parts. Memory includes these,
+distinct styles, optional shared strings, a captured header and ZIP records.
+Metadata on every row therefore consumes memory proportional to its count.
+
+`OdsStreamWriter` now declares `implements SpreadsheetStreamWriter`; it satisfied the interface in v1 without saying so.
+
+## One name per option
+
+The same question was asked under different names in different option bags. Each now has one:
+
+| Was                                                  | Is                                 | Where                                                                                                                                                                                             |
+| ---------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `header: true` (CSV read: the first row is a header) | `hasHeaderRow: true`               | `parseCsv`, `streamCsvRows` — the name `toHtml` / `toMarkdown` already used                                                                                                                       |
+| `headers: false` (CSV write: no header line)         | `writeHeader: false`               | `writeCsv`, `writeCsvObjects`, `CsvStreamWriter`, `writeCsvStream`                                                                                                                                |
+| `headers: true`                                      | the default — omit it              | same                                                                                                                                                                                              |
+| `writeHeaders`                                       | `writeHeader`                      | `writeXlsxObjects`, `writeOdsObjects`                                                                                                                                                             |
+| `inlineStrings: boolean`                             | `stringMode: "shared" \| "inline"` | `writeXlsxStream`, `writeXlsxStreamSheets` — the name `writeXlsx` already used. The streaming default is still `"inline"`; the buffered default is still `"shared"`, and each says why in its doc |
+| `is1904: boolean`                                    | `dateSystem: "1900" \| "1904"`     | `serialToDate`, `dateToSerial`, `formatValue`'s options — the spelling every reader and writer already used                                                                                       |
+
+`headers` itself stays, as `string[]` only: the names to write. `parseCsvObjects` no longer takes `header: true` — it always has a header; that is what it is for.
+
+```diff
+- parseCsv(text, { header: true, skipHeaderRow: true })
++ parseCsv(text, { hasHeaderRow: true, skipHeaderRow: true })
+- writeCsvObjects(rows, { headers: false })
++ writeCsvObjects(rows, { writeHeader: false })
+- writeXlsxStream(rows, { name: "S", inlineStrings: false })
++ writeXlsxStream(rows, { name: "S", stringMode: "shared" })
+- serialToDate(45000, true)
++ serialToDate(45000, "1904")
+```
+
+Two smaller alignments in the same family:
+
+- **`sheetToObjects` skips blank rows by default**, as `readObjects`, `readXlsxObjects` and `readOdsObjects` do. It used to hard-code the opposite with no way to change it; it now takes `skipEmptyRows`, and `skipEmptyRows: false` restores the old projection. **Behaviour.**
+- **`JsonReadOptions.transformValue` receives `(value, header, rowIndex, colIndex)`**, four arguments like every other `transformValue` in the library. It received three.
+
+## One workbook model for reading and writing
+
+`WriteSheet` and `WriteOptions` are replaced by `SheetInput` and
+`WorkbookInput`, derived from the read model. A `Workbook` returned by
+any reader can go directly to a buffered writer. `toWriteOptions` and
+`toWriteSheet` are removed; writers normalize at their boundary and
+report authoring losses through `onDrop`.
+
+```ts
+// v1
+await writeXlsx(toWriteOptions(workbook))
+await writeXlsx({ sheets, stringMode: "inline", encryption: { password } })
+await write({ sheets, format: "csv", csv: { bom: true } })
+
+// v2
+await writeXlsx(workbook, { onDrop: ({ field, reason }) => console.warn(field, reason) })
+await writeXlsx({ sheets }, { stringMode: "inline", encryption: { password } })
+await write({ sheets }, { format: "csv", csv: { bom: true } })
+```
+
+`XlsxWriteOptions` holds string storage, encryption and VBA embedding.
+`WorkbookWriteOptions` holds the common loss callback; `WriteFormatOptions`
+adds the format and text-format options used by `write`.
+
+Reader chart/pivot records still cannot be authored automatically, and
+ODS supports fewer metadata fields than XLSX. Populated unsupported
+features are reported without mutating the input. Throw from `onDrop` to
+refuse a loss. For preserving original parts, use `openXlsx`/`saveXlsx`.
+
+## Smaller changes
+
+- `openXlsx` reads styles by default so saving preserves number formats and presentation. `readStyles: false` remains an explicit opt-out; ordinary `readXlsx` defaults to false.
+
+- Empty `<f/>` and shared-formula followers retain cached results of every cell type through both save paths.
+- `WorkbookBuilder.set()` and named metadata methods share one state; the later call wins. `build(options?)` accepts encoding and loss reporting.
+
+- **Every error is a `HucreError`.** Eighteen throws were a plain `Error` or `TypeError` — argument misuse in `addChart`, `cloneChart`, the pivot writer, the incremental writers. They are `InvalidArgumentError` now, so `instanceof HucreError` is the catch-all it was documented to be. A `catch` that tested `instanceof TypeError` on `addChart` no longer matches. **Behaviour.**
+- **`moveSheet` and `removeSheet` refuse an index out of range** with `InvalidArgumentError`. `moveSheet(wb, 0, 5)` used to splice `undefined` into `sheets` without a word. **Behaviour.**
+- **`read()` names a ZIP that is not a spreadsheet.** It assumed any ZIP was XLSX and failed somewhere inside `readXlsx`; a `.docx` or a plain archive now throws `UnsupportedFormatError` up front. **Behaviour** — the error class changes.
+- **`openXlsx` takes `ReadInput`**, including a `ReadableStream`, like every other reader.
+- **New entry points.** `hucre/cell` (every A1 / R1C1 helper — v1 had four on `hucre/xlsx` and nine on the root, #474), `hucre/format` (dates, serials, `formatValue`) and `hucre/a11y`. `hucre/xlsx` now carries the whole cell-helper set too. Types that were reachable but unnameable are exported: `SchemaValidateOptions`, `AuditOptions`, `WriteFormat`, `TextFormatOptions`, `OdsStreamReadOptions`.
+- **The CLI carries the whole model.** `hucre convert a.xlsx b.xlsx` used to write `{ name, rows }` and drop every style, merge and formula; it goes through the same model `writeXlsx` takes. `hucre validate` takes `--header-row` (`-1` for none) and `--encoding`, which it read without declaring.
+- **`CHANGELOG.md` exists.**
+
+---
+
 # Migrating to v1
 
 v1 is where hucre's public API becomes a stability commitment. Getting there meant fixing things that were wrong, inconsistent, or documented-but-inert — several of which could not be fixed afterwards without a major bump.

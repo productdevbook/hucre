@@ -128,12 +128,12 @@ async function drain(stream) {
 async function documents() {
   const out = []
 
-  const cells = new Map([
-    ["0,0", { value: "Name", style: STYLE }],
-    ["1,1", { value: 42, style: { numFmt: "#,##0.00" } }],
-    ["2,0", { value: new Date(Date.UTC(2024, 2, 17)), style: { numFmt: "yyyy-mm-dd" } }],
-    ["3,0", { value: 1, formula: "B2+1", formulaResult: 43 }],
-    ["4,0", { value: "link", hyperlink: { target: "https://example.test", tooltip: "t" } }],
+  const cells = hucre.createCellStore([
+    [0, 0, { value: "Name", style: STYLE }],
+    [1, 1, { value: 42, style: { numFmt: "#,##0.00" } }],
+    [2, 0, { value: new Date(Date.UTC(2024, 2, 17)), style: { numFmt: "yyyy-mm-dd" } }],
+    [3, 0, { value: 1, formula: "B2+1", formulaResult: 43 }],
+    [4, 0, { value: "link", hyperlink: { target: "https://example.test", tooltip: "t" } }],
   ])
 
   out.push([
@@ -198,7 +198,9 @@ async function documents() {
             ["c", "d"],
             [1, 2],
           ],
-          cells: new Map([["0,0", { value: "c", comment: { text: "note", author: "me" } }]]),
+          cells: hucre.createCellStore([
+            [0, 0, { value: "c", comment: { text: "note", author: "me" } }],
+          ]),
           tables: [
             {
               name: "T1",

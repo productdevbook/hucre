@@ -1,3 +1,4 @@
+import { createCellStore, setCell } from "../src/cell-store"
 /**
  * Targeted edge-case tests designed to find real bugs.
  * Each test focuses on a specific potential issue.
@@ -16,11 +17,11 @@ import { parseXml } from "../src/xml/parser"
 import { writeOds } from "../src/ods/writer"
 import { readOds } from "../src/ods/reader"
 import { insertRows, deleteRows, removeSheet, insertColumns } from "../src/sheet-ops"
-import type { CellValue, WriteSheet, SchemaDefinition, Sheet, Workbook } from "../src/_types"
+import type { CellValue, SheetInput, SchemaDefinition, Sheet, Workbook } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-async function writeAndRead(sheets: WriteSheet[]): Promise<Workbook> {
+async function writeAndRead(sheets: SheetInput[]): Promise<Workbook> {
   const xlsx = await writeXlsx({ sheets })
   return readXlsx(xlsx)
 }
@@ -261,7 +262,7 @@ describe("Date serial precision", () => {
   })
 
   it("1904 system: serial 0 = Jan 1, 1904", () => {
-    const d = serialToDate(0, true)
+    const d = serialToDate(0, "1904")
     expect(d.getUTCFullYear()).toBe(1904)
     expect(d.getUTCMonth()).toBe(0)
     expect(d.getUTCDate()).toBe(1)
@@ -303,15 +304,15 @@ describe("XLSX: shared strings deduplication", () => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════
-// BUG HUNT: XLSX with only cells Map, no rows
+// BUG HUNT: XLSX with only cell store, no rows
 // ═══════════════════════════════════════════════════════════════════════
 
-describe("XLSX: cells Map without rows", () => {
-  it("cells Map creates data even without rows array", async () => {
-    const cells = new Map<string, Partial<import("..//src/_types").Cell>>()
-    cells.set("0,0", { value: "A1", type: "string" })
-    cells.set("0,1", { value: "B1", type: "string" })
-    cells.set("1,0", { value: "A2", type: "string" })
+describe("XLSX: cell store without rows", () => {
+  it("cell store creates data even without rows array", async () => {
+    const cells = createCellStore<Partial<import("..//src/_types").Cell>>()
+    setCell(cells, 0, 0, { value: "A1", type: "string" })
+    setCell(cells, 0, 1, { value: "B1", type: "string" })
+    setCell(cells, 1, 0, { value: "A2", type: "string" })
 
     const wb = await writeAndRead([{ name: "S", cells }])
 
@@ -551,7 +552,7 @@ describe("XLSX: conditional formatting edge cases", () => {
               range: "A1:A5",
               colorScale: {
                 cfvo: [{ type: "min" }, { type: "percentile", value: "50" }, { type: "max" }],
-                colors: ["FFF8696B", "FFFFEB84", "FF63BE7B"],
+                colors: [{ rgb: "F8696B" }, { rgb: "FFEB84" }, { rgb: "63BE7B" }],
               },
             },
           ],

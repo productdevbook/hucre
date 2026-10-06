@@ -5,7 +5,8 @@
 // of XML. We reuse the ZIP layer + the XML rels parser, and decode the
 // `.bin` parts with the record reader. Read-only (MS-XLSB).
 
-import type { CellValue, MergeRange, ReadOptions, Sheet, Workbook } from "../../_types"
+import { cellError } from "../../cell-error"
+import type { CellValue, MergeRange, XlsbReadOptions, Sheet, Workbook } from "../../_types"
 import { EncryptedFileError, ParseError, ZipError } from "../../errors"
 import { isOle2Container, readInputToUint8Array } from "../../_input"
 import { decryptAgile } from "../crypto/agile"
@@ -16,7 +17,7 @@ import { matchesRelType } from "../reader"
 import { densify } from "../../xls/reader"
 import { isBuiltinDateFormatId, isDateFormat, serialToDate } from "../../_date"
 import { Cursor, decodeRk, iterateRecords } from "./record"
-import { MAX_COL_INDEX, MAX_ROW_INDEX } from "../../limits"
+import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../../limits"
 
 // Record ids we care about (MS-XLSB §2.4).
 const BrtRowHdr = 0
@@ -86,7 +87,7 @@ export function looksLikeXlsb(zip: ZipReader): boolean {
  */
 export async function readXlsb(
   input: Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>,
-  options?: ReadOptions,
+  options?: XlsbReadOptions,
 ): Promise<Workbook> {
   let data = await readInputToUint8Array(input, options?.maxInputBytes)
   if (isOle2Container(data)) {
@@ -119,7 +120,13 @@ export async function readXlsb(
   // hostile .bin can make the Cursor/DataView throw a raw RangeError. Wrap the
   // parse so malformed input surfaces as the library's ParseError.
   try {
-    return await parseXlsbParts(zip, workbookPath, workbookDir, options?.dateSystem)
+    return await parseXlsbParts(
+      zip,
+      workbookPath,
+      workbookDir,
+      options?.dateSystem,
+      options?.maxTotalCells ?? MAX_TOTAL_CELLS,
+    )
   } catch (err) {
     if (err instanceof ParseError || err instanceof EncryptedFileError || err instanceof ZipError) {
       throw err
@@ -134,7 +141,8 @@ async function parseXlsbParts(
   zip: ZipReader,
   workbookPath: string,
   workbookDir: string,
-  dateSystem: ReadOptions["dateSystem"],
+  dateSystem: XlsbReadOptions["dateSystem"],
+  cellLimit: number,
 ): Promise<Workbook> {
   // Sheets (name + relId) and the workbook's own date system from the .bin.
   const { sheets: sheetEntries, file1904 } = parseWorkbookBin(await zip.extract(workbookPath))
@@ -179,6 +187,7 @@ async function parseXlsbParts(
       sharedStrings,
       dateXf,
       date1904,
+      cellLimit,
     )
     const sheet: Sheet = { name: entry.name, rows }
     if (merges.length > 0) sheet.merges = merges
@@ -270,6 +279,7 @@ function parseWorksheetBin(
   sst: string[],
   dateXf: boolean[],
   date1904: boolean,
+  cellLimit: number,
 ): { rows: CellValue[][]; merges: MergeRange[] } {
   const rows: CellValue[][] = []
   const merges: MergeRange[] = []
@@ -285,6 +295,16 @@ function parseWorksheetBin(
       )
     }
     if (col >= widestCol) widestCol = col + 1
+    // `rows` is a dense rectangle, so the cost is the bounding box. The
+    // XLSX, ODS and XLS readers all bound it; this one was the gap in the
+    // v1 options table.
+    const boundingBox = Math.max(rows.length, row + 1) * widestCol
+    if (boundingBox > cellLimit) {
+      throw new ParseError(
+        `Sheet spans ${boundingBox} cells, over the ${cellLimit} limit. ` +
+          "Raise `maxTotalCells` if the sheet really is this large.",
+      )
+    }
     let r = rows[row]
     if (!r) r = rows[row] = []
     while (r.length < col) r.push(null)
@@ -314,7 +334,7 @@ function parseWorksheetBin(
   }
 
   const numericCell = (col: number, styleRef: number, num: number): void => {
-    setCell(col, dateXf[styleRef] ? serialToDate(num, date1904) : num)
+    setCell(col, dateXf[styleRef] ? serialToDate(num, date1904 ? "1904" : "1900") : num)
   }
 
   for (const rec of iterateRecords(bin)) {
@@ -364,7 +384,7 @@ function parseWorksheetBin(
       case BrtFmlaError: {
         const c = new Cursor(rec.data)
         const { col } = cellHeader(c, rec.id === BrtShortError)
-        setCell(col, ERROR_TEXT[c.u8()] ?? "#ERR!")
+        setCell(col, cellError(ERROR_TEXT[c.u8()] ?? "#ERR!"))
         break
       }
       case BrtCellSt:

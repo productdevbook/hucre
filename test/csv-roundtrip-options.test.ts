@@ -1,3 +1,4 @@
+import { valuesOf } from "./_stream"
 import { describe, expect, it } from "vitest"
 import { parseCsv } from "../src/csv/reader"
 import { writeCsv } from "../src/csv/writer"
@@ -28,24 +29,24 @@ describe("parseCsv — skipHeaderRow", () => {
   const SIMPLE = "name,qty\r\nfoo,1\r\nbar,2\r\n"
 
   it("consumes the header row when asked", () => {
-    expect(parseCsv(SIMPLE, { header: true, skipHeaderRow: true })).toEqual([
+    expect(parseCsv(SIMPLE, { hasHeaderRow: true, skipHeaderRow: true })).toEqual([
       ["foo", "1"],
       ["bar", "2"],
     ])
   })
 
   it("keeps the header row by default", () => {
-    expect(parseCsv(SIMPLE, { header: true })[0]).toEqual(["name", "qty"])
+    expect(parseCsv(SIMPLE, { hasHeaderRow: true })[0]).toEqual(["name", "qty"])
   })
 
-  it("is inert without header: true", () => {
+  it("is inert without hasHeaderRow: true", () => {
     expect(parseCsv(SIMPLE, { skipHeaderRow: true })).toEqual(parseCsv(SIMPLE))
   })
 
   it("still names transformValue columns from the consumed header", () => {
     const seen: string[] = []
     parseCsv(SIMPLE, {
-      header: true,
+      hasHeaderRow: true,
       skipHeaderRow: true,
       transformValue: (v, header) => {
         seen.push(header)
@@ -56,14 +57,14 @@ describe("parseCsv — skipHeaderRow", () => {
   })
 
   it("counts maxRows against emitted rows only", () => {
-    expect(parseCsv(SIMPLE, { header: true, skipHeaderRow: true, maxRows: 1 })).toEqual([
+    expect(parseCsv(SIMPLE, { hasHeaderRow: true, skipHeaderRow: true, maxRows: 1 })).toEqual([
       ["foo", "1"],
     ])
   })
 
-  it("agrees with streamCsvRows", () => {
-    const options = { header: true, skipHeaderRow: true }
-    expect(parseCsv(SIMPLE, options)).toEqual(Array.from(streamCsvRows(SIMPLE, options)))
+  it("agrees with streamCsvRows", async () => {
+    const options = { hasHeaderRow: true, skipHeaderRow: true }
+    expect(parseCsv(SIMPLE, options)).toEqual(await valuesOf(streamCsvRows(SIMPLE, options)))
   })
 })
 
@@ -100,7 +101,7 @@ describe("escapeFormulae round trip", () => {
     const written = writeCsv([["-h"], ["v"]], { escapeFormulae: true })
     const seen: string[] = []
     parseCsv(written, {
-      header: true,
+      hasHeaderRow: true,
       unescapeFormulae: true,
       transformValue: (v, header) => {
         seen.push(header)
@@ -110,10 +111,10 @@ describe("escapeFormulae round trip", () => {
     expect(seen).toEqual(["-h", "-h"])
   })
 
-  it("works the same in streamCsvRows", () => {
+  it("works the same in streamCsvRows", async () => {
     const written = writeCsv([TRIGGERS], { escapeFormulae: true })
     const options = { unescapeFormulae: true }
-    expect(Array.from(streamCsvRows(written, options))).toEqual(parseCsv(written, options))
+    expect(await valuesOf(streamCsvRows(written, options))).toEqual(parseCsv(written, options))
   })
 })
 
@@ -121,7 +122,7 @@ describe("escapeFormulae in the streaming writers", () => {
   it("CsvStreamWriter escapes like writeCsv", () => {
     const writer = new CsvStreamWriter({ escapeFormulae: true })
     writer.addRow(["=SUM(A1)", "-5"])
-    expect(writer.finish()).toBe(writeCsv([["=SUM(A1)", "-5"]], { escapeFormulae: true }))
+    expect(writer.finishText()).toBe(writeCsv([["=SUM(A1)", "-5"]], { escapeFormulae: true }))
   })
 
   it("writeCsvStream escapes like writeCsv", async () => {
@@ -160,7 +161,7 @@ describe("comment character on write", () => {
   it("is honoured by the streaming writers", async () => {
     const writer = new CsvStreamWriter({ comment: "#" })
     writer.addRow(["#1", "a"])
-    expect(writer.finish()).toBe('"#1",a')
+    expect(writer.finishText()).toBe('"#1",a')
     const out = await collect(writeCsvStream([["#1", "a"]], { comment: "#" }))
     expect(out).toBe('"#1",a')
   })

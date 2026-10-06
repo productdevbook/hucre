@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 
 import {
   DecryptionError,
-  DefterError,
   EncryptedFileError,
   HucreError,
   InvalidArgumentError,
@@ -12,22 +11,14 @@ import {
   XmlError,
   ZipError,
 } from "../src/errors"
-import { DefterError as rootDefterError, HucreError as rootHucreError } from "../src/index"
+import { HucreError as rootHucreError } from "../src/index"
 
-// ── The v1 rename ────────────────────────────────────────────────────
-// `DefterError` was the frozen root of the hierarchy in a package called
-// `hucre`. Renaming it after v1 would break every `instanceof` catch-all
-// in the wild, so the rename lands now and the old name stays as an
-// alias to the *same class object* — not a subclass, not a copy.
-
-describe("HucreError / DefterError", () => {
-  it("keeps DefterError as an alias of the same class object", () => {
-    expect(DefterError).toBe(HucreError)
-    expect(rootDefterError).toBe(rootHucreError)
+describe("HucreError", () => {
+  it("is the same class object from the root and from ./errors", () => {
     expect(rootHucreError).toBe(HucreError)
   })
 
-  it("keeps `instanceof DefterError` working for every subclass", () => {
+  it("is the base of every subclass", () => {
     const subclasses = [
       new ParseError("x"),
       new ZipError("x"),
@@ -39,7 +30,6 @@ describe("HucreError / DefterError", () => {
       new DecryptionError(),
     ]
     for (const err of subclasses) {
-      expect(err).toBeInstanceOf(DefterError)
       expect(err).toBeInstanceOf(HucreError)
       expect(err).toBeInstanceOf(Error)
     }
@@ -47,7 +37,6 @@ describe("HucreError / DefterError", () => {
 
   it("reports the new name on the base class", () => {
     expect(new HucreError("boom").name).toBe("HucreError")
-    expect(new DefterError("boom").name).toBe("HucreError")
     expect(new ParseError("boom").name).toBe("ParseError")
   })
 

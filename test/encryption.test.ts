@@ -71,7 +71,14 @@ describe("agile crypto primitive", () => {
 
 describe("writeXlsx encryption ↔ readXlsx decryption", () => {
   it("encrypts on write and decrypts on read with the password", async () => {
-    const enc = await writeXlsx({ ...book(), encryption: { password: "pw", spinCount: 64 } })
+    const enc = await writeXlsx(
+      {
+        ...book(),
+      },
+      {
+        encryption: { password: "pw", spinCount: 64 },
+      },
+    )
     expect(isOle2Container(enc)).toBe(true) // output is an encrypted OLE2 container, not a ZIP
 
     const wb = await readXlsx(enc, { password: "pw" })
@@ -80,25 +87,53 @@ describe("writeXlsx encryption ↔ readXlsx decryption", () => {
   })
 
   it("reading without a password throws EncryptedFileError", async () => {
-    const enc = await writeXlsx({ ...book(), encryption: { password: "pw", spinCount: 64 } })
+    const enc = await writeXlsx(
+      {
+        ...book(),
+      },
+      {
+        encryption: { password: "pw", spinCount: 64 },
+      },
+    )
     await expect(readXlsx(enc)).rejects.toBeInstanceOf(EncryptedFileError)
   })
 
   it("reading with the wrong password throws DecryptionError", async () => {
-    const enc = await writeXlsx({ ...book(), encryption: { password: "pw", spinCount: 64 } })
+    const enc = await writeXlsx(
+      {
+        ...book(),
+      },
+      {
+        encryption: { password: "pw", spinCount: 64 },
+      },
+    )
     await expect(readXlsx(enc, { password: "nope" })).rejects.toBeInstanceOf(DecryptionError)
   })
 })
 
 describe("decryption across the read entry points", () => {
   it("read() auto-detects and decrypts", async () => {
-    const enc = await writeXlsx({ ...book(), encryption: { password: "pw", spinCount: 64 } })
+    const enc = await writeXlsx(
+      {
+        ...book(),
+      },
+      {
+        encryption: { password: "pw", spinCount: 64 },
+      },
+    )
     const wb = await read(enc, { password: "pw" })
     expect(wb.sheets[0].rows[2]).toEqual(["Linus", 88])
   })
 
   it("readObjects() decrypts", async () => {
-    const enc = await writeXlsx({ ...book(), encryption: { password: "pw", spinCount: 64 } })
+    const enc = await writeXlsx(
+      {
+        ...book(),
+      },
+      {
+        encryption: { password: "pw", spinCount: 64 },
+      },
+    )
     const { data } = await readObjects<{ Name: string; Score: number }>(enc, { password: "pw" })
     expect(data).toEqual([
       { Name: "Ada", Score: 95 },
@@ -107,7 +142,14 @@ describe("decryption across the read entry points", () => {
   })
 
   it("streamXlsxRows() decrypts", async () => {
-    const enc = await writeXlsx({ ...book(), encryption: { password: "pw", spinCount: 64 } })
+    const enc = await writeXlsx(
+      {
+        ...book(),
+      },
+      {
+        encryption: { password: "pw", spinCount: 64 },
+      },
+    )
     const rows: CellValue[][] = []
     for await (const row of streamXlsxRows(enc, { password: "pw" })) rows.push(row.values)
     expect(rows[0]).toEqual(["Name", "Score"])
@@ -115,7 +157,14 @@ describe("decryption across the read entry points", () => {
   })
 
   it("streamXlsxRows() without a password throws EncryptedFileError", async () => {
-    const enc = await writeXlsx({ ...book(), encryption: { password: "pw", spinCount: 64 } })
+    const enc = await writeXlsx(
+      {
+        ...book(),
+      },
+      {
+        encryption: { password: "pw", spinCount: 64 },
+      },
+    )
     await expect(async () => {
       for await (const _ of streamXlsxRows(enc)) void _
     }).rejects.toBeInstanceOf(EncryptedFileError)
@@ -124,7 +173,14 @@ describe("decryption across the read entry points", () => {
 
 describe("roundtrip open → save with encryption", () => {
   it("opens an encrypted workbook and re-saves it encrypted", async () => {
-    const enc = await writeXlsx({ ...book(), encryption: { password: "first", spinCount: 64 } })
+    const enc = await writeXlsx(
+      {
+        ...book(),
+      },
+      {
+        encryption: { password: "first", spinCount: 64 },
+      },
+    )
     const wb = await openXlsx(enc, { password: "first" })
     expect(wb.sheets[0].rows[1]).toEqual(["Ada", 95])
 
@@ -138,7 +194,14 @@ describe("roundtrip open → save with encryption", () => {
   })
 
   it("saveXlsx without an encryption option produces a plain ZIP", async () => {
-    const enc = await writeXlsx({ ...book(), encryption: { password: "pw", spinCount: 64 } })
+    const enc = await writeXlsx(
+      {
+        ...book(),
+      },
+      {
+        encryption: { password: "pw", spinCount: 64 },
+      },
+    )
     const wb = await openXlsx(enc, { password: "pw" })
     const plain = await saveXlsx(wb)
     expect(isOle2Container(plain)).toBe(false)

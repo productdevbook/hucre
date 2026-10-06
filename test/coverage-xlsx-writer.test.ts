@@ -1,3 +1,6 @@
+import { createCellStore, getCell } from "../src/cell-store"
+import type { CellStore } from "../src/_types"
+import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { XlsxStreamWriter, writeXlsxStream } from "../src/xlsx/stream-writer"
@@ -5,7 +8,6 @@ import { writeTable } from "../src/xlsx/table-writer"
 import { writeContentTypes } from "../src/xlsx/content-types-writer"
 import { writeCustomProperties } from "../src/xlsx/doc-props-writer"
 import { writeXml } from "../src/xml/data-writer"
-import { deserializeWorkbook, serializeWorkbook } from "../src/worker"
 import { ZipReader } from "../src/zip/reader"
 import type {
   Cell,
@@ -14,8 +16,9 @@ import type {
   RowDef,
   Sheet,
   Workbook,
-  WriteOptions,
-  WriteSheet,
+  WorkbookInput,
+  XlsxWriteOptions,
+  SheetInput,
 } from "../src/_types"
 
 const decoder = new TextDecoder("utf-8")
@@ -27,19 +30,22 @@ async function part(buf: Uint8Array, path: string): Promise<string> {
 }
 
 /** Write one sheet and hand back its `xl/worksheets/sheet1.xml`. */
-async function sheetXml(sheet: WriteSheet, options?: Omit<WriteOptions, "sheets">) {
-  const buf = await writeXlsx({ sheets: [sheet], ...options })
+async function sheetXml(
+  sheet: SheetInput,
+  options?: Omit<WorkbookInput, "sheets"> & XlsxWriteOptions,
+) {
+  const buf = await writeXlsx({ sheets: [sheet], ...options }, options)
   return part(buf, "xl/worksheets/sheet1.xml")
 }
 
 /** Write one sheet and hand back its `xl/styles.xml`. */
-async function stylesXml(sheet: WriteSheet) {
+async function stylesXml(sheet: SheetInput) {
   const buf = await writeXlsx({ sheets: [sheet] })
   return part(buf, "xl/styles.xml")
 }
 
-const cellMap = (entries: Array<[string, Partial<Cell>]>): Map<string, Partial<Cell>> =>
-  new Map(entries)
+const cellMap = (entries: Array<[number, number, Partial<Cell>]>): CellStore<Partial<Cell>> =>
+  createCellStore(entries)
 
 async function drain(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
   const chunks: Uint8Array[] = []
@@ -98,7 +104,7 @@ describe("worksheet rows without cells", () => {
     // A1..E1. Those placeholders must not become `<c/>` elements.
     const xml = await sheetXml({
       name: "S",
-      cells: cellMap([["0,5", { value: "far right" }]]),
+      cells: cellMap([[0, 5, { value: "far right" }]]),
     })
 
     expect(xml).toContain('<c r="F1"')
@@ -118,7 +124,8 @@ describe("styled cells of every value shape", () => {
       name: "S",
       cells: cellMap([
         [
-          "0,0",
+          0,
+          0,
           {
             style: styled,
             richText: [{ text: "bold-ish " }, { text: "run", font: { italic: true } }],
@@ -133,7 +140,7 @@ describe("styled cells of every value shape", () => {
   it("keeps the style index on an error cell", async () => {
     const xml = await sheetXml({
       name: "S",
-      cells: cellMap([["0,0", { value: "#DIV/0!", style: styled }]]),
+      cells: cellMap([[0, 0, { value: cellError("#DIV/0!"), style: styled }]]),
     })
 
     expect(xml).toMatch(/<c r="A1" t="e" s="\d+"><v>#DIV\/0!<\/v><\/c>/)
@@ -146,8 +153,8 @@ describe("styled cells of every value shape", () => {
     const xml = await sheetXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { value: "#SPILL!" }],
-        ["0,1", { value: "#CALC!" }],
+        [0, 0, { value: cellError("#SPILL!") }],
+        [0, 1, { value: cellError("#CALC!") }],
       ]),
     })
 
@@ -157,7 +164,7 @@ describe("styled cells of every value shape", () => {
 
   it("keeps the style index on an inline string when stringMode is inline", async () => {
     const xml = await sheetXml(
-      { name: "S", cells: cellMap([["0,0", { value: "hello", style: styled }]]) },
+      { name: "S", cells: cellMap([[0, 0, { value: "hello", style: styled }]]) },
       { stringMode: "inline" },
     )
 
@@ -170,8 +177,8 @@ describe("styled cells of every value shape", () => {
     const xml = await sheetXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { value: Number.POSITIVE_INFINITY, style: styled }],
-        ["1,0", { value: Number.NaN }],
+        [0, 0, { value: Number.POSITIVE_INFINITY, style: styled }],
+        [1, 0, { value: Number.NaN }],
       ]),
     })
 
@@ -186,8 +193,8 @@ describe("styled cells of every value shape", () => {
     const xml = await sheetXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { value: { nested: true } as never }],
-        ["0,1", { value: "kept" }],
+        [0, 0, { value: { nested: true } as never }],
+        [0, 1, { value: "kept" }],
       ]),
     })
 
@@ -199,8 +206,8 @@ describe("styled cells of every value shape", () => {
     const xml = await sheetXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { formula: "ISBLANK(B1)", formulaResult: true }],
-        ["1,0", { formula: "ISBLANK(B2)", formulaResult: false }],
+        [0, 0, { formula: "ISBLANK(B1)", formulaResult: true }],
+        [1, 0, { formula: "ISBLANK(B2)", formulaResult: false }],
       ]),
     })
 
@@ -216,7 +223,7 @@ describe("styled cells of every value shape", () => {
         {
           name: "S",
           cells: cellMap([
-            ["0,0", { value: new Date(Date.UTC(2024, 0, 15)), style: { numFmt: "mmm yyyy" } }],
+            [0, 0, { value: new Date(Date.UTC(2024, 0, 15)), style: { numFmt: "mmm yyyy" } }],
           ]),
         },
       ],
@@ -333,7 +340,8 @@ describe("rich text run properties", () => {
       name: "S",
       cells: cellMap([
         [
-          "0,0",
+          0,
+          0,
           {
             richText: [
               { text: "E=mc" },
@@ -391,14 +399,14 @@ describe("conditional formatting rule bodies", () => {
           { type: "num", value: "0" },
           { type: "num", value: "100" },
         ],
-        color: "638EC6",
+        color: { rgb: "638EC6" },
       },
     }
     const xml = await sheetXml({ name: "S", rows: [[5]], conditionalRules: [rule] })
 
     expect(xml).toContain('<cfvo type="num" val="0"/>')
     expect(xml).toContain('<cfvo type="num" val="100"/>')
-    expect(xml).toContain('<color rgb="638EC6"/>')
+    expect(xml).toContain('<color rgb="FF638EC6"/>')
   })
 
   it("honours reverse and showValue:false on an icon set", async () => {
@@ -431,7 +439,7 @@ describe("sparkline colours", () => {
     const xml = await sheetXml({
       name: "S",
       rows: [[1, 2, 3]],
-      sparklines: [{ location: "D1", dataRange: "Sheet1!A1:C1", color: "80FF0000" }],
+      sparklines: [{ location: "D1", dataRange: "Sheet1!A1:C1", color: { rgb: "80FF0000" } }],
     })
 
     expect(xml).toContain('<x14:colorSeries rgb="80FF0000"/>')
@@ -487,9 +495,10 @@ describe("object rows resolved through column keys", () => {
     })
 
     expect(xml).toContain('<row r="1">')
-    // A and the key-named column are shared strings 0 and 1.
+    // Unnamed columns keep a blank header so every declared position
+    // survives in the same header grid as ODS and text authoring.
     expect(xml).toContain('<c r="B1" t="s"><v>1</v></c>')
-    expect(xml).not.toContain('r="C1"')
+    expect(xml).toContain('<c r="C1" t="s">')
   })
 
   it("writes an empty cell for a key the object does not have", async () => {
@@ -515,9 +524,7 @@ describe("styles.xml colour and alignment coverage", () => {
   it("writes theme, tint and indexed on a font colour", async () => {
     const xml = await stylesXml({
       name: "S",
-      cells: cellMap([
-        ["0,0", { value: "x", style: { font: { color: { theme: 1, tint: 0.5 } } } }],
-      ]),
+      cells: cellMap([[0, 0, { value: "x", style: { font: { color: { theme: 1, tint: 0.5 } } } }]]),
     })
 
     expect(xml).toContain('theme="1"')
@@ -530,8 +537,8 @@ describe("styles.xml colour and alignment coverage", () => {
     const xml = await stylesXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { value: "a", style: { font: { color: { indexed: 10 } } } }],
-        ["0,1", { value: "b", style: { font: { color: { indexed: 12 } } } }],
+        [0, 0, { value: "a", style: { font: { color: { indexed: 10 } } } }],
+        [0, 1, { value: "b", style: { font: { color: { indexed: 12 } } } }],
       ]),
     })
 
@@ -544,7 +551,8 @@ describe("styles.xml colour and alignment coverage", () => {
       name: "S",
       cells: cellMap([
         [
-          "0,0",
+          0,
+          0,
           {
             value: "x",
             style: {
@@ -570,8 +578,8 @@ describe("styles.xml colour and alignment coverage", () => {
     const xml = await stylesXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { value: "a", style: { alignment: { readingOrder: "ltr" } } }],
-        ["0,1", { value: "b", style: { alignment: { readingOrder: "context" } } }],
+        [0, 0, { value: "a", style: { alignment: { readingOrder: "ltr" } } }],
+        [0, 1, { value: "b", style: { alignment: { readingOrder: "context" } } }],
       ]),
     })
 
@@ -583,7 +591,7 @@ describe("styles.xml colour and alignment coverage", () => {
     const xml = await stylesXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { value: "x", style: { protection: { locked: true, hidden: false } } }],
+        [0, 0, { value: "x", style: { protection: { locked: true, hidden: false } } }],
       ]),
     })
 
@@ -597,8 +605,8 @@ describe("styles.xml colour and alignment coverage", () => {
     const xml = await stylesXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { value: "a", style: { border: { top: thin }, font: { bold: true } } }],
-        ["0,1", { value: "b", style: { border: { top: thin }, font: { italic: true } } }],
+        [0, 0, { value: "a", style: { border: { top: thin }, font: { bold: true } } }],
+        [0, 1, { value: "b", style: { border: { top: thin }, font: { italic: true } } }],
       ]),
     })
 
@@ -610,7 +618,8 @@ describe("styles.xml colour and alignment coverage", () => {
       name: "S",
       cells: cellMap([
         [
-          "0,0",
+          0,
+          0,
           {
             value: "a",
             style: {
@@ -894,7 +903,7 @@ describe("writeXlsxStream", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("pivot source rows from object data", () => {
-  it("names pivot fields from the header, then the key, and blanks the rest", async () => {
+  it("names pivot fields from the worksheet header and retains blank headers", async () => {
     const buf = await writeXlsx({
       sheets: [
         {
@@ -1152,9 +1161,10 @@ describe("writeXml mixed content and holes", () => {
 
 describe("worker serialization round trip", () => {
   it("carries rich text, image metadata, conditional rules, a11y and external links", () => {
-    const cells = new Map<string, Cell>([
+    const cells = createCellStore<Cell>([
       [
-        "0,0",
+        0,
+        0,
         {
           value: "styled",
           type: "richText",
@@ -1185,9 +1195,9 @@ describe("worker serialization round trip", () => {
       externalLinks: [{ target: "../other.xlsx", sheetNames: ["Sheet1"], sheetData: [] }],
     }
 
-    const round = deserializeWorkbook(serializeWorkbook(wb))
+    const round = structuredClone(wb)
 
-    expect(round.sheets[0].cells?.get("0,0")?.richText).toEqual([
+    expect(getCell(round.sheets[0].cells, 0, 0)?.richText).toEqual([
       { text: "bold", font: { bold: true } },
     ])
     expect(round.sheets[0].images?.[0].altText).toBe("logo")

@@ -1,6 +1,9 @@
+import { createCellStore, getCell, setCell } from "../cell-store"
+import type { CellStore } from "../_types"
 // ── Worksheet Parser ─────────────────────────────────────────────────
 // Parses xl/worksheets/sheetN.xml into a Sheet object.
 
+import { cellError } from "../cell-error"
 import type {
   ReadWarning,
   Sheet,
@@ -35,23 +38,10 @@ import { cloneCellStyle } from "../_style"
 import { PAPER_SIZE_REVERSE } from "./worksheet-writer"
 import { serialToDate } from "../_date"
 import { parseSax, parseSaxStream, decodeOoxmlEscapes, type SaxHandlers } from "../xml/parser"
-import { MAX_CELL_MAP_ENTRIES, MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
+import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
 import { ParseError } from "../errors"
 
-/**
- * The message for a sheet whose bounding box is over the limit.
- *
- * Pure, and exported, because the branch that matters cannot be reached
- * from a test workbook: telling a caller *not* to try `sparse` needs a
- * sheet with more than 16.7 million filled cells, which is a couple of
- * gigabytes to build for one string.
- *
- * The advice is the point. A sparse sheet — 82k values over a 305M-slot
- * box, 0.03% filled — wants `sparse: true`, and a dense one cannot use
- * it: the cell count that blew the box limit is the same count that
- * blows the `Map` behind `cells`. The message used to offer it either
- * way. See #501, #527.
- */
+/** Dense-grid limits apply to the bounding box, not the sparse store. */
 export function oversizeSheetMessage(
   name: string,
   rowCount: number,
@@ -61,46 +51,14 @@ export function oversizeSheetMessage(
   cellLimit: number,
 ): string {
   const density = totalCells > 0 ? (100 * cellCount) / totalCells : 100
-  const sparseWouldFit = cellCount <= MAX_CELL_MAP_ENTRIES
-
   return (
     `Sheet "${name}" spans ${rowCount} rows x ${colCount} columns ` +
     `(${totalCells} cells, ${density.toFixed(2)}% of them filled), ` +
     `over the ${cellLimit} limit.\n` +
     `  - streamXlsxRows(input) reads it a row at a time, whatever the box.\n` +
-    (sparseWouldFit
-      ? `  - readXlsx(input, { sparse: true }) returns the cells and no grid.\n`
-      : `  - \`sparse: true\` cannot help here: ${cellCount} filled cells is past ` +
-        `the ${MAX_CELL_MAP_ENTRIES} a Map can hold.\n`) +
+    `  - readXlsx(input, { sparse: true }) returns the cells and no grid.\n` +
     `  - \`range\` or \`maxRows\` bound the area, if you know where the data is.\n` +
     `  - \`maxTotalCells\` raises the bound, if the sheet really is this large.`
-  )
-}
-
-/**
- * Refuse the cell that would overflow `Sheet.cells`.
- *
- * V8 caps a `Map` at 2^24 entries and answers the next `set` with a raw
- * `RangeError: Map maximum size exceeded` — not a `HucreError`, naming
- * no sheet, saying nothing about spreadsheets. Checking the size first
- * costs one comparison per cell and turns that into a `ParseError` that
- * names where to go instead.
- *
- * `has` is only consulted at the boundary, so the common path is the
- * comparison alone.
- */
-export function assertCellMapCapacity(
-  cells: Map<string, Cell>,
-  key: string,
-  sheetName: string | undefined,
-): void {
-  if (cells.size < MAX_CELL_MAP_ENTRIES || cells.has(key)) return
-
-  throw new ParseError(
-    `Sheet "${sheetName ?? "?"}" has more than ${MAX_CELL_MAP_ENTRIES} filled cells, ` +
-      `which is the most \`Sheet.cells\` can hold — a Map caps at 2^24 entries.\n` +
-      `  - streamXlsxRows(input) reads it a row at a time and has no such bound.\n` +
-      `The file is not damaged; it is larger than this model.`,
   )
 }
 
@@ -240,7 +198,7 @@ function worksheetParser(
   ctx: WorksheetContext,
 ): { handlers: SaxHandlers; finish: () => Sheet } {
   const rows: CellValue[][] = []
-  const cells = new Map<string, Cell>()
+  const cells = createCellStore<Cell>()
   const merges: MergeRange[] = []
   let maxCol = -1
   let maxRow = -1
@@ -326,7 +284,7 @@ function worksheetParser(
   let inSparklineF = false
   let inSparklineSqref = false
   let sparklineGroupType = ""
-  let sparklineGroupColor = ""
+  let sparklineGroupColor: Color | undefined
   let sparklineGroupMarkers = false
   let sparklineF = ""
   let sparklineSqref = ""
@@ -385,11 +343,11 @@ function worksheetParser(
   // colorScale state
   let inColorScale = false
   let csCfvos: Array<{ type: string; value?: string }> = []
-  let csColors: string[] = []
+  let csColors: Color[] = []
   // dataBar state
   let inDataBar = false
   let dbCfvos: Array<{ type: string; value?: string }> = []
-  let dbColor = ""
+  let dbColor: Color | undefined
   // iconSet state
   let inIconSet = false
   let isAttrs: Record<string, string> = {}
@@ -583,7 +541,7 @@ function worksheetParser(
             sparklineF = ""
           } else if (inCell) {
             inFormula = true
-            cellFormulaType = attrs["t"] ?? ""
+            cellFormulaType = attrs["t"] ?? "normal"
             if (attrs["si"] !== undefined) {
               cellFormulaSi = Number(attrs["si"])
             }
@@ -755,7 +713,7 @@ function worksheetParser(
             csCfvos = []
             csColors = []
             dbCfvos = []
-            dbColor = ""
+            dbColor = undefined
             isCfvos = []
             isAttrs = {}
           }
@@ -780,7 +738,7 @@ function worksheetParser(
           if (inCfRule) {
             inDataBar = true
             dbCfvos = []
-            dbColor = ""
+            dbColor = undefined
           }
           break
         case "iconSet":
@@ -890,9 +848,9 @@ function worksheetParser(
           break
         case "color":
           if (inColorScale) {
-            csColors.push(attrs["rgb"] ?? "")
+            csColors.push(parseColorAttrs(attrs))
           } else if (inDataBar) {
-            dbColor = attrs["rgb"] ?? ""
+            dbColor = parseColorAttrs(attrs)
           } else if (inInlineRPr && currentRunFont) {
             applyFontProp(currentRunFont, local, attrs)
           }
@@ -910,16 +868,12 @@ function worksheetParser(
           if (inSparklineGroups) {
             inSparklineGroup = true
             sparklineGroupType = attrs["type"] ?? "line"
-            sparklineGroupColor = ""
+            sparklineGroupColor = undefined
             sparklineGroupMarkers = attrs["markers"] === "1" || attrs["markers"] === "true"
           }
           break
         case "colorSeries":
-          if (inSparklineGroup) {
-            const rgb = attrs["rgb"] ?? ""
-            // Strip ARGB alpha prefix if present (8 chars → 6 chars)
-            sparklineGroupColor = rgb.length === 8 ? rgb.slice(2) : rgb
-          }
+          if (inSparklineGroup) sparklineGroupColor = parseColorAttrs(attrs)
           break
         case "sparkline":
           if (inSparklineGroup) {
@@ -1029,6 +983,7 @@ function worksheetParser(
               inlineText !== "" ||
               inlineRichText.length > 0 ||
               cellFormulaText !== "" ||
+              cellFormulaType !== "" ||
               cellType === "e" ||
               // An empty *inline* string is still a string. The producer
               // wrote `t="inlineStr"` and an `<is>` to say so, which is
@@ -1313,19 +1268,16 @@ function worksheetParser(
 
     for (const hl of rawHyperlinks) {
       const pos = parseCellRef(hl.ref)
-      const key = `${pos.row},${pos.col}`
+      if (!validateCellPosition(hl.ref, pos, ctx)) continue
 
-      // Get or create cell in the cells map
-      let cell = cells.get(key)
+      // Get or create cell in the cell store
+      let cell = getCell(cells, pos.row, pos.col)
       if (!cell) {
         cell = {
           value: (rows[pos.row] && rows[pos.row][pos.col]) ?? null,
           type: "string",
         }
-        // Far fewer hyperlinks than cells in any real file, but this is
-        // the other place `cells` grows and the check is one comparison.
-        assertCellMapCapacity(cells, key, name)
-        cells.set(key, cell)
+        setCell(cells, pos.row, pos.col, cell)
       }
 
       const hyperlink: Hyperlink = { target: "" }
@@ -1662,9 +1614,9 @@ function buildConditionalRule(
   sqref: string,
   formulas: string[],
   csCfvos: Array<{ type: string; value?: string }>,
-  csColors: string[],
+  csColors: Color[],
   dbCfvos: Array<{ type: string; value?: string }>,
-  dbColor: string,
+  dbColor: Color | undefined,
   isCfvos: Array<{ type: string; value?: string }>,
   isAttrsObj: Record<string, string>,
   dxfs: CellStyle[] | undefined,
@@ -1748,7 +1700,7 @@ function buildConditionalRule(
         type: c.type as "min" | "max" | "num" | "percent" | "percentile",
         value: c.value,
       })),
-      color: dbColor,
+      color: dbColor ?? {},
     }
   }
 
@@ -1772,38 +1724,13 @@ function buildConditionalRule(
   return rule
 }
 
-// ── Cell Processing ──────────────────────────────────────────────────
-
-function processCell(
+/** Shared by cell values, hyperlinks and comments: malformed references
+ * are dropped with a warning; coordinates past the grid are file errors. */
+export function validateCellPosition(
   ref: string,
-  type: string,
-  styleIndex: number,
-  valueText: string,
-  formulaText: string,
-  inlineText: string,
-  inlineRichText: RichTextRun[] | undefined,
-  ctx: WorksheetContext,
-  rows: CellValue[][],
-  cells: Map<string, Cell>,
-  assertCellFitsDenseGrid: (row: number, col: number) => void,
-  formulaType?: string,
-  formulaSi?: number,
-  formulaRef?: string,
-  formulaCm?: boolean,
-  fallbackRow?: number,
-  fallbackCol?: number,
-): void {
-  // When the `r` attribute is missing, fall back to implicit row/col position
-  // (parity with the streaming reader).
-  const pos =
-    ref !== ""
-      ? parseCellRef(ref)
-      : fallbackRow !== undefined && fallbackCol !== undefined
-        ? { row: fallbackRow, col: fallbackCol }
-        : null
-  if (!pos) return
-  const { row, col } = pos
-
+  { row, col }: { row: number; col: number },
+  ctx: Pick<WorksheetContext, "sheetName" | "onWarning">,
+): boolean {
   // Two different failures, treated differently on purpose — the same
   // distinction `clampColumnBound` draws a few lines down.
   //
@@ -1832,8 +1759,45 @@ function processCell(
         "the sheet is read.",
       sheet: ctx.sheetName,
     })
-    return
+    return false
   }
+
+  return true
+}
+
+// ── Cell Processing ──────────────────────────────────────────────────
+
+function processCell(
+  ref: string,
+  type: string,
+  styleIndex: number,
+  valueText: string,
+  formulaText: string,
+  inlineText: string,
+  inlineRichText: RichTextRun[] | undefined,
+  ctx: WorksheetContext,
+  rows: CellValue[][],
+  cells: CellStore<Cell>,
+  assertCellFitsDenseGrid: (row: number, col: number) => void,
+  formulaType?: string,
+  formulaSi?: number,
+  formulaRef?: string,
+  formulaCm?: boolean,
+  fallbackRow?: number,
+  fallbackCol?: number,
+): void {
+  // When the `r` attribute is missing, fall back to implicit row/col position
+  // (parity with the streaming reader).
+  const pos =
+    ref !== ""
+      ? parseCellRef(ref)
+      : fallbackRow !== undefined && fallbackCol !== undefined
+        ? { row: fallbackRow, col: fallbackCol }
+        : null
+  if (!pos) return
+  const { row, col } = pos
+
+  if (!validateCellPosition(ref, pos, ctx)) return
 
   assertCellFitsDenseGrid(row, col)
 
@@ -1851,17 +1815,13 @@ function processCell(
 
   let value: CellValue = null
   let cellType: Cell["type"] = "empty"
-  let formula: string | undefined
   let formulaResult: CellValue | undefined
   let richText: RichTextRun[] | undefined
 
-  // Handle formula (including shared formula slave cells with no text)
-  if (formulaText) {
-    formula = formulaText
-  } else if (formulaType === "shared" && formulaSi !== undefined && formulaSi >= 0) {
-    // Shared formula slave cell: no formula text, but has si attribute
-    formula = ""
-  }
+  // Presence, not text truthiness: shared-formula followers and <f/>
+  // have an empty body but still carry cached results (#573). OOXML's
+  // default formula type is normal, so the SAX pass records it on <f>.
+  const formula = formulaType ? formulaText : undefined
 
   // Determine cell value based on type
   switch (type) {
@@ -1902,8 +1862,7 @@ function processCell(
       // the rest, emitting `<f>` with no `<v>`. The writer has always
       // been able to write them back. See #497.
       value = decodeOoxmlEscapes(valueText)
-      cellType = formula ? "formula" : "string"
-      if (formula) formulaResult = value
+      cellType = "string"
       break
     }
     case "inlineStr": {
@@ -1921,8 +1880,7 @@ function processCell(
     case "b": {
       // Boolean
       value = valueText === "1" || valueText.toLowerCase() === "true"
-      cellType = formula ? "formula" : "boolean"
-      if (formula) formulaResult = value
+      cellType = "boolean"
       break
     }
     case "e": {
@@ -1935,9 +1893,8 @@ function processCell(
       // `value` still holds the error token either way, so spotting an
       // error by its value is unaffected; a *hard-coded* error cell,
       // which carries no formula, still reports `"error"`. See #497.
-      value = valueText
-      cellType = formula ? "formula" : "error"
-      if (formula) formulaResult = value
+      value = cellError(valueText)
+      cellType = "error"
       break
     }
     case "d": {
@@ -1965,16 +1922,12 @@ function processCell(
         value = null
         cellType = "empty"
       }
-      if (formula) {
-        formulaResult = value
-        cellType = "formula"
-      }
       break
     }
     case "n":
     default: {
       // Number (explicit or implied)
-      if (valueText === "" && !formula) {
+      if (valueText === "") {
         // Empty cell
         value = null
         cellType = "empty"
@@ -1985,7 +1938,7 @@ function processCell(
       if (!Number.isNaN(num) && valueText !== "") {
         // Check if this is a date via style
         if (ctx.styles && styleIndex >= 0 && isDateStyle(ctx.styles, styleIndex)) {
-          value = serialToDate(num, ctx.dateSystem === "1904")
+          value = serialToDate(num, ctx.dateSystem)
           cellType = "date"
         } else {
           value = num
@@ -1997,12 +1950,15 @@ function processCell(
         cellType = "string"
       }
 
-      if (formula) {
-        formulaResult = value
-        cellType = "formula"
-      }
       break
     }
+  }
+
+  // Cache every value type in one place. Handling this inside five
+  // switch arms let string/boolean/error/date results drift apart.
+  if (formula !== undefined) {
+    cellType = "formula"
+    formulaResult = value
   }
 
   // Set the value in the rows array. In sparse mode there is no grid to
@@ -2085,9 +2041,7 @@ function processCell(
         })
       }
     }
-    const cellKey = `${row},${col}`
-    assertCellMapCapacity(cells, cellKey, ctx.sheetName)
-    cells.set(cellKey, cell)
+    setCell(cells, row, col, cell)
   }
 }
 
@@ -2117,14 +2071,7 @@ function applyFontProp(font: FontStyle, tag: string, attrs: Record<string, strin
       if (attrs["val"]) font.name = attrs["val"]
       break
     case "color":
-      font.color = {}
-      if (attrs["rgb"]) {
-        const rgb = attrs["rgb"]
-        font.color.rgb = rgb.length === 8 ? rgb.slice(2) : rgb
-      }
-      if (attrs["theme"]) font.color.theme = Number(attrs["theme"])
-      if (attrs["tint"]) font.color.tint = Number(attrs["tint"])
-      if (attrs["indexed"]) font.color.indexed = Number(attrs["indexed"])
+      font.color = parseColorAttrs(attrs)
       break
     case "vertAlign":
       if (attrs["val"] === "superscript" || attrs["val"] === "subscript") {
@@ -2294,7 +2241,12 @@ function intAttr(value: string | undefined): number | undefined {
 
 // ── Color Attribute Parser ──────────────────────────────────────────────
 
-/** Parse color attributes from an XML element (e.g. <tabColor>, <color>) */
+/**
+ * Parse a colour element's attributes — `<tabColor>`, a font or fill
+ * `<color>`, a conditional-format scale stop, a sparkline series. One
+ * reader for all of them: the CF and sparkline sites used to read `rgb`
+ * alone and lose theme colours.
+ */
 function parseColorAttrs(attrs: Record<string, string>): Color {
   const color: Color = {}
   if (attrs["rgb"]) {

@@ -68,7 +68,7 @@ describe("onRow callback (#58)", () => {
 describe("transformHeader callback (#60)", () => {
   it("should transform headers in parseCsvObjects", () => {
     const { headers, data } = parseCsvObjects("Name,Age\nAlice,30", {
-      header: true,
+      hasHeaderRow: true,
       transformHeader: (h) => h.toLowerCase(),
     })
     expect(headers).toEqual(["name", "age"])
@@ -78,7 +78,7 @@ describe("transformHeader callback (#60)", () => {
   it("should receive header index", () => {
     const indices: number[] = []
     parseCsvObjects("A,B,C\n1,2,3", {
-      header: true,
+      hasHeaderRow: true,
       transformHeader: (h, i) => {
         indices.push(i)
         return h
@@ -89,7 +89,7 @@ describe("transformHeader callback (#60)", () => {
 
   it("should work with custom prefix", () => {
     const { headers } = parseCsvObjects("x,y\n1,2", {
-      header: true,
+      hasHeaderRow: true,
       transformHeader: (h, i) => `col_${i}_${h}`,
     })
     expect(headers).toEqual(["col_0_x", "col_1_y"])
@@ -133,7 +133,7 @@ describe("transformValue callback (#60)", () => {
 
   it("should transform values in parseCsvObjects", () => {
     const { data } = parseCsvObjects("price,qty\n10,5\n20,3", {
-      header: true,
+      hasHeaderRow: true,
       typeInference: true,
       transformValue: (val, header) => {
         if (header === "price" && typeof val === "number") return val * 100
@@ -148,7 +148,7 @@ describe("transformValue callback (#60)", () => {
 
   it("should work with transformHeader and transformValue together", () => {
     const { headers, data } = parseCsvObjects("Name,Score\nAlice,95", {
-      header: true,
+      hasHeaderRow: true,
       typeInference: true,
       transformHeader: (h) => h.toLowerCase(),
       transformValue: (val, header) => {

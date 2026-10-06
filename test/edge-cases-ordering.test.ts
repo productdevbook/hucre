@@ -1,3 +1,4 @@
+import { createCellStore, setCell } from "../src/cell-store"
 /**
  * Tests that specifically verify OOXML spec compliance.
  * The worksheet XML element ordering must follow ECMA-376 Part 1, 18.3.1.99
@@ -7,11 +8,11 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { ZipReader } from "../src/zip/reader"
 import { parseXml } from "../src/xml/parser"
-import type { WriteSheet } from "../src/_types"
+import type { SheetInput } from "../src/_types"
 
 const decoder = new TextDecoder("utf-8")
 
-async function getWorksheetXml(sheets: WriteSheet[]): Promise<string> {
+async function getWorksheetXml(sheets: SheetInput[]): Promise<string> {
   const xlsx = await writeXlsx({ sheets })
   const zip = new ZipReader(xlsx)
   const raw = await zip.extract("xl/worksheets/sheet1.xml")
@@ -181,8 +182,8 @@ describe("OOXML worksheet element ordering", () => {
   })
 
   it("hyperlinks come after dataValidations", async () => {
-    const cells = new Map<string, Partial<import("../src/_types").Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<import("../src/_types").Cell>>()
+    setCell(cells, 0, 0, {
       value: "Link",
       type: "string",
       hyperlink: { target: "https://example.com" },
@@ -208,8 +209,8 @@ describe("OOXML worksheet element ordering", () => {
   })
 
   it("pageMargins and pageSetup come after hyperlinks", async () => {
-    const cells = new Map<string, Partial<import("../src/_types").Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<import("../src/_types").Cell>>()
+    setCell(cells, 0, 0, {
       value: "Link",
       type: "string",
       hyperlink: { target: "https://example.com" },
@@ -310,8 +311,8 @@ describe("XLSX: complex feature combinations", () => {
   })
 
   it("all sheet features combined", async () => {
-    const cells = new Map<string, Partial<import("../src/_types").Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<import("../src/_types").Cell>>()
+    setCell(cells, 0, 0, {
       value: "Linked",
       type: "string",
       hyperlink: { target: "https://example.com" },

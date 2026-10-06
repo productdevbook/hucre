@@ -1,70 +1,41 @@
-// ── Sheet Conversion Utilities ──────────────────────────────────────
-// Helper functions to convert Sheet data into objects or arrays.
-
+// Sheet conversion and object readers use one model projection.
 import type { CellValue, Sheet } from "./_types"
-import { rowsToObjects } from "./_objects"
+import {
+  rowsToObjects,
+  projectTable,
+  type RowsToObjectsOptions,
+  type ObjectsResult,
+} from "./_objects"
 
-/**
- * Options for {@link sheetToObjects}.
- */
-export interface SheetToObjectsOptions {
-  /** 0-based row index to use as headers. Default: 0. */
-  headerRow?: number
-}
+/** In-memory projection has the same knobs as the object readers. */
+export interface SheetToObjectsOptions extends RowsToObjectsOptions {}
+export type SheetObjectsResult<T extends Record<string, CellValue> = Record<string, CellValue>> =
+  ObjectsResult<T>
 
-/**
- * Result shape for {@link sheetToObjects}, mirroring `XlsxObjectsResult`
- * and `OdsObjectsResult`.
- */
-export interface SheetObjectsResult<
-  T extends Record<string, CellValue> = Record<string, CellValue>,
-> {
-  data: T[]
-  headers: string[]
-}
-
-/**
- * Convert sheet rows to objects keyed by a header row, plus the detected
- * headers.
- *
- * Every row after the header row is returned as-is: this is a pure
- * in-memory projection with no filtering or transform hooks. For
- * `skipEmptyRows` / `transformHeader` / `transformValue` / `maxRows`, read
- * through `readXlsxObjects`, `readOdsObjects`, or `readObjects` instead.
- *
- * @param sheet - The sheet to convert
- * @returns `{ data, headers }` — the same shape every `*Objects` reader returns
- */
+/** Project effective values, skipping blank rows by default. */
 export function sheetToObjects<T extends Record<string, CellValue> = Record<string, CellValue>>(
   sheet: Sheet,
   options?: SheetToObjectsOptions,
 ): SheetObjectsResult<T> {
-  return rowsToObjects<T>(sheet.rows, {
-    headerRow: options?.headerRow ?? 0,
-    skipEmptyRows: false,
-  })
+  return rowsToObjects<T>(sheet, options)
 }
 
-/**
- * Convert sheet rows to a 2D array with headers extracted from the first row.
- *
- * @param sheet - The sheet to convert
- * @returns Object with `headers` (string[]) and `data` (remaining rows)
- */
-export function sheetToArrays(sheet: Sheet): {
+export interface SheetToArraysOptions extends Pick<
+  RowsToObjectsOptions,
+  "headerRow" | "skipEmptyRows" | "maxRows" | "maxTotalCells"
+> {}
+
+/** Split a table into headers and rectangular values; keep blank rows by default. */
+export function sheetToArrays(
+  sheet: Sheet,
+  options?: SheetToArraysOptions,
+): {
   headers: string[]
   data: CellValue[][]
 } {
-  if (sheet.rows.length === 0) {
-    return { headers: [], data: [] }
-  }
-
-  const headerRow = sheet.rows[0]!
-  const headers = headerRow.map((h) => {
-    if (h === null || h === undefined) return ""
-    return String(h).trim()
+  const { headers, rows } = projectTable(sheet, {
+    ...options,
+    skipEmptyRows: options?.skipEmptyRows ?? false,
   })
-
-  const data = sheet.rows.slice(1)
-  return { headers, data }
+  return { headers, data: Array.from(rows, ([, values]) => values) }
 }

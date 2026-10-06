@@ -1,3 +1,4 @@
+import { createCellStore, getCell, hasCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import type {
   Cell,
@@ -50,7 +51,7 @@ function grid(rows: number, cols: number): (string | null)[][] {
 // `sqref="B3"` (no colon). The rewriter has to treat that as a degenerate
 // range rather than dropping the end coordinate.
 describe("range rewriting with colon-less references", () => {
-  it("shifts a single-cell validation range and normalises it to start:end", () => {
+  it("shifts a single-cell validation while preserving its compact reference", () => {
     const s = sheet({
       rows: grid(4, 2),
       dataValidations: [{ type: "list", range: "B3", values: ["x"] }],
@@ -60,9 +61,9 @@ describe("range rewriting with colon-less references", () => {
 
     insertRows(s, 0, 2)
 
-    expect(s.dataValidations![0].range).toBe("B5:B5")
-    expect(s.conditionalRules![0].range).toBe("A4:A4")
-    expect(s.tables![0].range).toBe("A3:A3")
+    expect(s.dataValidations![0].range).toBe("B5")
+    expect(s.conditionalRules![0].range).toBe("A4")
+    expect(s.tables![0].range).toBe("A3")
   })
 
   it("shifts a single-cell reference on column insert too", () => {
@@ -75,9 +76,9 @@ describe("range rewriting with colon-less references", () => {
 
     insertColumns(s, 0, 1)
 
-    expect(s.dataValidations![0].range).toBe("D1:D1")
-    expect(s.conditionalRules![0].range).toBe("E2:E2")
-    expect(s.tables![0].range).toBe("D2:D2")
+    expect(s.dataValidations![0].range).toBe("D1")
+    expect(s.conditionalRules![0].range).toBe("E2")
+    expect(s.tables![0].range).toBe("D2")
   })
 })
 
@@ -345,7 +346,7 @@ describe("moveRows", () => {
   // writers branch on `sheet.cells` being present at all — so the move
   // clears it rather than leaving an empty Map behind.
   it("drops empty cell and rowDef maps instead of keeping them empty", () => {
-    const s = sheet({ rows: grid(3, 1), cells: new Map(), rowDefs: new Map() })
+    const s = sheet({ rows: grid(3, 1), cells: createCellStore(), rowDefs: new Map() })
 
     moveRows(s, 0, 1, 2)
 
@@ -372,17 +373,17 @@ describe("cloneSheet", () => {
     }
     const s = sheet({
       rows: [["x"]],
-      cells: new Map([["0,0", { value: "x", type: "string", style }]]),
+      cells: createCellStore([[0, 0, { value: "x", type: "string", style }]]),
     })
 
     const c = cloneSheet(s, "Copy")
-    const clonedFill = c.cells!.get("0,0")!.style!.fill!
+    const clonedFill = getCell(c.cells!, 0, 0)!.style!.fill!
     if (clonedFill.type !== "gradient") throw new Error("expected a gradient fill")
 
     expect(clonedFill.degree).toBe(90)
     expect(clonedFill.stops).toHaveLength(2)
     clonedFill.stops[0].color.rgb = "FF00FF00"
-    const originalFill = s.cells!.get("0,0")!.style!.fill!
+    const originalFill = getCell(s.cells!, 0, 0)!.style!.fill!
     if (originalFill.type !== "gradient") throw new Error("expected a gradient fill")
     expect(originalFill.stops[0].color.rgb).toBe("FFFF0000")
   })
@@ -391,10 +392,10 @@ describe("cloneSheet", () => {
     const style: CellStyle = { fill: { type: "pattern", pattern: "gray125" } }
     const s = sheet({
       rows: [["x"]],
-      cells: new Map([["0,0", { value: "x", type: "string", style }]]),
+      cells: createCellStore([[0, 0, { value: "x", type: "string", style }]]),
     })
 
-    const clonedFill = cloneSheet(s, "Copy").cells!.get("0,0")!.style!.fill!
+    const clonedFill = getCell(cloneSheet(s, "Copy").cells!, 0, 0)!.style!.fill!
     if (clonedFill.type !== "pattern") throw new Error("expected a pattern fill")
 
     expect(clonedFill.fgColor).toBeUndefined()
@@ -417,20 +418,20 @@ describe("cloneSheet", () => {
     }
     const s = sheet({
       rows: [["x", "y"]],
-      cells: new Map<string, Cell>([
-        ["0,0", { value: "x", type: "string", style: both }],
-        ["0,1", { value: "y", type: "string", style: fgOnly }],
+      cells: createCellStore<Cell>([
+        [0, 0, { value: "x", type: "string", style: both }],
+        [0, 1, { value: "y", type: "string", style: fgOnly }],
       ]),
     })
 
     const c = cloneSheet(s, "Copy")
-    const a = c.cells!.get("0,0")!.style!.fill!
-    const b = c.cells!.get("0,1")!.style!.fill!
+    const a = getCell(c.cells!, 0, 0)!.style!.fill!
+    const b = getCell(c.cells!, 0, 1)!.style!.fill!
     if (a.type !== "pattern" || b.type !== "pattern") throw new Error("expected pattern fills")
 
     expect(b.bgColor).toBeUndefined()
     a.bgColor!.rgb = "FF123456"
-    const originalA = s.cells!.get("0,0")!.style!.fill!
+    const originalA = getCell(s.cells!, 0, 0)!.style!.fill!
     if (originalA.type !== "pattern") throw new Error("expected a pattern fill")
     expect(originalA.bgColor!.rgb).toBe("FFFFFFFF")
   })
@@ -451,11 +452,11 @@ describe("cloneSheet", () => {
     }
     const s = sheet({
       rows: [["x"]],
-      cells: new Map([["0,0", { value: "x", type: "string", style }]]),
+      cells: createCellStore([[0, 0, { value: "x", type: "string", style }]]),
     })
 
     const c = cloneSheet(s, "Copy")
-    const border = c.cells!.get("0,0")!.style!.border!
+    const border = getCell(c.cells!, 0, 0)!.style!.border!
 
     expect(border.top!.color).toEqual({ rgb: "FF111111" })
     expect(border.right!.color).toBeUndefined()
@@ -464,7 +465,7 @@ describe("cloneSheet", () => {
     expect(border.diagonalUp).toBe(true)
 
     border.bottom!.color!.rgb = "FFFFFFFF"
-    expect(s.cells!.get("0,0")!.style!.border!.bottom!.color!.rgb).toBe("FF222222")
+    expect(getCell(s.cells!, 0, 0)!.style!.border!.bottom!.color!.rgb).toBe("FF222222")
   })
 
   // Partial borders are the norm — a header underline is a bottom edge and
@@ -483,15 +484,15 @@ describe("cloneSheet", () => {
     const underlineOnly: CellStyle = { border: { bottom: { style: "medium" } } }
     const s = sheet({
       rows: [["x", "y"]],
-      cells: new Map<string, Cell>([
-        ["0,0", { value: "x", type: "string", style: mixed }],
-        ["0,1", { value: "y", type: "string", style: underlineOnly }],
+      cells: createCellStore<Cell>([
+        [0, 0, { value: "x", type: "string", style: mixed }],
+        [0, 1, { value: "y", type: "string", style: underlineOnly }],
       ]),
     })
 
     const c = cloneSheet(s, "Copy")
-    const a = c.cells!.get("0,0")!.style!.border!
-    const b = c.cells!.get("0,1")!.style!.border!
+    const a = getCell(c.cells!, 0, 0)!.style!.border!
+    const b = getCell(c.cells!, 0, 1)!.style!.border!
 
     expect(a.top!.color).toBeUndefined()
     expect(a.diagonal!.color).toBeUndefined()
@@ -518,16 +519,16 @@ describe("cloneSheet", () => {
         { text: " plain" }, // a run with no font at all
       ],
     }
-    const s = sheet({ rows: [[3]], cells: new Map([["0,0", cell]]) })
+    const s = sheet({ rows: [[3]], cells: createCellStore([[0, 0, cell]]) })
 
-    const cloned = cloneSheet(s, "Copy").cells!.get("0,0")!
+    const cloned = getCell(cloneSheet(s, "Copy").cells!, 0, 0)!
 
     expect(cloned.formula).toBe("SUM(A1:A2)")
     expect(cloned.formulaResult).toBe(3)
     expect(cloned.richText![1].font!.color).toBeUndefined()
     expect(cloned.richText![2].font).toBeUndefined()
     cloned.richText![0].font!.color!.rgb = "FF00FF00"
-    expect(s.cells!.get("0,0")!.richText![0].font!.color!.rgb).toBe("FFFF0000")
+    expect(getCell(s.cells!, 0, 0)!.richText![0].font!.color!.rgb).toBe("FFFF0000")
   })
 
   it("deep-copies a comment's rich text runs", () => {
@@ -540,13 +541,13 @@ describe("cloneSheet", () => {
         richText: [{ text: "red", font: { color: { rgb: "FFFF0000" } } }, { text: "plain" }],
       },
     }
-    const s = sheet({ rows: [["x"]], cells: new Map([["0,0", cell]]) })
+    const s = sheet({ rows: [["x"]], cells: createCellStore([[0, 0, cell]]) })
 
-    const cloned = cloneSheet(s, "Copy").cells!.get("0,0")!
+    const cloned = getCell(cloneSheet(s, "Copy").cells!, 0, 0)!
 
     expect(cloned.comment!.richText![1].font).toBeUndefined()
     cloned.comment!.richText![0].font!.color!.rgb = "FF00FF00"
-    expect(s.cells!.get("0,0")!.comment!.richText![0].font!.color!.rgb).toBe("FFFF0000")
+    expect(getCell(s.cells!, 0, 0)!.comment!.richText![0].font!.color!.rgb).toBe("FFFF0000")
   })
 
   it("deep-copies a column-level style", () => {
@@ -573,7 +574,7 @@ describe("cloneSheet", () => {
           type: "dataBar",
           priority: 1,
           range: "A1:A5",
-          dataBar: { cfvo: [{ type: "min" }, { type: "max" }], color: "FF638EC6" },
+          dataBar: { cfvo: [{ type: "min" }, { type: "max" }], color: { rgb: "638EC6" } },
         },
         {
           type: "iconSet",
@@ -654,9 +655,9 @@ describe("copyRange", () => {
     const s = sheet({
       rows: [["a"], ["b"]],
       // The target already carries an override that the (empty) source must clear.
-      cells: new Map<string, Cell>([
-        ["0,0", { value: "a", type: "string", style: { font: { bold: true } } }],
-        ["5,1", { value: "stale", type: "string" }],
+      cells: createCellStore<Cell>([
+        [0, 0, { value: "a", type: "string", style: { font: { bold: true } } }],
+        [5, 1, { value: "stale", type: "string" }],
       ]),
     })
 
@@ -665,8 +666,8 @@ describe("copyRange", () => {
 
     expect(s.rows[5][1]).toBeNull()
     expect(s.rows[6][1]).toBeNull()
-    expect(s.cells!.has("5,1")).toBe(false)
-    expect(s.cells!.get("0,0")!.style!.font!.bold).toBe(true)
+    expect(hasCell(s.cells!, 5, 1)).toBe(false)
+    expect(getCell(s.cells!, 0, 0)!.style!.font!.bold).toBe(true)
   })
 
   it("reads rows past the end of the sheet as null", () => {
@@ -769,12 +770,11 @@ describe("sortRows", () => {
   it("remaps the cell override map when sorting descending", () => {
     const s = sheet({
       rows: [["b"], ["c"], ["a"], []],
-      cells: new Map<string, Cell>([
-        ["0,0", { value: "b", type: "string" }],
-        ["1,0", { value: "c", type: "string" }],
-        ["2,0", { value: "a", type: "string" }],
-        // A key for a row that does not exist — left exactly as it is.
-        ["99,0", { value: "orphan", type: "string" }],
+      cells: createCellStore<Cell>([
+        [0, 0, { value: "b", type: "string" }],
+        [1, 0, { value: "c", type: "string" }],
+        [2, 0, { value: "a", type: "string" }],
+        [99, 0, { value: "orphan", type: "string" }],
       ]),
     })
 
@@ -784,10 +784,10 @@ describe("sortRows", () => {
     // sink in both directions now (#392). This test previously asserted
     // the pre-fix order, with the blank floating to the top.
     expect(s.rows.map((r) => r[0] ?? null)).toEqual(["c", "b", "a", null])
-    expect(s.cells!.get("0,0")!.value).toBe("c")
-    expect(s.cells!.get("1,0")!.value).toBe("b")
-    expect(s.cells!.get("2,0")!.value).toBe("a")
-    expect(s.cells!.get("99,0")!.value).toBe("orphan")
+    expect(getCell(s.cells!, 0, 0)!.value).toBe("c")
+    expect(getCell(s.cells!, 1, 0)!.value).toBe("b")
+    expect(getCell(s.cells!, 2, 0)!.value).toBe("a")
+    expect(getCell(s.cells!, 99, 0)!.value).toBe("orphan")
   })
 
   it("sorts FALSE before TRUE", () => {
@@ -806,14 +806,14 @@ describe("sortRows", () => {
     withHole[2] = "y" // index 1 is a hole
     const s = sheet({
       rows: [withHole, ["b"], [], ["a"], []],
-      cells: new Map<string, Cell>([["0,0", { value: "x", type: "string" }]]),
+      cells: createCellStore<Cell>([[0, 0, { value: "x", type: "string" }]]),
     })
 
     sortRows(s, 1)
 
     expect(s.rows[0]![1]).toBeUndefined()
     expect(s.rows.map((r) => r[0] ?? null)).toEqual(["x", "b", null, "a", null])
-    expect(s.cells!.get("0,0")!.value).toBe("x")
+    expect(getCell(s.cells!, 0, 0)!.value).toBe("x")
   })
 
   it("orders dates chronologically, ahead of strings and booleans", () => {

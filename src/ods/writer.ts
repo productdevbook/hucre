@@ -1,12 +1,17 @@
+import { hasCell, getCell, cellEntries } from "../cell-store"
+import { prepareOdsWorkbook } from "../_write-model"
 // ── ODS Writer ──────────────────────────────────────────────────────
 // Generates valid OpenDocument Spreadsheet (.ods) files.
 
+import { isCellError } from "../cell-error"
 import type {
-  WriteOptions,
+  WorkbookInput,
+  WritableWorkbook,
+  WorkbookWriteOptions,
   WriteOutput,
   CellValue,
   WorkbookProperties,
-  WriteSheet,
+  SheetInput,
   Cell,
   CellStyle,
   FontStyle,
@@ -16,10 +21,12 @@ import type {
 } from "../_types"
 import { ZipWriter } from "../zip/writer"
 import { validateSheetNames } from "../_validate"
-import { unwrapCellValue } from "../xlsx/hyperlink"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape as escapeXmlText } from "../xml/writer"
 import { replaceA1Ranges, toRanges } from "../cell-utils"
-import { splitInlineCellsInSheets, toCellValues } from "../_inline-cells"
+import { toCellValues } from "../_inline-cells"
+import { columnCellStyle } from "../_sheet-input"
+import { effectiveValue } from "../_sheet-values"
+import { reportOdsCellDrops } from "./cell-drops"
 
 const encoder = /* @__PURE__ */ new TextEncoder()
 
@@ -52,6 +59,8 @@ const NS_META = "urn:oasis:names:tc:opendocument:xmlns:meta:1.0"
 const NS_DC = "http://purl.org/dc/elements/1.1/"
 const NS_XLINK = "http://www.w3.org/1999/xlink"
 const NS_OF = "urn:oasis:names:tc:opendocument:xmlns:of:1.2"
+// LibreOffice's extension namespace; the only way ODF says "this string cell is an error".
+const NS_CALCEXT = "urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0"
 
 export const MIMETYPE = "application/vnd.oasis.opendocument.spreadsheet"
 
@@ -957,7 +966,10 @@ function cellTextP(
     const anchor = hyperlink.display !== undefined ? odsEscape(hyperlink.display) : content
     content = xmlElement(
       "text:a",
-      { "xlink:href": hyperlink.target, "xlink:type": "simple" },
+      {
+        "xlink:href": hyperlink.location ? `#${hyperlink.location}` : hyperlink.target,
+        "xlink:type": "simple",
+      },
       anchor,
     )
   }
@@ -1042,6 +1054,16 @@ export function cellToOds(
     return xmlElement("table:table-cell", attrs, children)
   }
 
+  if (isCellError(value)) {
+    // ODF has no error value type; LibreOffice writes the token as a
+    // string cell and marks it in its own namespace, which is what lets
+    // the reader tell it from the text "#N/A".
+    attrs["office:value-type"] = "string"
+    attrs["calcext:value-type"] = "error"
+    children.push(cellTextP(value.error, ctx, collector))
+    return xmlElement("table:table-cell", attrs, children)
+  }
+
   if (value instanceof Date) {
     // An unparseable Date produced office:date-value="NaN-NaN-NaNT..."
     // — a corrupt file rather than an error. Emit an empty cell, the same
@@ -1097,10 +1119,12 @@ function buildMergeMap(merges: MergeRange[] | undefined): {
 function rowToOds(
   row: CellValue[],
   rowIndex: number,
-  sheet: WriteSheet,
+  sheet: SheetInput,
   mergeMap: { starts: Map<string, { colSpan: number; rowSpan: number }>; covered: Set<string> },
   styleCollector: StyleCollector,
   maxCol: number,
+  columnStyles: Array<CellStyle | undefined>,
+  onDrop?: WorkbookWriteOptions["onDrop"],
 ): string {
   const cellElements: string[] = []
 
@@ -1111,7 +1135,8 @@ function rowToOds(
   let lastMeaningful = row.length - 1
   while (
     lastMeaningful >= 0 &&
-    (row[lastMeaningful] === null || row[lastMeaningful] === undefined)
+    (row[lastMeaningful] === null || row[lastMeaningful] === undefined) &&
+    !columnStyles[lastMeaningful]
   ) {
     lastMeaningful--
   }
@@ -1119,11 +1144,15 @@ function rowToOds(
   // beyond the last data value. An override carries a formula, a style or
   // a comment that the row array cannot express, so stopping at the last
   // non-null value dropped it silently — and the XLSX writer grows its
-  // grid for exactly this case, so one WriteSheet produced different
+  // grid for exactly this case, so one SheetInput produced different
   // documents per format. See #393.
   for (let c = lastMeaningful + 1; c <= effectiveMax; c++) {
     const key = `${rowIndex},${c}`
-    if (mergeMap.starts.has(key) || mergeMap.covered.has(key) || sheet.cells?.has(key)) {
+    if (
+      mergeMap.starts.has(key) ||
+      mergeMap.covered.has(key) ||
+      hasCell(sheet.cells, rowIndex, c)
+    ) {
       lastMeaningful = c
     }
   }
@@ -1153,14 +1182,12 @@ function rowToOds(
     }
 
     // Get cell override for values, formulas, hyperlinks, styles
-    const cellOverride = sheet.cells?.get(key)
+    const cellOverride = getCell(sheet.cells, rowIndex, i)
+    if (cellOverride) reportOdsCellDrops(cellOverride, onDrop, sheet.name, rowIndex, i)
 
-    // The override's value wins, matching resolveRows in the XLSX writer.
-    // Reading only from `row` meant an override past the row's last value
-    // serialized as an empty cell even once the grid had been grown to
-    // reach it. See #393.
-    const cell =
-      cellOverride?.value !== undefined ? cellOverride.value : i < row.length ? row[i] : null
+    // Match the shared model's precedence, including explicit formula
+    // caches and sparse values beyond the dense row's last column.
+    const cell = effectiveValue(cellOverride, i < row.length ? row[i] : null)
 
     // Build cell context
     const ctx: CellContext = {}
@@ -1174,7 +1201,7 @@ function rowToOds(
     }
 
     // Style from cell override
-    const style = cellOverride?.style
+    const style = cellOverride?.style ?? columnStyles[i]
     if (style) {
       const name = getOrCreateStyleName(styleCollector, style)
       if (name) ctx.styleName = name
@@ -1189,7 +1216,8 @@ function rowToOds(
           (i + count >= row.length || row[i + count] === null || row[i + count] === undefined) &&
           !mergeMap.covered.has(`${rowIndex},${i + count}`) &&
           !mergeMap.starts.has(`${rowIndex},${i + count}`) &&
-          !sheet.cells?.has(`${rowIndex},${i + count}`)
+          !hasCell(sheet.cells, rowIndex, i + count) &&
+          !columnStyles[i + count]
         ) {
           count++
         }
@@ -1216,7 +1244,10 @@ function rowToOds(
 
 // ── content.xml ─────────────────────────────────────────────────────
 
-function writeContentXml(options: WriteOptions): string {
+function writeContentXml(
+  options: WritableWorkbook,
+  onDrop?: WorkbookWriteOptions["onDrop"],
+): string {
   const { sheets } = options
 
   const styleCollector = createStyleCollector()
@@ -1228,25 +1259,8 @@ function writeContentXml(options: WriteOptions): string {
   for (const sheet of sheets) {
     const children: string[] = []
 
-    // Resolve rows from rows or data
-    let rows: CellValue[][] = []
-    if (sheet.rows) {
-      rows = toCellValues(sheet.rows)
-    } else if (sheet.data && sheet.columns) {
-      // Generate header row + data rows from objects
-      const keys = sheet.columns.map((c) => c.key ?? c.header ?? "")
-      const hasHeaders = sheet.columns.some((c) => c.header)
-
-      if (hasHeaders) {
-        const headerRow = sheet.columns.map((c) => c.header ?? c.key ?? "")
-        rows.push(headerRow)
-      }
-
-      for (const item of sheet.data) {
-        const row = keys.map((k) => (k in item ? unwrapCellValue(item[k]) : null))
-        rows.push(row)
-      }
-    }
+    let rows = toCellValues(sheet.rows ?? [])
+    const columnStyles = sheet.columns?.map(columnCellStyle) ?? []
 
     // Grow the grid to reach any per-cell override that sits past the
     // last row. The row loop below iterates `rows`, so an override at a
@@ -1254,11 +1268,8 @@ function writeContentXml(options: WriteOptions): string {
     // defect as the trailing-column case in serializeRow. See #393.
     if (sheet.cells && sheet.cells.size > 0) {
       let maxOverrideRow = -1
-      for (const key of sheet.cells.keys()) {
-        const comma = key.indexOf(",")
-        if (comma === -1) continue
-        const r = Number(key.slice(0, comma))
-        if (Number.isInteger(r) && r > maxOverrideRow) maxOverrideRow = r
+      for (const [row] of cellEntries(sheet.cells)) {
+        if (row > maxOverrideRow) maxOverrideRow = row
       }
       if (maxOverrideRow >= rows.length) {
         if (rows === sheet.rows) rows = [...rows]
@@ -1266,7 +1277,7 @@ function writeContentXml(options: WriteOptions): string {
       }
     }
 
-    // A `WriteSheet` merge may be an A1 string; normalise once, here,
+    // A `SheetInput` merge may be an A1 string; normalise once, here,
     // rather than at each of the three places below. See #474.
     const merges = toRanges(sheet.merges)
 
@@ -1308,7 +1319,9 @@ function writeContentXml(options: WriteOptions): string {
     // Emit rows (extend to cover merged rows beyond data)
     for (let r = 0; r < rowCount; r++) {
       const row = r < rows.length ? rows[r] : []
-      children.push(rowToOds(row, r, sheet, mergeMap, styleCollector, colCount - 1))
+      children.push(
+        rowToOds(row, r, sheet, mergeMap, styleCollector, colCount - 1, columnStyles, onDrop),
+      )
     }
 
     sheetXmlParts.push(children)
@@ -1364,6 +1377,7 @@ function writeContentXml(options: WriteOptions): string {
       "xmlns:svg": NS_SVG,
       "xmlns:xlink": NS_XLINK,
       "xmlns:of": NS_OF,
+      "xmlns:calcext": NS_CALCEXT,
       "office:version": "1.3",
     },
     contentParts,
@@ -1518,11 +1532,11 @@ export function writeManifestXml(): string {
  * Write a workbook to ODS format.
  * Returns a Uint8Array containing the ZIP archive.
  */
-export async function writeOds(options: WriteOptions): Promise<WriteOutput> {
-  // A cell object written inline in `rows` becomes a `cells` entry before
-  // anything reads the grid — the same normalisation `writeXlsx` does, in
-  // one implementation. See #433 and `src/_inline-cells.ts`.
-  options = { ...options, sheets: splitInlineCellsInSheets(options.sheets) }
+export async function writeOds(
+  input: WorkbookInput,
+  writeOptions?: WorkbookWriteOptions,
+): Promise<WriteOutput> {
+  const options = prepareOdsWorkbook(input, writeOptions?.onDrop)
 
   // Same rules as XLSX: LibreOffice enforces Excel's sheet-name limits
   // for interoperability. See #364.
@@ -1537,7 +1551,7 @@ export async function writeOds(options: WriteOptions): Promise<WriteOutput> {
   zip.add("META-INF/manifest.xml", encoder.encode(writeManifestXml()))
 
   // content.xml — main spreadsheet data
-  zip.add("content.xml", encoder.encode(writeContentXml(options)))
+  zip.add("content.xml", encoder.encode(writeContentXml(options, writeOptions?.onDrop)))
 
   // meta.xml — document metadata
   zip.add("meta.xml", encoder.encode(writeMetaXml(options.properties)))

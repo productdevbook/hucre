@@ -19,25 +19,21 @@ const NS_SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/mai
 
 // ── Serialization Helpers ──────────────────────────────────────────
 
-function serializeColor(tagName: string, color: Color): string {
-  const attrs: Record<string, string | number> = {}
-  if (color.rgb !== undefined) {
-    // Excel expects ARGB (8 hex chars). If user provides RGB (6), prefix with FF (opaque).
-    attrs["rgb"] = color.rgb.length === 6 ? `FF${color.rgb}` : color.rgb
-  }
-  if (color.theme !== undefined) {
-    attrs["theme"] = color.theme
-  }
-  if (color.tint !== undefined) {
-    attrs["tint"] = color.tint
-  }
-  if (color.indexed !== undefined) {
-    attrs["indexed"] = color.indexed
-  }
-  return xmlSelfClose(tagName, attrs)
+/** One color spelling for column/cell styles, runs and worksheet metadata. */
+export function serializeColor(tagName: string, color: Color): string {
+  // The XML writer already omits undefined attributes. Keep field selection
+  // explicit and normalize only the six-digit RGB spelling here.
+  const { rgb, theme, tint, indexed } = color
+  return xmlSelfClose(tagName, {
+    rgb: rgb?.length === 6 ? `FF${rgb}` : rgb,
+    theme,
+    tint,
+    indexed,
+  })
 }
 
-function serializeFont(font: FontStyle): string {
+/** Shared cell/run/comment font properties; runs use rFont for the name. */
+export function serializeFontProps(font: FontStyle, nameTag: "name" | "rFont" = "name"): string[] {
   // ECMA-376 requires this element order:
   // b, i, u, strike, condense, extend, outline, shadow, charset, family, scheme, color, sz, name, vertAlign
   const children: string[] = []
@@ -78,14 +74,18 @@ function serializeFont(font: FontStyle): string {
   }
 
   if (font.name) {
-    children.push(xmlSelfClose("name", { val: font.name }))
+    children.push(xmlSelfClose(nameTag, { val: font.name }))
   }
 
   if (font.vertAlign) {
     children.push(xmlSelfClose("vertAlign", { val: font.vertAlign }))
   }
 
-  return xmlElement("font", undefined, children)
+  return children
+}
+
+function serializeFont(font: FontStyle): string {
+  return xmlElement("font", undefined, serializeFontProps(font))
 }
 
 function serializeFill(fill: FillStyle): string {

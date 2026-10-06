@@ -3,13 +3,14 @@
 // model. `getCharts(workbook)` enumerates every chart anchored on the
 // workbook's sheets, in workbook order, with its sheet context attached
 // so callers don't have to walk `workbook.sheets[].charts` themselves.
-// `addChart(sheet, chart)` pushes a `SheetChart` onto a `WriteSheet`'s
+// `addChart(sheet, chart)` pushes a `SheetChart` onto a `SheetInput`'s
 // chart list, creating the array on the fly.
 //
 // These mirror the `getCharts(workbook)` / `addChart(sheet, ...)`
 // shorthand sketched in the dashboard composition issue (#136).
 
-import type { Chart, Sheet, SheetChart, WriteSheet, Workbook } from "../_types"
+import { InvalidArgumentError } from "../errors"
+import type { Chart, Sheet, SheetChart, SheetInput, Workbook } from "../_types"
 
 // ── getCharts ────────────────────────────────────────────────────────
 
@@ -74,7 +75,7 @@ export function getCharts(workbook: Workbook): ChartLocation[] {
 // ── addChart ─────────────────────────────────────────────────────────
 
 /**
- * Append a {@link SheetChart} to a {@link WriteSheet}'s `charts` list,
+ * Append a {@link SheetChart} to a {@link SheetInput}'s `charts` list,
  * lazily creating the array on the first call. Returns the same chart
  * object so callers can inline declarations:
  *
@@ -107,18 +108,18 @@ export function getCharts(workbook: Workbook): ChartLocation[] {
  * (sheet.charts ??= []).push(chart);
  * ```
  */
-export function addChart(sheet: WriteSheet, chart: SheetChart): SheetChart {
+export function addChart(sheet: SheetInput, chart: SheetChart): SheetChart {
   if (!chart || typeof chart !== "object") {
-    throw new TypeError("addChart: chart is required")
+    throw new InvalidArgumentError("addChart: chart is required")
   }
   if (!chart.type) {
-    throw new TypeError("addChart: chart.type is required")
+    throw new InvalidArgumentError("addChart: chart.type is required")
   }
   if (!Array.isArray(chart.series) || chart.series.length === 0) {
-    throw new TypeError("addChart: chart.series must contain at least one entry")
+    throw new InvalidArgumentError("addChart: chart.series must contain at least one entry")
   }
   if (!chart.anchor || !chart.anchor.from) {
-    throw new TypeError("addChart: chart.anchor.from is required")
+    throw new InvalidArgumentError("addChart: chart.anchor.from is required")
   }
   const list = sheet.charts ?? (sheet.charts = [])
   list.push(chart)
