@@ -541,6 +541,23 @@ components everywhere, which is what keeps the readers, the writers and
 `formatValue` consistent; it does not infer a calendar day from a
 timezone. Use `Date.UTC(...)` when you mean a day.
 
+## Authoring headers, columns and bounds
+
+Defined headers (including an empty string), key fallbacks and own-property
+object lookup are shared across buffered data and streaming paths. Unnamed
+columns retain their positions. Buffered positional rows do not inject a
+header. XLSX buffered/incremental/true streams share column default styles,
+collapsed groups and frozen-pane XML. Buffered and incremental XLSX share
+one auto-width collector; true XLSX streams accept fixed-width columns and
+reject unsupported automatic sizing before consuming rows.
+
+All spreadsheet authoring paths enforce physical Excel row/column bounds.
+Incremental rejection leaves existing rows usable. Rollover accepts bounded
+integer caps or Infinity, which disables splitting without disabling grid
+validation. Known column metadata rejects upfront; true streams can have
+emitted earlier rows before a later invalid row rejects. ODS column layout
+and nested style capability decisions remain a separate audit item.
+
 ## ODS
 
 Buffered authoring resolves `rows` or object `data` before either XLSX or

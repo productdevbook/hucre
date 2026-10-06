@@ -12,6 +12,7 @@ const { writeXlsx, writeXlsxStream, XlsxStreamWriter } = await import(
 
 const SCENARIOS = [
   "writeXlsx",
+  "writeXlsxAutoWidth",
   "writeXlsxData",
   "writeXlsxDataLinks",
   "writeXlsxStream",
@@ -70,12 +71,25 @@ async function run() {
     })
     started = nowMs()
     bytes = (await writeXlsx({ sheets: [{ name: "S", columns, data }] })).length
-  } else if (scenario === "writeXlsx") {
+  } else if (scenario === "writeXlsx" || scenario === "writeXlsxAutoWidth") {
     // The whole model is built first, which is the cost being measured —
     // so it is built before the clock starts.
     const rows = Array.from({ length: rowCount }, (_, i) => makeRow(i))
     started = nowMs()
-    bytes = (await writeXlsx({ sheets: [{ name: "S", rows }] })).length
+    bytes = (
+      await writeXlsx({
+        sheets: [
+          {
+            name: "S",
+            rows,
+            columns:
+              scenario === "writeXlsxAutoWidth"
+                ? Array.from({ length: COLS }, () => ({ autoWidth: true }))
+                : undefined,
+          },
+        ],
+      })
+    ).length
   } else if (scenario === "writeXlsxStream") {
     function* rows() {
       for (let i = 0; i < rowCount; i++) yield makeRow(i)

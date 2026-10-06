@@ -190,3 +190,31 @@ incremental). The streaming sink discards bytes; the class retains its
 fragments/output until finish. Peak RSS includes runtime and module loading.
 Distinct styles and shared strings are retained, and links/comments now
 retain metadata until a physical sheet's related parts are emitted.
+
+## Shared streaming columns and auto-width
+
+```bash
+bun run build
+node bench/write.mjs writeXlsxStream 100000
+node bench/write.mjs XlsxStreamWriter 100000
+node bench/write.mjs writeXlsxAutoWidth 100000
+```
+
+On macOS / Node 24.21.0, compare V2 `e2f64a0` with the shared-column tree.
+Three fresh processes per tree/scenario, alternating baseline and current,
+use 100,000 rows × 12 mixed text/number/date columns. `writeXlsxAutoWidth`
+sizes all twelve columns without explicit widths. Ranges are samples, not
+statistical confidence intervals.
+
+| Path                 | Baseline time / peak RSS    | Shared columns time / peak RSS |
+| -------------------- | --------------------------- | ------------------------------ |
+| `writeXlsxStream`    | 762–764 ms / 99–101 MB      | 768–788 ms / 98–101 MB         |
+| `XlsxStreamWriter`   | 1,024–1,038 ms / 601–602 MB | 1,024–1,078 ms / 600–602 MB    |
+| `writeXlsxAutoWidth` | 1,138–1,189 ms / 796–799 MB | 1,100–1,124 ms / 789 MB        |
+
+Ordinary streaming adds physical-grid preflight and an inactive width check;
+these samples show a small time increase, with comparable RSS. Incremental
+time ranges overlap. Buffered auto-width no longer builds a values array
+per column; this sample uses less RSS and time. No general speedup is claimed,
+and metadata-heavy or browser performance is not measured here. Output
+lengths may differ by a byte because ZIP timestamps change between processes.

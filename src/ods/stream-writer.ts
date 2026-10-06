@@ -16,12 +16,13 @@
 // row. Values, formula caches, rich-text content and links share the buffered
 // cell serializer; unsupported styles and cell fields can be reported via onDrop.
 
+import { columnHeaders } from "../_sheet-input"
 import { resolveCellInput } from "../_inline-cells"
-import type { WorkbookProperties, CellInput, WorkbookWriteOptions } from "../_types"
+import type { WorkbookProperties, CellInput, WorkbookWriteOptions, ColumnDef } from "../_types"
 import { reportOdsCellDrops } from "./cell-drops"
 import { zipStream, type ZipStreamEntry } from "../zip/stream-writer"
 import { xmlEscapeAttr } from "../xml/writer"
-import { validateSheetNames } from "../_validate"
+import { validateSheetNames, validateRowSize } from "../_validate"
 
 import {
   MIMETYPE,
@@ -45,7 +46,7 @@ export interface OdsStreamWriteOptions extends WorkbookWriteOptions {
    * data. Known before the first row, which is why these can be carried
    * when per-cell styles cannot.
    */
-  columns?: Array<{ header?: string; width?: number }>
+  columns?: Array<Pick<ColumnDef, "header" | "key" | "width">>
   /** Document properties written to `meta.xml`. */
   properties?: WorkbookProperties
   /**
@@ -94,6 +95,7 @@ export function writeOdsStream(
     { path: "content.xml", data: contentChunks(rows, name, options) },
   ]
 
+  validateRowSize(0, options?.columns?.length ?? 0)
   return zipStream(entries, { zip64: options?.zip64 })
 }
 
@@ -147,16 +149,8 @@ async function* contentChunks(
     )
   }
 
-  if (columns?.some((c) => c.header !== undefined)) {
-    yield* push(
-      serializeRow(
-        columns.map((c) => c.header ?? null),
-        name,
-        rowIndex++,
-        options?.onDrop,
-      ),
-    )
-  }
+  const headers = columnHeaders(columns)
+  if (headers) yield* push(serializeRow(headers, name, rowIndex++, options?.onDrop))
 
   for await (const row of rows) {
     yield* push(serializeRow(row, name, rowIndex++, options?.onDrop))
@@ -200,6 +194,7 @@ function serializeRow(
   rowIndex: number,
   onDrop?: WorkbookWriteOptions["onDrop"],
 ): string {
+  validateRowSize(rowIndex, row.length)
   const cells: string[] = []
   for (let col = 0; col < row.length; col++) {
     const cell = resolveCellInput(row[col])

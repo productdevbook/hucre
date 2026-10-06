@@ -42,6 +42,29 @@ XLSX pivots consume the worksheet's effective headers and formula caches;
 null headers use positional `Column<N>` names, as array-authored pivots do.
 Buffered spreadsheet authoring keeps its existing materialization limits.
 
+## Streaming columns and physical bounds
+
+Buffered object data and streaming writers now use the same defined-header
+and own-field rules, including `key: ""`. Buffered positional `rows` are
+already complete and do not receive an automatic header.
+
+XLSX column styles apply to empty/future cells as well as written cells;
+collapsed groups and freeze panes use shared serialization. Buffered and
+incremental XLSX share `autoWidth` collection, including rich-text display
+and the explicit style's number-format precedence. True streaming must emit
+column XML before consuming rows, so `XlsxStreamColumn` omits `autoWidth`.
+A wider `ColumnDef` variable requesting it without an explicit `width`
+throws `InvalidArgumentError`; use a fixed width or `XlsxStreamWriter`.
+
+`maxRowsPerSheet` accepts integers from 2 through 1,048,576, or Infinity to
+disable splitting. NaN, fractional and excessive caps throw before output.
+Infinity still enforces Excel's physical row/column bounds. Buffered inputs
+are checked before inline-cell lifting; incremental rows reject before
+changing counters, styles or sheet state. A true stream can have delivered
+earlier rows when a later invalid row rejects. Invalid freeze coordinates
+also throw. ODS streaming retains its documented style limits; this change
+does not add buffered ODS column layout support.
+
 ## Deprecated names removed
 
 Everything v1 marked `@deprecated` is gone. Each has a one-line replacement that already worked in v1:

@@ -30,6 +30,7 @@ export {
 } from "./xlsx/stream-writer"
 export type {
   XlsxStreamWriterOptions,
+  XlsxStreamColumn,
   XlsxWriteStreamOptions,
   XlsxWriteStreamWorkbookOptions,
   XlsxStreamRow,
