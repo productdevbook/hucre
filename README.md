@@ -46,6 +46,11 @@ const xlsx = await writeXlsx({
 })
 ```
 
+Buffered writers accept either positional `rows` or object `data`, with
+the same resolution in XLSX, ODS and text `write()`. When `columns` is
+omitted, object keys from every record define the column order and header
+row. Supplying both row sources throws `InvalidArgumentError`.
+
 ## Tree Shaking
 
 Import only what you need:

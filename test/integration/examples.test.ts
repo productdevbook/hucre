@@ -1,4 +1,5 @@
-import { getCell } from "../../src/cell-store"
+import { getCell, cellEntries, createCellStore } from "../../src/cell-store"
+import { writeOds, readOds } from "../../src/ods"
 import type { Workbook } from "../../src/_types"
 import { read, readObjects, write } from "../../src/defter"
 import { sheetToArrays, sheetToObjects } from "../../src/sheet-utils"
@@ -34,6 +35,49 @@ it("projects the independent invoice through sparse object and export paths", as
   expect(new TextDecoder().decode(await write(workbook, { format: "csv" }))).toBe(
     "Item,Quantity,Unit price,Amount\r\nKeyboard,2,75,150\r\nMouse,3,20,60\r\nTotal,,,210",
   )
+})
+
+it("rebuilds the independent invoice from object data with shared header and formula resolution", async () => {
+  const input = new Uint8Array(
+    readFileSync(new URL("../../examples/workbooks/invoice.xlsx", import.meta.url)),
+  )
+  const source = (await readXlsx(input, { readStyles: true })).sheets[0]
+  const data = sheetToObjects(source).data
+  // Preserve only formula metadata. Values and headers must come from the
+  // object records, so a numeric store cannot mask a dropped data source.
+  const cells = createCellStore(
+    [...cellEntries(source.cells)]
+      .filter(([, , cell]) => cell.formula !== undefined)
+      .map(([row, col, cell]) => [
+        row,
+        col,
+        {
+          formula: cell.formula,
+          formulaResult: cell.formulaResult,
+          style: cell.style,
+        },
+      ]),
+  )
+  const sheet = { name: "Invoice", data, cells }
+  const before = structuredClone(sheet)
+  const expected = [
+    ["Item", "Quantity", "Unit price", "Amount"],
+    ["Keyboard", 2, 75, 150],
+    ["Mouse", 3, 20, 60],
+    ["Total", null, null, 210],
+  ]
+  for (const [writer, reader] of [
+    [writeXlsx, readXlsx],
+    [writeOds, readOds],
+  ] as const) {
+    const result = (await reader(await writer({ sheets: [sheet] }))).sheets[0]
+    expect(result.rows).toEqual(expected)
+    expect(getCell(result.cells, 3, 3)?.formulaResult).toBe(210)
+  }
+  expect(new TextDecoder().decode(await write({ sheets: [sheet] }, { format: "csv" }))).toBe(
+    "Item,Quantity,Unit price,Amount\r\nKeyboard,2,75,150\r\nMouse,3,20,60\r\nTotal,,,210",
+  )
+  expect(sheet).toEqual(before)
 })
 
 interface ScenarioSheet {

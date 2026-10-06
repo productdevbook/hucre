@@ -150,14 +150,3 @@ export function splitInlineCells<T extends SheetInput>(sheet: T): T {
 
   return { ...sheet, rows: plainRows, cells: lifted }
 }
-
-/** {@link splitInlineCells} over a workbook's sheets. */
-export function splitInlineCellsInSheets<T extends SheetInput>(sheets: T[]): T[] {
-  let changed = false
-  const out = sheets.map((s) => {
-    const next = splitInlineCells(s)
-    if (next !== s) changed = true
-    return next
-  })
-  return changed ? out : sheets
-}

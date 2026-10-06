@@ -1,5 +1,6 @@
 // Normalize once at the writer boundary. Keeping metadata on one model
 // removes the per-field copies that previously lost new Sheet fields.
+import { normalizeSheetInput } from "./_sheet-input"
 import type {
   SheetInput,
   SheetChart,
@@ -94,6 +95,7 @@ function populated(value: unknown): boolean {
 }
 
 export function prepareSheet(sheet: SheetInput, onDrop?: OnDrop): WritableSheet {
+  sheet = normalizeSheetInput(sheet)
   const {
     kind,
     slicers: _slicers,

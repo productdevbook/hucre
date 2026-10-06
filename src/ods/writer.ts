@@ -21,10 +21,10 @@ import type {
 } from "../_types"
 import { ZipWriter } from "../zip/writer"
 import { validateSheetNames } from "../_validate"
-import { unwrapCellValue } from "../xlsx/hyperlink"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape as escapeXmlText } from "../xml/writer"
 import { replaceA1Ranges, toRanges } from "../cell-utils"
-import { splitInlineCellsInSheets, toCellValues } from "../_inline-cells"
+import { toCellValues } from "../_inline-cells"
+import { columnCellStyle } from "../_sheet-input"
 
 const encoder = /* @__PURE__ */ new TextEncoder()
 
@@ -964,7 +964,10 @@ function cellTextP(
     const anchor = hyperlink.display !== undefined ? odsEscape(hyperlink.display) : content
     content = xmlElement(
       "text:a",
-      { "xlink:href": hyperlink.target, "xlink:type": "simple" },
+      {
+        "xlink:href": hyperlink.location ? `#${hyperlink.location}` : hyperlink.target,
+        "xlink:type": "simple",
+      },
       anchor,
     )
   }
@@ -1118,6 +1121,7 @@ function rowToOds(
   mergeMap: { starts: Map<string, { colSpan: number; rowSpan: number }>; covered: Set<string> },
   styleCollector: StyleCollector,
   maxCol: number,
+  columnStyles: Array<CellStyle | undefined>,
 ): string {
   const cellElements: string[] = []
 
@@ -1128,7 +1132,8 @@ function rowToOds(
   let lastMeaningful = row.length - 1
   while (
     lastMeaningful >= 0 &&
-    (row[lastMeaningful] === null || row[lastMeaningful] === undefined)
+    (row[lastMeaningful] === null || row[lastMeaningful] === undefined) &&
+    !columnStyles[lastMeaningful]
   ) {
     lastMeaningful--
   }
@@ -1195,7 +1200,7 @@ function rowToOds(
     }
 
     // Style from cell override
-    const style = cellOverride?.style
+    const style = cellOverride?.style ?? columnStyles[i]
     if (style) {
       const name = getOrCreateStyleName(styleCollector, style)
       if (name) ctx.styleName = name
@@ -1210,7 +1215,8 @@ function rowToOds(
           (i + count >= row.length || row[i + count] === null || row[i + count] === undefined) &&
           !mergeMap.covered.has(`${rowIndex},${i + count}`) &&
           !mergeMap.starts.has(`${rowIndex},${i + count}`) &&
-          !hasCell(sheet.cells, rowIndex, i + count)
+          !hasCell(sheet.cells, rowIndex, i + count) &&
+          !columnStyles[i + count]
         ) {
           count++
         }
@@ -1249,25 +1255,8 @@ function writeContentXml(options: WritableWorkbook): string {
   for (const sheet of sheets) {
     const children: string[] = []
 
-    // Resolve rows from rows or data
-    let rows: CellValue[][] = []
-    if (sheet.rows) {
-      rows = toCellValues(sheet.rows)
-    } else if (sheet.data && sheet.columns) {
-      // Generate header row + data rows from objects
-      const keys = sheet.columns.map((c) => c.key ?? c.header ?? "")
-      const hasHeaders = sheet.columns.some((c) => c.header)
-
-      if (hasHeaders) {
-        const headerRow = sheet.columns.map((c) => c.header ?? c.key ?? "")
-        rows.push(headerRow)
-      }
-
-      for (const item of sheet.data) {
-        const row = keys.map((k) => (k in item ? unwrapCellValue(item[k]) : null))
-        rows.push(row)
-      }
-    }
+    let rows = toCellValues(sheet.rows ?? [])
+    const columnStyles = sheet.columns?.map(columnCellStyle) ?? []
 
     // Grow the grid to reach any per-cell override that sits past the
     // last row. The row loop below iterates `rows`, so an override at a
@@ -1326,7 +1315,7 @@ function writeContentXml(options: WritableWorkbook): string {
     // Emit rows (extend to cover merged rows beyond data)
     for (let r = 0; r < rowCount; r++) {
       const row = r < rows.length ? rows[r] : []
-      children.push(rowToOds(row, r, sheet, mergeMap, styleCollector, colCount - 1))
+      children.push(rowToOds(row, r, sheet, mergeMap, styleCollector, colCount - 1, columnStyles))
     }
 
     sheetXmlParts.push(children)
@@ -1541,11 +1530,7 @@ export async function writeOds(
   input: WorkbookInput,
   writeOptions?: WorkbookWriteOptions,
 ): Promise<WriteOutput> {
-  let options = prepareOdsWorkbook(input, writeOptions?.onDrop)
-  // A cell object written inline in `rows` becomes a `cells` entry before
-  // anything reads the grid — the same normalisation `writeXlsx` does, in
-  // one implementation. See #433 and `src/_inline-cells.ts`.
-  options = { ...options, sheets: splitInlineCellsInSheets(options.sheets) }
+  const options = prepareOdsWorkbook(input, writeOptions?.onDrop)
 
   // Same rules as XLSX: LibreOffice enforces Excel's sheet-name limits
   // for interoperability. See #364.

@@ -13,7 +13,8 @@ the evidence for the whole target and the concrete gaps found in code.
 | Shared structural editing                     | Insert/delete operations share `editAxis` and the A1 rewriter; invalid geometry is checked before mutation; independent invoice edits verify both save paths                                            | Implemented for insert/delete; other geometry APIs still need an audit                                                                                 |
 | Dense reads enforce limits before expansion   | XLSX/XLS/XLSB guard growing boxes; ODS, HTML and text normalization share `_grid` checks; ODS repeats keep metadata and respect `maxRows` before expansion                                              | Implemented; small regressions and a fresh-process default-bound benchmark verify the previously missed paths                                          |
 | Consistent values, errors and streaming       | `CellInput`, `CellError`, reader/stream options are shared; search/replacement/templates use `_sheet-values`; partial metadata merges preserve inline fields                                            | Implemented for search/replacement/templates; value/type/cache, sparse and both save paths are covered                                                 |
-| Shared object/export projection               | `_sheet-grid` and `_objects` provide effective values, physical sparse row order, output bounds, header disambiguation and own-property records; independent invoice exports and regressions cover them | Implemented for read sheets and text `rows`/`cells`; authoring object-data resolution remains to consolidate                                           |
+| Shared object/export projection               | `_sheet-grid` and `_objects` provide effective values, physical sparse row order, output bounds, header disambiguation and own-property records; independent invoice exports and regressions cover them | Implemented for read sheets and buffered authoring `rows`/`data`/`cells`                                                                               |
+| Shared authoring row-source boundary          | `_sheet-input` resolves object fields/headers/links once; buffered XLSX, ODS, text and saving share it; ODS applies column defaults; pivots use effective worksheet headers/caches                      | Implemented; ambiguity rejects before output and text object-data expansion is bounded before value lookup                                             |
 | Independent workbook examples                 | Twelve authored business XLSX files, SHA-256 manifest, literal expectations and native/third-party producer corpus; integration suites cover read, stream and save paths                                | Implemented; generated examples are not claimed to be Microsoft Excel-authored                                                                         |
 | Shared test infrastructure                    | Integration suites use shared loading/model/XML helpers; ODS package scaffolding is shared in four existing suites and new regressions; every test is typechecked                                       | Partly consolidated; remaining ZIP/XML helpers still need an inventory                                                                                 |
 | Published API and runtime verification        | Export/type registers, installed tarball/CLI, all ten entry points, Node 24/LTS, Bun, Deno and non-UTC CI                                                                                               | Implemented for those runtimes and Chromium 154/module Web Worker; the committed browser harness verifies ESM, crypto and native model/buffer transfer |
@@ -26,18 +27,13 @@ the evidence for the whole target and the concrete gaps found in code.
    position-bearing sheet fields (chart/pivot locations, filter columns,
    print areas and drawing anchors) and record maintenance decisions. Preserve documented limits on
    workbook-level references. Value-edit consistency is verified by typed/cache/sparse regressions and independent invoice saves.
-2. Consolidate the authoring row-source boundary (`data`/`columns` versus
-   inline `rows`) used by XLSX, ODS and text writers. A current-source
-   `write({ sheets: [{ name: "S", columns: [{ key: "name", header: "Name" }],
-data: [{ name: "Ada" }] }] }, { format: "json" })` still produces `[]`.
-   Text export now honors `rows`/`cells` and formula caches, while this
-   object-data shorthand still needs shared resolution. Object readers,
-   array/JSON projections, HTML/Markdown and accessibility consume the
-   effective model; 31 regressions fail on the preceding V2 tree and the
-   independent invoice verifies sparse records/caches and text output.
-   Unfiltered tables check the selected rectangle before headers or user
-   transforms run; a follow-up regression fails before this preflight fix,
-   and bounded header/data selection remains covered.
+2. Audit the streamed/incremental `CellInput` adapters. A current-source
+   probe writes `{ value: 1, formula: "6*7", formulaResult: 42 }` through
+   `XlsxStreamWriter` and `OdsStreamWriter`; both read back as 1 rather than
+   the explicit cache 42. Inventory inline metadata forwarding and the
+   documented distinctions between buffering and true-streaming output.
+   Sharing a low-level serializer alone does not prove the full input
+   model is carried. Keep the style-free ODS streaming limit explicit.
 3. Consolidate repeated ODS/ZIP fixture scaffolds into `test/support/`;
    retain raw regression inputs and independently authored expectations.
 4. Recheck published runtime claims and perform the final whole-architecture

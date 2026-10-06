@@ -167,7 +167,7 @@ export function selectSheet(workbook: Workbook, selector: number | string): Shee
  * that appears halfway through an export — was dropped along with the
  * rows that only had it. See #439.
  */
-export function collectHeaders(rows: Record<string, CellValue>[]): string[] {
+export function collectHeaders(rows: Record<string, unknown>[]): string[] {
   const seen = new Set<string>()
   const headers: string[] = []
   for (const row of rows) {
