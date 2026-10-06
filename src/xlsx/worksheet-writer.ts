@@ -11,7 +11,6 @@ import type {
   Cell,
   CellValue,
   CellStyle,
-  ColumnDef,
   ConditionalRule,
   DataValidation,
   SheetProtection,
@@ -24,18 +23,16 @@ import type {
   FontStyle,
   Color,
   Sparkline,
-  Hyperlink,
-  HyperlinkValue,
 } from "../_types"
 import type { StylesCollector } from "./styles-writer"
 import { dateToSerial } from "../_date"
-import { isHyperlinkValue } from "./hyperlink"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape, xmlTextElement } from "../xml/writer"
 import { calculateColumnWidth } from "./auto-width"
 import { DYNAMIC_ARRAY_CM } from "./metadata"
 import { hashSheetPassword } from "./password"
 import { validateColumnIndex } from "../_validate"
 import { mergeDefined, toCellValue } from "../_inline-cells"
+import { normalizeSheetInput, columnCellStyle } from "../_sheet-input"
 
 // ── Hyperlink Relationship ────────────────────────────────────────
 
@@ -214,18 +211,6 @@ export function writeSharedStringsXml(sharedStrings: SharedStringsCollector): st
  */
 export interface ResolvedCell extends Omit<Partial<Cell>, "value"> {
   value: CellValue
-}
-
-// ── Rich data-row values ───────────────────────────────────────────
-
-/** Convert a {@link HyperlinkValue} to the internal {@link Hyperlink} shape. */
-function toHyperlink(hv: HyperlinkValue): Hyperlink {
-  const internal = hv.hyperlink.startsWith("#")
-  const h: Hyperlink = internal
-    ? { target: "", location: hv.hyperlink.slice(1), display: hv.text }
-    : { target: hv.hyperlink, display: hv.text }
-  if (hv.tooltip !== undefined) h.tooltip = hv.tooltip
-  return h
 }
 
 // ── Default date format ────────────────────────────────────────────
@@ -434,10 +419,7 @@ export function writeWorksheetXml(
       // so a "currency" column stopped being one the moment the user
       // added a row. It also meant the format vanished on read, since the
       // reader has only `<col>` to look at. See #439 §W.
-      const columnStyle: CellStyle | undefined =
-        col.numFmt && !col.style?.numFmt
-          ? { ...col.style, numFmt: col.numFmt }
-          : (col.style ?? undefined)
+      const columnStyle = columnCellStyle(col)
       const columnStyleId = columnStyle ? styles.addStyle(columnStyle) : 0
 
       if (
@@ -730,73 +712,18 @@ export function writeWorksheetXml(
 
 // ── Row Resolution ─────────────────────────────────────────────────
 
-/**
- * The default cell style a column contributes to every cell beneath it.
- * `numFmt` is folded into the style object, but an explicit
- * `style.numFmt` wins — it is the more specific of the two spellings.
- */
-function columnCellStyle(col: ColumnDef | undefined): CellStyle | undefined {
-  if (!col) return undefined
-  if (col.numFmt && !col.style?.numFmt) return { ...col.style, numFmt: col.numFmt }
-  return col.style
-}
-
-function resolveRows(sheet: SheetInput): Array<Array<ResolvedCell | null>> {
-  const resolved: Array<Array<ResolvedCell | null>> = []
-
-  if (sheet.data && sheet.columns) {
-    // Object-based data with column keys
-    const keys = sheet.columns.map((col) => col.key)
-
-    // Add header row if columns have headers
-    const hasHeaders = sheet.columns.some((col) => col.header)
-    if (hasHeaders) {
-      const headerRow: Array<ResolvedCell | null> = []
-      for (let c = 0; c < sheet.columns.length; c++) {
-        const col = sheet.columns[c]
-        headerRow.push({
-          value: col.header ?? col.key ?? null,
-          style: col.style,
-        })
-      }
-      resolved.push(headerRow)
-    }
-
-    for (const obj of sheet.data) {
-      const row: Array<ResolvedCell | null> = []
-      for (let c = 0; c < keys.length; c++) {
-        const key = keys[c]
-        const raw = key !== undefined ? (obj[key] ?? null) : null
-        const cell: ResolvedCell = {
-          value: isHyperlinkValue(raw) ? raw.text : raw,
-          style: columnCellStyle(sheet.columns[c]),
-        }
-        if (isHyperlinkValue(raw)) cell.hyperlink = toHyperlink(raw)
-        row.push(cell)
-      }
-      resolved.push(row)
-    }
-  } else if (sheet.rows) {
-    // Array-based rows. `columns` means the same thing here as on the
-    // `data[]` path: its style and numFmt are the column's default
-    // formatting. They used to apply only to `data[]`, so the same
-    // `columns` array meant two different things depending on which row
-    // source you picked (#407). Unlike `data[]` there is no header row to
-    // exempt — hucre cannot tell which of the caller's rows is one.
-    for (const row of sheet.rows) {
-      const resolvedRow: Array<ResolvedCell | null> = []
-      for (let c = 0; c < row.length; c++) {
-        // `writeXlsx` lifts an inline cell object into `cells` before this
-        // runs, so the entry is a value by then. Reading it through
-        // `toCellValue` keeps `resolveRows` correct for a caller that
-        // reached it another way, rather than emitting `[object Object]`.
-        const value = toCellValue(row[c]!)
-        const style = sheet.columns ? columnCellStyle(sheet.columns[c]) : undefined
-        resolvedRow.push(style ? { value, style } : { value })
-      }
-      resolved.push(resolvedRow)
-    }
-  }
+/** Shared worksheet/pivot resolution after the authoring boundary. */
+export function resolveRows(sheet: SheetInput): Array<Array<ResolvedCell | null>> {
+  // Standalone hyperlink collection also accepts unnormalized authoring data.
+  if (sheet.data !== undefined) sheet = normalizeSheetInput(sheet)
+  const columnStyles = sheet.columns?.map(columnCellStyle)
+  const resolved: Array<Array<ResolvedCell | null>> = (sheet.rows ?? []).map((row) =>
+    row.map((raw, col) => {
+      const value = toCellValue(raw)
+      const style = columnStyles?.[col]
+      return style ? { value, style } : { value }
+    }),
+  )
 
   // Apply cell overrides
   if (sheet.cells) {

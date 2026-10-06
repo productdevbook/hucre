@@ -249,7 +249,7 @@ export type CellInput = CellValue | Partial<Cell>
 export interface ColumnDef {
   /** Column header text */
   header?: string
-  /** Key for object-based data */
+  /** Key for buffered object data; a missing key falls back to header. */
   key?: string
   /** Column width in characters */
   width?: number
@@ -1762,7 +1762,9 @@ export interface SheetInput extends Omit<
   Sheet,
   "rows" | "cells" | "merges" | "charts" | "pivotTables"
 > {
+  /** Positional rows; supply either rows or data, never both. */
   rows?: CellInput[][]
+  /** Object rows. Omitted columns are inferred from all own keys in first-seen order. */
   data?: Array<Record<string, CellValue | HyperlinkValue>>
   cells?: CellStore<Partial<Cell>>
   merges?: Array<MergeRange | string>

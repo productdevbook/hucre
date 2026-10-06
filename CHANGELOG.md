@@ -6,6 +6,11 @@ rather than as a list of commits.
 
 ## Unreleased — 2.0.0
 
+Buffered writers share one authoring row-source boundary. Object data works
+in text outputs, omitted columns are inferred across all records, and
+competing `rows`/`data` sources throw. ODS keeps data hyperlinks and column
+styles; XLSX pivot sources share effective worksheet headers and caches.
+
 Object readers, sheet projections and JSON/HTML/Markdown/text exports share
 effective metadata and formula-cache values. Sparse object reads no longer
 return an empty result. Projection keeps physical transform indexes,

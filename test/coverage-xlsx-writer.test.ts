@@ -495,9 +495,10 @@ describe("object rows resolved through column keys", () => {
     })
 
     expect(xml).toContain('<row r="1">')
-    // A and the key-named column are shared strings 0 and 1.
+    // Unnamed columns keep a blank header so every declared position
+    // survives in the same header grid as ODS and text authoring.
     expect(xml).toContain('<c r="B1" t="s"><v>1</v></c>')
-    expect(xml).not.toContain('r="C1"')
+    expect(xml).toContain('<c r="C1" t="s">')
   })
 
   it("writes an empty cell for a key the object does not have", async () => {
@@ -902,7 +903,7 @@ describe("writeXlsxStream", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("pivot source rows from object data", () => {
-  it("names pivot fields from the header, then the key, and blanks the rest", async () => {
+  it("names pivot fields from the worksheet header and retains blank headers", async () => {
     const buf = await writeXlsx({
       sheets: [
         {

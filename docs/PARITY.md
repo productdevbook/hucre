@@ -23,10 +23,10 @@ XLSX has **two** write paths, and they have different fidelity. Most
 confusion about what hucre preserves comes from conflating them.
 
 (Both, and the streaming writers, now serialize a cell through one
-implementation — so an error value, `xml:space` handling and formula
-result typing mean the same thing whichever writer you use. What differs
-between the paths is what the _model_ can express, not how a cell is
-written.)
+implementation for error values, `xml:space` and formula-result typing.
+The streaming adapters pass a narrower subset of inline metadata to that
+serializer; sharing its implementation does not prove that every `CellInput`
+field is forwarded. The architecture audit tracks that remaining gap.)
 
 |                | entry points             | behaviour                                                                                                                         |
 | -------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
@@ -511,6 +511,19 @@ components everywhere, which is what keeps the readers, the writers and
 timezone. Use `Date.UTC(...)` when you mean a day.
 
 ## ODS
+
+Buffered authoring resolves `rows` or object `data` before either XLSX or
+ODS serialization, and text `write()` uses that same boundary. Supplying
+both sources is an argument error. Omitted columns are inferred from all
+own object keys in first-seen order; explicit columns read `key ?? header`
+and exclude inherited fields. A defined header, including `""`, creates the
+header row; key-only columns do not. Data hyperlink values retain their
+display text and link metadata. Column style defaults apply to array and
+object rows, including trailing null cells; the generated header receives
+`column.style` while `column.numFmt` formats the data. Explicit cell styles
+override column defaults. Text object-data expansion observes its output
+bound before reading values. Worksheet values and pivot source headers/caches
+share the effective model; null pivot headers receive positional names.
 
 ODS reads and writes the same narrow model, so **ODS → ODS is lossless**.
 The loss is in conversion _into_ ODS from a format that models more.

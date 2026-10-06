@@ -13,6 +13,7 @@ import {
   parseCsv,
   read,
   ParseError,
+  InvalidArgumentError,
   readXlsx,
   writeCsv,
   writeXlsx,
@@ -75,6 +76,21 @@ const ROWS = [
 
 console.log("model projection")
 {
+  const authored = { sheets: [{ name: "Data", data: [{ Name: "Ada" }, { Score: 42 }] }] }
+  const dataRows = (await readXlsx(await writeXlsx(authored))).sheets[0].rows
+  check("object data infers every field", dataRows[0][1] === "Score" && dataRows[2][1] === 42)
+  check(
+    "object data uses the same text rows",
+    new TextDecoder().decode(await write(authored, { format: "csv" })) ===
+      "Name,Score\r\nAda,\r\n,42",
+  )
+  let ambiguous = false
+  try {
+    await write({ sheets: [{ name: "S", data: [], rows: [] }] }, { format: "csv" })
+  } catch (error) {
+    ambiguous = error instanceof InvalidArgumentError
+  }
+  check("competing row sources reject", ambiguous)
   const bytes = await writeXlsx({
     sheets: [
       {

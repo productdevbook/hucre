@@ -129,3 +129,33 @@ processes per reader:
 This measures one rejected amplification input, not general ODS throughput.
 Peak RSS includes runtime, module loading and ZIP preparation. Results
 vary with engine, machine and input shape.
+
+## Shared authoring row resolution
+
+`writeXlsxData` and `writeXlsxDataLinks` in `bench/write.mjs` exercise
+50,000 object records × 12 columns. Four columns each contain strings,
+numbers and dates; all columns are bold and numeric columns use `0.00`.
+The links case makes the first value in every record a rich hyperlink.
+
+```sh
+bun run build
+node bench/write.mjs writeXlsxData 50000
+node bench/write.mjs writeXlsxDataLinks 50000
+HUCRE_BENCH_ENTRY=/absolute/path/to/baseline/dist/index.mjs node bench/write.mjs writeXlsxData 50000
+```
+
+Build the baseline with the same dependency versions; `HUCRE_BENCH_ENTRY`
+selects its built entry point while retaining the same scenario generator.
+Run each sample as a fresh process. macOS arm64, Node 24.21.0, three samples
+per scenario/tree, alternating baseline and current:
+
+| Scenario               | V2 `380a03c` time / peak RSS | Shared boundary time / peak RSS |
+| ---------------------- | ---------------------------: | ------------------------------: |
+| Object data            |      596–610 ms / 505–506 MB |         512–526 ms / 488–491 MB |
+| Object data with links |      724–746 ms / 581–582 MB |         696–737 ms / 529–546 MB |
+
+The clock covers writing after input construction; peak RSS includes
+module loading, input and output allocation. These are two formatted
+object-data scenarios on one machine, not a claim about every writer or
+workbook. The independent invoice and regression suites verify values,
+headers, caches and styles separately from the measurements.

@@ -52,7 +52,8 @@ import { toHtml } from "./export/html"
 import { toMarkdown } from "./export/markdown"
 import { denseValues, sheetGrid, type GridProjectionOptions } from "./_sheet-grid"
 import { toRange } from "./cell-utils"
-import { splitInlineCells, toCellValues } from "./_inline-cells"
+import { toCellValues } from "./_inline-cells"
+import { normalizeSheetInput } from "./_sheet-input"
 
 // ── Format Detection ────────────────────────────────────────────────
 
@@ -281,7 +282,9 @@ export async function write(
   if (!sheet) {
     throw new UnsupportedFormatError(`${format} needs a sheet to write, and the workbook has none.`)
   }
-  const input = splitInlineCells(sheet)
+  const input = normalizeSheetInput(sheet, (height, width) =>
+    assertGridSize(height, width, options.maxTotalCells),
+  )
   const values = { ...input, rows: toCellValues(input.rows ?? []) }
   // Value exports must apply the same inline/store/cache precedence as
   // spreadsheet writers. Reading just rows silently discards sparse data.

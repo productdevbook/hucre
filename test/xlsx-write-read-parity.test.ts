@@ -114,6 +114,9 @@ const SHEET_FIELDS: { [K in keyof Required<WritableSheet>]: Entry<WritableSheet[
       { region: "South", amount: 20 },
     ],
     with: {
+      // This probe selects the object source; the fixture's default
+      // positional rows must not compete with it.
+      rows: undefined,
       columns: [
         { header: "Region", key: "region" },
         { header: "Amount", key: "amount" },

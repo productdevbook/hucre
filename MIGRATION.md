@@ -10,12 +10,37 @@ Every change that can affect existing code is listed. TypeScript flags most of t
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | [Deprecated names removed](#deprecated-names-removed)             | you reference `DefterError`, `readNdjsonStream`, `headerRow: true`, `write()`/`end()`, or import a `parse*` part parser from the root |
 | [One workbook model](#one-workbook-model-for-reading-and-writing) | you use `WriteSheet`, `WriteOptions`, `toWriteOptions` or encoding options inside the workbook                                        |
+| [Authoring rows](#authoring-rows-have-one-source)                 | you write object data, omit columns, or supply both `data` and `rows`                                                                 |
 | [Structural edits](#structural-edits-share-reference-handling)    | you insert or delete rows/columns, or inspect range spelling                                                                          |
 | [Value edits](#value-edits-share-one-model)                       | you search, replace or fill templates on a styled/sparse workbook                                                                     |
 | [Table projections](#table-projections-use-effective-values)      | you convert sparse/styled sheets to objects, arrays, JSON, HTML, Markdown or text                                                     |
 | [Numeric cell storage](#numeric-cell-storage)                     | you construct, inspect or mutate `Sheet.cells` using string keys                                                                      |
 
 ---
+
+## Authoring rows have one source
+
+**Behaviour:** buffered XLSX, ODS and text `write()` share row resolution.
+Supply either `rows` or `data`; providing both, including empty arrays,
+throws `InvalidArgumentError`. V1 selected different sources by format.
+
+When `data` has no `columns`, columns and a header row are inferred from
+every record's own keys in first-seen order. Explicit columns use `key`,
+falling back to `header`; fields absent from a record become null, and
+inherited properties are excluded. An unnamed column keeps an empty-string
+header and null data, so its declared position survives. An explicitly empty `header: ""` still
+requests a header row. Key-only columns create no header row.
+
+ODS now applies column styles/number formats to both row sources, including
+trailing null cells, and preserves rich hyperlinks in object data. Generated
+headers receive `column.style`; `column.numFmt` applies to data cells.
+Explicit cell styles override these defaults. Neither source is mutated.
+
+Text outputs carry object records rather than returning an empty document.
+Their `maxTotalCells` bound is checked before object records are expanded.
+XLSX pivots consume the worksheet's effective headers and formula caches;
+null headers use positional `Column<N>` names, as array-authored pivots do.
+Buffered spreadsheet authoring keeps its existing materialization limits.
 
 ## Deprecated names removed
 
