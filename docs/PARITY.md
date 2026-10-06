@@ -24,9 +24,9 @@ confusion about what hucre preserves comes from conflating them.
 
 (Both, and the streaming writers, now serialize a cell through one
 implementation for error values, `xml:space` and formula-result typing.
-The streaming adapters pass a narrower subset of inline metadata to that
-serializer; sharing its implementation does not prove that every `CellInput`
-field is forwarded. The architecture audit tracks that remaining gap.)
+The adapters now resolve the complete inline cell before serialization;
+links, comments, checkboxes and dynamic formulas also emit their related
+package parts. Streaming still has a smaller sheet-option surface.)
 
 |                | entry points             | behaviour                                                                                                                         |
 | -------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
@@ -69,6 +69,37 @@ data. It can throw to refuse a lossy conversion before output is built.
 
 String storage, encryption and VBA embedding are `XlsxWriteOptions` in
 the second argument; they are container choices rather than model fields.
+
+### Inline cell capability register
+
+Every spreadsheet writer shares `CellInput` resolution. Explicit
+`formulaResult` wins over `value`, including null; a formula with no cache
+uses its effective value. `link()` is accepted in rows and object data.
+The register below accounts for all 13 `Cell` fields, including inferred
+`type`; it describes writer output, not byte-for-byte reader preservation.
+
+| Cell fields                                                         | Buffered/incremental/streamed XLSX                 | Buffered/incremental ODS                          | True streamed ODS                |
+| ------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------- | -------------------------------- |
+| `value`, `type`                                                     | Effective value; type inferred                     | Effective value; type inferred                    | Effective value; type inferred   |
+| `formula`, `formulaResult`                                          | Formula and typed cache                            | Ordinary formula and typed cache                  | Ordinary formula and typed cache |
+| `style`                                                             | Existing XLSX cell-style support                   | Existing ODF style subset                         | Omitted; `onDrop` reports it     |
+| `richText`                                                          | Text and supported run fonts                       | Text and supported ODF run fonts                  | Text only; run fonts reported    |
+| `hyperlink`                                                         | External/internal link, display and tooltip        | Link target/location and display; tooltip omitted | Same ODF link support            |
+| `comment`                                                           | Legacy comment and VML parts, including run fonts  | Omitted; reported                                 | Omitted; reported                |
+| `checkbox`                                                          | Boolean and feature-property-bag parts             | Boolean only; flag reported                       | Boolean only; flag reported      |
+| `formulaType`, `formulaSharedIndex`, `formulaRef`, `formulaDynamic` | Shared/array/dynamic attributes and metadata parts | Ordinary formula only; populated fields reported  | Same ODF limit                   |
+
+ODS drops include `field`, `sheet`, A1 `cell` and `reason`. A callback can
+reject a lossy cell before its row is emitted, although earlier bytes of a
+true stream may already have been consumed. Nested style capabilities
+remain the existing ODF subset, not an exhaustive conversion guarantee.
+The ODS reader flattens formatted spans, and the XLSX comment reader
+flattens comment runs; writer regressions inspect emitted XML for fonts.
+
+XLSX streams retain no source rows. They do retain distinct styles,
+optional shared strings, the header, current physical sheet links/comments
+and ZIP part records. Link/comment metadata is released after those
+related parts are emitted; metadata on every row still grows memory.
 
 ## XLSX
 

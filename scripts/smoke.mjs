@@ -18,6 +18,11 @@ import {
   writeCsv,
   writeXlsx,
   writeXlsxStream,
+  writeXlsxStreamSheets,
+  XlsxStreamWriter,
+  OdsStreamWriter,
+  writeOdsStream,
+  link,
   readOds,
   writeOds,
   createCellStore,
@@ -254,6 +259,58 @@ console.log("ods")
   const bytes = await writeOds({ sheets: [{ name: "S", rows: ROWS }] })
   const wb = await readOds(bytes)
   check("round trip", wb.sheets[0].rows[1][0] === "Ada")
+}
+
+console.log("shared inline cells")
+{
+  const rows = [
+    [
+      { value: 1, formula: "6*7", formulaResult: 42 },
+      link("Open", "https://example.com/a"),
+      { value: true, checkbox: true, comment: { text: "Note", author: "Test" } },
+    ],
+  ]
+  const before = structuredClone(rows)
+  const incremental = new XlsxStreamWriter({ name: "S" })
+  incremental.addRow(rows[0])
+  for (const [mode, bytes] of [
+    ["buffered XLSX", await writeXlsx({ sheets: [{ name: "S", rows }] })],
+    ["incremental XLSX", await incremental.finish()],
+    ["streamed XLSX", await drain(writeXlsxStream(rows, { name: "S" }))],
+    ["multi-sheet XLSX", await drain(writeXlsxStreamSheets([{ name: "S", rows }]))],
+  ]) {
+    const sheet = (await readXlsx(bytes)).sheets[0]
+    check(
+      mode + " caches and package metadata",
+      sheet.rows[0][0] === 42 &&
+        getCell(sheet.cells, 0, 0)?.formulaResult === 42 &&
+        getCell(sheet.cells, 0, 1)?.hyperlink?.target === "https://example.com/a" &&
+        getCell(sheet.cells, 0, 2)?.checkbox === true &&
+        getCell(sheet.cells, 0, 2)?.comment?.text === "Note",
+    )
+  }
+  const drops = []
+  const onDrop = (drop) => drops.push(drop)
+  const ods = new OdsStreamWriter({ name: "S", onDrop })
+  ods.addRow(rows[0])
+  for (const [mode, bytes] of [
+    ["buffered ODS", await writeOds({ sheets: [{ name: "S", rows }] }, { onDrop })],
+    ["incremental ODS", await ods.finish()],
+    ["streamed ODS", await drain(writeOdsStream(rows, { name: "S", onDrop }))],
+  ]) {
+    const sheet = (await readOds(bytes)).sheets[0]
+    check(
+      mode + " caches and links",
+      sheet.rows[0][0] === 42 &&
+        getCell(sheet.cells, 0, 0)?.formulaResult === 42 &&
+        getCell(sheet.cells, 0, 1)?.hyperlink?.target === "https://example.com/a",
+    )
+  }
+  check(
+    "ODS cell drops identify physical coordinates",
+    drops.length === 6 && drops.every((drop) => drop.sheet === "S" && drop.cell === "C1"),
+  )
+  check("inline input remains immutable", JSON.stringify(rows) === JSON.stringify(before))
 }
 
 if (failures > 0) {

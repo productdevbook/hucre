@@ -388,7 +388,8 @@ for await (const row of streamXlsxRows(buffer, { range: "B2:D1000" })) {
 }
 
 // Stream write — the workbook is emitted as bytes while rows are pulled
-// from the source, so peak memory doesn't grow with the row count.
+// from the source. Rows are not retained; styles, optional shared strings
+// and the current sheet's link/comment metadata remain in memory.
 function* rows() {
   for (let i = 0; i < 5_000_000; i++) yield [i + 1, Math.random()]
 }
@@ -506,7 +507,7 @@ that appears only in a later row. For the same reason it takes `rowTag`
 from the first child of the root rather than from the most frequent one.
 
 ODS now has both writers, and the rule for choosing is the same one XLSX
-already has: `writeOdsStream` for constant memory and values only,
+already has: `writeOdsStream` for unstyled values, formulas, rich-text content and links,
 `OdsStreamWriter` when you want the styles and can afford to buffer.
 
 That difference is the format's, not a gap: ODF puts
@@ -518,13 +519,23 @@ styles and column widths.
 
 #### Which writer to use
 
-|             | `writeXlsxStream()`                          | `XlsxStreamWriter`                |
-| ----------- | -------------------------------------------- | --------------------------------- |
-| Output      | `ReadableStream<Uint8Array>`                 | `Promise<Uint8Array>`             |
-| Rows        | pulled from an (async) iterable              | pushed via `addRow` / `addObject` |
-| Peak memory | O(distinct styles) — flat                    | O(data)                           |
-| Strings     | inline by default                            | shared string table               |
-| Sheets      | one, or several with `writeXlsxStreamSheets` | one, plus auto-split parts        |
+|             | `writeXlsxStream()`                                              | `XlsxStreamWriter`                |
+| ----------- | ---------------------------------------------------------------- | --------------------------------- |
+| Output      | `ReadableStream<Uint8Array>`                                     | `Promise<Uint8Array>`             |
+| Rows        | pulled from an (async) iterable                                  | pushed via `addRow` / `addObject` |
+| Peak memory | styles, optional shared strings and current-sheet links/comments | O(data)                           |
+| Strings     | inline by default                                                | shared string table               |
+| Sheets      | one, or several with `writeXlsxStreamSheets`                     | one, plus auto-split parts        |
+
+Every spreadsheet path resolves the same `CellInput`. Explicit formula
+caches, including null, take precedence; `value` is the fallback when the
+cache is omitted. XLSX streaming also writes rich text, shared/array/dynamic
+formulas, checkboxes, links and comments with their related package parts.
+ODS `onDrop` reports unsupported populated cell fields with A1 coordinates;
+true ODS streaming reports omitted cell styles and rich-text fonts too.
+XLSX streaming retains link/comment metadata until the current physical
+sheet's related parts have been emitted. A comment on every row increases
+memory even though the rows themselves are flushed.
 
 Measured with `bun run bench` — the scenarios are in `bench/`, so these are
 reproducible rather than quoted. 5 columns of mixed text/number/date data,
@@ -2105,7 +2116,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `openXlsx(input, options?)`        | Open for round-trip (preserves unknown parts)                                       |
 | `saveXlsx(workbook)`               | Save round-trip workbook back to XLSX                                               |
 | `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time                                          |
-| `writeXlsxStream(rows, options)`   | Constant-memory XLSX writing — returns a `ReadableStream<Uint8Array>`               |
+| `writeXlsxStream(rows, options)`   | Row-streaming XLSX writing — returns a `ReadableStream<Uint8Array>`                 |
 | `XlsxStreamWriter`                 | Incremental XLSX writing (`addRow`/`addObject`); auto-splits past `maxRowsPerSheet` |
 | `XLSX_MAX_ROWS_PER_SHEET`          | Excel hard row limit (1,048,576) — exported constant                                |
 | `parseExternalLink(xml, relsXml?)` | Parse `xl/externalLinks/externalLinkN.xml` → `ExternalLink`                         |

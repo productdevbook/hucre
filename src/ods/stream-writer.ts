@@ -13,12 +13,14 @@
 // shared-string table the XLSX streaming writer answers with inline
 // strings, and ODF has no inline equivalent. Column widths are the
 // exception and are carried, because `columns` is known before the first
-// row. Everything else is values, which is what a million-row export is.
+// row. Values, formula caches, rich-text content and links share the buffered
+// cell serializer; unsupported styles and cell fields can be reported via onDrop.
 
-import { isCellError } from "../cell-error"
-import type { CellValue, WorkbookProperties, CellInput } from "../_types"
+import { resolveCellInput } from "../_inline-cells"
+import type { WorkbookProperties, CellInput, WorkbookWriteOptions } from "../_types"
+import { reportOdsCellDrops } from "./cell-drops"
 import { zipStream, type ZipStreamEntry } from "../zip/stream-writer"
-import { xmlEscape, xmlEscapeAttr } from "../xml/writer"
+import { xmlEscapeAttr } from "../xml/writer"
 import { validateSheetNames } from "../_validate"
 
 import {
@@ -27,17 +29,15 @@ import {
   writeMetaXml,
   writeSettingsXml,
   writeStylesXml,
-  formatOdsDateValue,
-  formatNumberDisplay,
-  excelFormulaToOds,
-  odsEscape,
+  cellToOds,
+  createStyleCollector,
 } from "./writer"
 
 const encoder = /* @__PURE__ */ new TextEncoder()
 
 /** A streamed row: positional values, each optionally carrying a formula. */
 
-export interface OdsStreamWriteOptions {
+export interface OdsStreamWriteOptions extends WorkbookWriteOptions {
   /** Sheet name. Excel's limits apply — LibreOffice enforces them too. */
   name?: string
   /**
@@ -91,7 +91,7 @@ export function writeOdsStream(
     { path: "styles.xml", data: encoder.encode(writeStylesXml()) },
     { path: "meta.xml", data: encoder.encode(writeMetaXml(options?.properties)) },
     { path: "settings.xml", data: encoder.encode(writeSettingsXml()) },
-    { path: "content.xml", data: contentChunks(rows, name, options?.columns) },
+    { path: "content.xml", data: contentChunks(rows, name, options) },
   ]
 
   return zipStream(entries, { zip64: options?.zip64 })
@@ -106,6 +106,7 @@ const CONTENT_HEAD =
   ' xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"' +
   ' xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"' +
   ' xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2"' +
+  ' xmlns:xlink="http://www.w3.org/1999/xlink"' +
   ' xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0"' +
   ' office:version="1.3">'
 
@@ -113,8 +114,10 @@ const CONTENT_HEAD =
 async function* contentChunks(
   rows: AsyncIterable<CellInput[]> | Iterable<CellInput[]>,
   name: string,
-  columns?: Array<{ header?: string; width?: number }>,
+  options?: OdsStreamWriteOptions,
 ): AsyncGenerator<Uint8Array> {
+  const columns = options?.columns
+  let rowIndex = 0
   const CHUNK_BYTES = 64 * 1024
   let pending: string[] = []
   let pendingBytes = 0
@@ -145,11 +148,18 @@ async function* contentChunks(
   }
 
   if (columns?.some((c) => c.header !== undefined)) {
-    yield* push(serializeRow(columns.map((c) => c.header ?? null)))
+    yield* push(
+      serializeRow(
+        columns.map((c) => c.header ?? null),
+        name,
+        rowIndex++,
+        options?.onDrop,
+      ),
+    )
   }
 
   for await (const row of rows) {
-    yield* push(serializeRow(row))
+    yield* push(serializeRow(row, name, rowIndex++, options?.onDrop))
   }
 
   yield* push("</table:table></office:spreadsheet></office:body></office:document-content>")
@@ -179,79 +189,25 @@ function automaticStyles(columns?: Array<{ header?: string; width?: number }>): 
   return `<office:automatic-styles>${parts.join("")}</office:automatic-styles>`
 }
 
-/** One `<table:table-row>`, values only. */
-function serializeRow(row: CellInput[]): string {
+// Style-free ODS uses the same value/formula/link encoding as buffered
+// output. A single collector stays empty because run fonts are removed;
+// otherwise newly discovered styles would reference an already-emitted block.
+const unstyledCollector = createStyleCollector()
+
+function serializeRow(
+  row: CellInput[],
+  name: string,
+  rowIndex: number,
+  onDrop?: WorkbookWriteOptions["onDrop"],
+): string {
   const cells: string[] = []
-  for (const cell of row) {
-    cells.push(
-      cell !== null &&
-        typeof cell === "object" &&
-        !(cell instanceof Date) &&
-        !isCellError(cell) &&
-        !Array.isArray(cell)
-        ? serializeCell(
-            (cell as { value?: CellValue }).value ?? null,
-            (cell as { formula?: string }).formula,
-          )
-        : serializeCell(cell as CellValue),
-    )
+  for (let col = 0; col < row.length; col++) {
+    const cell = resolveCellInput(row[col])
+    reportOdsCellDrops(cell, onDrop, name, rowIndex, col, true)
+    if (cell.richText?.some((run) => run.font)) {
+      cell.richText = cell.richText.map((run) => ({ text: run.text }))
+    }
+    cells.push(cellToOds(cell.value, { cellOverride: cell }, unstyledCollector))
   }
   return `<table:table-row>${cells.join("")}</table:table-row>`
-}
-
-/**
- * One `<table:table-cell>`.
- *
- * The value encoding matches `cellToOds` exactly, including its two
- * refusals: a non-finite number and an unparseable Date both produce an
- * empty cell rather than `office:value="NaN"`, which LibreOffice reads as
- * garbage and which used to make a corrupt file (#364).
- */
-function serializeCell(value: CellValue, formula?: string): string {
-  const attrs = formula ? ` table:formula="${xmlEscapeAttr(excelFormulaToOds(formula))}"` : ""
-
-  if (value === null || value === undefined) {
-    return attrs ? `<table:table-cell${attrs}/>` : "<table:table-cell/>"
-  }
-
-  if (typeof value === "string") {
-    return (
-      `<table:table-cell${attrs} office:value-type="string">` +
-      `<text:p>${odsEscape(value)}</text:p></table:table-cell>`
-    )
-  }
-
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) return `<table:table-cell${attrs}></table:table-cell>`
-    return (
-      `<table:table-cell${attrs} office:value-type="float" office:value="${value}">` +
-      `<text:p>${odsEscape(formatNumberDisplay(value))}</text:p></table:table-cell>`
-    )
-  }
-
-  if (typeof value === "boolean") {
-    return (
-      `<table:table-cell${attrs} office:value-type="boolean" ` +
-      `office:boolean-value="${value ? "true" : "false"}">` +
-      `<text:p>${value ? "TRUE" : "FALSE"}</text:p></table:table-cell>`
-    )
-  }
-
-  if (isCellError(value)) {
-    return (
-      `<table:table-cell${attrs} office:value-type="string" calcext:value-type="error">` +
-      `<text:p>${xmlEscape(value.error)}</text:p></table:table-cell>`
-    )
-  }
-
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return `<table:table-cell${attrs}></table:table-cell>`
-    const iso = formatOdsDateValue(value)
-    return (
-      `<table:table-cell${attrs} office:value-type="date" office:date-value="${iso}">` +
-      `<text:p>${iso}</text:p></table:table-cell>`
-    )
-  }
-
-  return `<table:table-cell${attrs}/>`
 }

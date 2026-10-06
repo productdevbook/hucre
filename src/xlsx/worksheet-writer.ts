@@ -20,18 +20,18 @@ import type {
   PaperSize,
   PaperSizeName,
   RichTextRun,
-  FontStyle,
   Color,
   Sparkline,
+  Hyperlink,
 } from "../_types"
-import type { StylesCollector } from "./styles-writer"
+import { serializeFontProps, type StylesCollector } from "./styles-writer"
 import { dateToSerial } from "../_date"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape, xmlTextElement } from "../xml/writer"
 import { calculateColumnWidth } from "./auto-width"
 import { DYNAMIC_ARRAY_CM } from "./metadata"
 import { hashSheetPassword } from "./password"
 import { validateColumnIndex } from "../_validate"
-import { mergeDefined, toCellValue } from "../_inline-cells"
+import { mergeDefined, resolveCellInput } from "../_inline-cells"
 import { normalizeSheetInput, columnCellStyle } from "../_sheet-input"
 
 // ── Hyperlink Relationship ────────────────────────────────────────
@@ -719,9 +719,9 @@ export function resolveRows(sheet: SheetInput): Array<Array<ResolvedCell | null>
   const columnStyles = sheet.columns?.map(columnCellStyle)
   const resolved: Array<Array<ResolvedCell | null>> = (sheet.rows ?? []).map((row) =>
     row.map((raw, col) => {
-      const value = toCellValue(raw)
-      const style = columnStyles?.[col]
-      return style ? { value, style } : { value }
+      const cell = resolveCellInput(raw)
+      cell.style ??= columnStyles?.[col]
+      return cell
     }),
   )
 
@@ -740,7 +740,9 @@ export function resolveRows(sheet: SheetInput): Array<Array<ResolvedCell | null>
       const existing = row[c]
       // Share the same partial-cell overlay as inline lifting. `??` used
       // to discard explicit null values and resurrect the dense value.
-      row[c] = mergeDefined(existing ?? { value: null }, cellOverride)
+      // Resolve after the overlay: a Date cache must also select the
+      // default date format instead of inheriting the old scalar's type.
+      row[c] = resolveCellInput(mergeDefined(existing ?? { value: null }, cellOverride))
     }
   }
 
@@ -1121,47 +1123,42 @@ export function collectHyperlinks(
   // rather than making us rebuild every cell of the sheet a second time.
   const resolved = preResolved ?? resolveRows(sheet)
 
-  const hyperlinkElements: string[] = []
-  const relationships: HyperlinkRelationship[] = []
-  let rIdCounter = 1
-
+  const collector = createHyperlinkCollector()
   for (let r = 0; r < resolved.length; r++) {
     const row = resolved[r]
     for (let c = 0; c < row.length; c++) {
       const hl = row[c]?.hyperlink
-      if (!hl) continue
-
-      const ref = cellRef(r, c)
-      const attrs: Record<string, string> = { ref }
-
-      if (hl.location) {
-        // Internal hyperlink — uses location attribute directly, no relationship needed
-        attrs["location"] = hl.location
-      } else if (hl.target) {
-        // External hyperlink — needs a relationship entry
-        const rId = `rId${rIdCounter++}`
-        attrs["r:id"] = rId
-        relationships.push({ id: rId, target: hl.target })
-      }
-
-      if (hl.tooltip) {
-        attrs["tooltip"] = hl.tooltip
-      }
-      if (hl.display) {
-        attrs["display"] = hl.display
-      }
-
-      hyperlinkElements.push(xmlSelfClose("hyperlink", attrs))
+      if (hl) collector.add(r, c, hl)
     }
   }
+  return { xml: collector.toXml(), relationships: collector.relationships }
+}
 
-  if (hyperlinkElements.length === 0) {
-    return { xml: "", relationships: [] }
-  }
-
+/** Collect sheet-tail links without retaining or re-resolving row values. */
+export function createHyperlinkCollector(): {
+  relationships: HyperlinkRelationship[]
+  add(row: number, col: number, link: Hyperlink): void
+  toXml(): string
+} {
+  const elements: string[] = []
+  const relationships: HyperlinkRelationship[] = []
   return {
-    xml: xmlElement("hyperlinks", undefined, hyperlinkElements),
     relationships,
+    add(row: number, col: number, link: Hyperlink): void {
+      const attrs: Record<string, string> = { ref: cellRef(row, col) }
+      if (link.location) attrs.location = link.location
+      else if (link.target) {
+        const id = `rId${relationships.length + 1}`
+        attrs["r:id"] = id
+        relationships.push({ id, target: link.target })
+      }
+      if (link.tooltip) attrs.tooltip = link.tooltip
+      if (link.display) attrs.display = link.display
+      elements.push(xmlSelfClose("hyperlink", attrs))
+    },
+    toXml(): string {
+      return elements.length ? xmlElement("hyperlinks", undefined, elements) : ""
+    },
   }
 }
 
@@ -1415,15 +1412,13 @@ function serializeColorAttrs(color: Color): Record<string, string | number> {
 // ── Rich Text Serialization ──────────────────────────────────────────
 
 /** Serialize an array of RichTextRun into XML elements for an <is> (inline string) block */
-function serializeRichTextRuns(runs: RichTextRun[]): string[] {
-  const elements: string[] = []
-
-  for (const run of runs) {
+export function serializeRichTextRuns(runs: RichTextRun[]): string[] {
+  return runs.map((run) => {
     const runChildren: string[] = []
 
     // Run properties (<rPr>)
     if (run.font) {
-      const rPrParts = serializeFontProps(run.font)
+      const rPrParts = serializeFontProps(run.font, "rFont")
       if (rPrParts.length > 0) {
         runChildren.push(xmlElement("rPr", undefined, rPrParts))
       }
@@ -1432,55 +1427,8 @@ function serializeRichTextRuns(runs: RichTextRun[]): string[] {
     // Run text (<t>), with xml:space="preserve" when the run needs it.
     runChildren.push(xmlTextElement(run.text))
 
-    elements.push(xmlElement("r", undefined, runChildren))
-  }
-
-  return elements
-}
-
-/** Serialize FontStyle into individual XML elements for <rPr> */
-function serializeFontProps(font: FontStyle): string[] {
-  const parts: string[] = []
-
-  if (font.bold) {
-    parts.push(xmlSelfClose("b"))
-  }
-  if (font.italic) {
-    parts.push(xmlSelfClose("i"))
-  }
-  if (font.underline) {
-    if (font.underline === true || font.underline === "single") {
-      parts.push(xmlSelfClose("u"))
-    } else {
-      parts.push(xmlSelfClose("u", { val: font.underline }))
-    }
-  }
-  if (font.strikethrough) {
-    parts.push(xmlSelfClose("strike"))
-  }
-  if (font.vertAlign) {
-    parts.push(xmlSelfClose("vertAlign", { val: font.vertAlign }))
-  }
-  if (font.size !== undefined) {
-    parts.push(xmlSelfClose("sz", { val: font.size }))
-  }
-  if (font.color) {
-    parts.push(xmlSelfClose("color", serializeColorAttrs(font.color)))
-  }
-  if (font.name) {
-    parts.push(xmlSelfClose("rFont", { val: font.name }))
-  }
-  if (font.family !== undefined) {
-    parts.push(xmlSelfClose("family", { val: font.family }))
-  }
-  if (font.charset !== undefined) {
-    parts.push(xmlSelfClose("charset", { val: font.charset }))
-  }
-  if (font.scheme) {
-    parts.push(xmlSelfClose("scheme", { val: font.scheme }))
-  }
-
-  return parts
+    return xmlElement("r", undefined, runChildren)
+  })
 }
 
 // ── Auto Filter Serialization ────────────────────────────────────

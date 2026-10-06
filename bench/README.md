@@ -159,3 +159,34 @@ module loading, input and output allocation. These are two formatted
 object-data scenarios on one machine, not a claim about every writer or
 workbook. The independent invoice and regression suites verify values,
 headers, caches and styles separately from the measurements.
+
+## Shared streaming cell resolution
+
+The existing `writeXlsxStream` and `XlsxStreamWriter` scenarios emit
+100,000 rows × 12 columns of strings, numbers and dates. They contain no
+links/comments, so the comparison checks the ordinary-cell path after
+metadata support was added; it does not measure metadata-heavy output.
+
+```sh
+bun run build
+node bench/write.mjs writeXlsxStream 100000
+node bench/write.mjs XlsxStreamWriter 100000
+HUCRE_BENCH_ENTRY=/absolute/path/to/baseline/dist/index.mjs node bench/write.mjs writeXlsxStream 100000
+HUCRE_BENCH_ENTRY=/absolute/path/to/baseline/dist/index.mjs node bench/write.mjs XlsxStreamWriter 100000
+```
+
+Build V2 `adcf5e5` with the same dependencies for the baseline. Use one
+scenario per fresh process, with three samples per scenario/tree and
+alternate baseline/current. macOS arm64, Node 24.21.0:
+
+| Scenario           | V2 `adcf5e5` time / peak RSS | Shared cell model time / peak RSS |
+| ------------------ | ---------------------------: | --------------------------------: |
+| `writeXlsxStream`  |        755–807 ms / 98–99 MB |            755–771 ms / 97–101 MB |
+| `XlsxStreamWriter` |  1,018–1,064 ms / 602–603 MB |       1,004–1,043 ms / 601–603 MB |
+
+These intervals overlap; they do not establish a throughput improvement.
+Output byte counts match per scenario (5,330,764 streamed, 6,230,593
+incremental). The streaming sink discards bytes; the class retains its
+fragments/output until finish. Peak RSS includes runtime and module loading.
+Distinct styles and shared strings are retained, and links/comments now
+retain metadata until a physical sheet's related parts are emitted.

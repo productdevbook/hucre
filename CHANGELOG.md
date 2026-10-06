@@ -6,6 +6,14 @@ rather than as a list of commits.
 
 ## Unreleased — 2.0.0
 
+Spreadsheet writers share full inline cell resolution, including explicit
+formula caches (null included), rich text and `link()` in rows or object data.
+XLSX streams retain shared/array/dynamic formulas, checkboxes, links and
+comments with their package parts; incremental filters and conditional
+formats are honored. ODS uses the shared serializer and reports unsupported
+cell fields through `onDrop` with a cell reference. True ODS streaming
+remains unstyled. Streaming XLSX retains current-sheet link/comment metadata.
+
 Buffered writers share one authoring row-source boundary. Object data works
 in text outputs, omitted columns are inferred across all records, and
 competing `rows`/`data` sources throw. ODS keeps data hyperlinks and column

@@ -37,7 +37,8 @@ function serializeColor(tagName: string, color: Color): string {
   return xmlSelfClose(tagName, attrs)
 }
 
-function serializeFont(font: FontStyle): string {
+/** Shared cell/run/comment font properties; runs use rFont for the name. */
+export function serializeFontProps(font: FontStyle, nameTag: "name" | "rFont" = "name"): string[] {
   // ECMA-376 requires this element order:
   // b, i, u, strike, condense, extend, outline, shadow, charset, family, scheme, color, sz, name, vertAlign
   const children: string[] = []
@@ -78,14 +79,18 @@ function serializeFont(font: FontStyle): string {
   }
 
   if (font.name) {
-    children.push(xmlSelfClose("name", { val: font.name }))
+    children.push(xmlSelfClose(nameTag, { val: font.name }))
   }
 
   if (font.vertAlign) {
     children.push(xmlSelfClose("vertAlign", { val: font.vertAlign }))
   }
 
-  return xmlElement("font", undefined, children)
+  return children
+}
+
+function serializeFont(font: FontStyle): string {
+  return xmlElement("font", undefined, serializeFontProps(font))
 }
 
 function serializeFill(fill: FillStyle): string {
