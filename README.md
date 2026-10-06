@@ -519,6 +519,14 @@ styles and column widths.
 
 #### Which writer to use
 
+Buffered and incremental XLSX share automatic column sizing. True streams
+need fixed widths because column XML precedes row data; `XlsxStreamColumn`
+omits `autoWidth`, and unsupported sizing requests throw before consumption.
+Generated stream headers retain blank labels and column positions; object
+rows use only own fields and accept empty keys. Rollover caps must be integers
+from 2 through 1,048,576 or Infinity. Infinity disables splitting while
+physical Excel grid bounds remain enforced.
+
 |             | `writeXlsxStream()`                                              | `XlsxStreamWriter`                |
 | ----------- | ---------------------------------------------------------------- | --------------------------------- |
 | Output      | `ReadableStream<Uint8Array>`                                     | `Promise<Uint8Array>`             |

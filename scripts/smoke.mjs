@@ -313,6 +313,45 @@ console.log("shared inline cells")
   check("inline input remains immutable", JSON.stringify(rows) === JSON.stringify(before))
 }
 
+console.log("streaming columns")
+{
+  const columns = [
+    { header: "", key: "", width: 12, collapsed: true },
+    { key: "Amount", style: { numFmt: "0.00" } },
+  ]
+  const row = Object.assign(Object.create({ Amount: 99 }), { "": "own" })
+  const result = (
+    await readXlsx(await drain(writeXlsxStream([row], { name: "S", columns })), {
+      readStyles: true,
+    })
+  ).sheets[0]
+  check(
+    "blank headers and own fields",
+    JSON.stringify(result.rows) ===
+      JSON.stringify([
+        ["", "Amount"],
+        ["own", null],
+      ]),
+  )
+  check(
+    "streamed column layout",
+    result.columns[0].collapsed === true && result.columns[1].style.numFmt === "0.00",
+  )
+  const writer = new XlsxStreamWriter({ name: "S", columns: [{ autoWidth: true }] })
+  writer.addRow(["A long display value for an automatic column"])
+  check(
+    "incremental auto width",
+    (await readXlsx(await writer.finish())).sheets[0].columns[0].width > 40,
+  )
+  let rejected = false
+  try {
+    new XlsxStreamWriter({ name: "S", maxRowsPerSheet: NaN })
+  } catch (error) {
+    rejected = error instanceof InvalidArgumentError
+  }
+  check("NaN rollover rejects", rejected)
+}
+
 if (failures > 0) {
   console.log(`\n${failures} check(s) failed`)
   throw new Error(`smoke test failed: ${failures} check(s)`)

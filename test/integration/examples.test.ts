@@ -1,6 +1,6 @@
 import { getCell, cellEntries, createCellStore } from "../../src/cell-store"
 import { writeOds, readOds } from "../../src/ods"
-import type { Workbook } from "../../src/_types"
+import type { Workbook, CellInput } from "../../src/_types"
 import { read, readObjects, write } from "../../src/defter"
 import { sheetToArrays, sheetToObjects } from "../../src/sheet-utils"
 import { workbookToJson } from "../../src/json/writer"
@@ -9,7 +9,7 @@ import { readFileSync, readdirSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { readXlsx, streamXlsxRows, writeXlsx, openXlsx, saveXlsx } from "../../src/xlsx"
 import { flat } from "../support/workbook-model"
-import { writerPaths } from "../support/writer-paths"
+import { writerPaths, objectWriterPaths } from "../support/writer-paths"
 import { insertRows, insertColumns, replaceCells } from "../../src/sheet-ops"
 import { parseCellRef, toRange } from "../../src/cell-utils"
 
@@ -266,3 +266,42 @@ it.each(["authoring", "preserved"] as const)(
     expect(getCell(again.cells, 1, 3)?.style?.numFmt).toBe("#,##0.00")
   },
 )
+
+// The independent invoice also exercises generated headers and object projection.
+for (const path of objectWriterPaths) {
+  it(`authors the independent invoice from column-mapped objects through ${path.name}`, async () => {
+    const source = (
+      await readXlsx(
+        new Uint8Array(
+          readFileSync(new URL("../../examples/workbooks/invoice.xlsx", import.meta.url)),
+        ),
+      )
+    ).sheets[0]
+    const columns = ["Item", "Quantity", "Unit price", "Amount"].map((header, i) => ({
+      header,
+      key: `field${i}`,
+    }))
+    const data = source.rows.slice(1).map((row, r) =>
+      Object.fromEntries(
+        row.map((value, c) => {
+          const cell = getCell(source.cells, r + 1, c)
+          const input: CellInput = cell?.formula
+            ? { value, formula: cell.formula, formulaResult: cell.formulaResult }
+            : value
+          return [`field${c}`, input]
+        }),
+      ),
+    )
+    const before = structuredClone(data)
+    const result = (await path.read(await path.write(data, columns))).sheets[0]
+    expect(result.rows).toEqual([
+      ["Item", "Quantity", "Unit price", "Amount"],
+      ["Keyboard", 2, 75, 150],
+      ["Mouse", 3, 20, 60],
+      ["Total", null, null, 210],
+    ])
+    expect(getCell(result.cells, 3, 3)?.formula).toBe("SUM(D2:D3)")
+    expect(getCell(result.cells, 3, 3)?.formulaResult).toBe(210)
+    expect(data).toEqual(before)
+  })
+}

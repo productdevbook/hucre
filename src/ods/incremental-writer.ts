@@ -13,7 +13,7 @@
 
 import { InvalidArgumentError } from "../errors"
 import { resolveCellInput } from "../_inline-cells"
-import { columnCellStyle } from "../_sheet-input"
+import { columnCellStyle, columnHeaders, objectRow } from "../_sheet-input"
 import { reportOdsCellDrops } from "./cell-drops"
 import type {
   CellStyle,
@@ -23,7 +23,7 @@ import type {
   CellInput,
   SpreadsheetStreamWriter,
 } from "../_types"
-import { validateSheetNames } from "../_validate"
+import { validateSheetNames, validateRowSize } from "../_validate"
 import { xmlElement, xmlSelfClose } from "../xml/writer"
 import { ZipWriter } from "../zip/writer"
 import {
@@ -91,6 +91,7 @@ export class OdsStreamWriter implements SpreadsheetStreamWriter {
   constructor(options?: OdsStreamWriterOptions) {
     this.sheetName = options?.name ?? "Sheet1"
     validateSheetNames([{ name: this.sheetName }])
+    validateRowSize(0, options?.columns?.length ?? 0)
     this.columns = options?.columns
     this.columnCellStyles = this.columns?.map(columnCellStyle) ?? []
     this.onDrop = options?.onDrop
@@ -98,10 +99,8 @@ export class OdsStreamWriter implements SpreadsheetStreamWriter {
 
     // A header row is written immediately, the same as XlsxStreamWriter
     // does, so `addRow` starts at the first data row either way.
-    const headers = this.columns?.map((c) => c.header)
-    if (headers?.some((h) => h !== undefined)) {
-      this.addRow(headers.map((h) => h ?? null))
-    }
+    const headers = columnHeaders(this.columns)
+    if (headers) this.addRow(headers)
   }
 
   /** Append a row of positional values, each optionally styled. */
@@ -109,6 +108,7 @@ export class OdsStreamWriter implements SpreadsheetStreamWriter {
     if (this.done) {
       throw new InvalidArgumentError("Cannot write to OdsStreamWriter after finish()")
     }
+    validateRowSize(this.rowFragments.length, values.length)
     if (values.length > this.maxCols) this.maxCols = values.length
 
     const cells: string[] = []
@@ -141,7 +141,7 @@ export class OdsStreamWriter implements SpreadsheetStreamWriter {
     if (!this.columns) {
       throw new InvalidArgumentError("addObject requires columns with key accessors")
     }
-    this.addRow(this.columns.map((c) => (c.key ? (item[c.key] ?? null) : null)))
+    this.addRow(objectRow(item, this.columns))
   }
 
   /** Finalize and return the ODS document. */

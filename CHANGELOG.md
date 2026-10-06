@@ -6,6 +6,15 @@ rather than as a list of commits.
 
 ## Unreleased — 2.0.0
 
+Buffered and streamed authoring share header/object projection and Excel grid
+preflight. Blank headers and empty keys keep their positions; inherited
+object fields are excluded. XLSX column defaults, collapsed groups and
+frozen panes share serialization. Incremental XLSX now honors `autoWidth`
+with the same display-width collector as buffered output; true streaming
+uses `XlsxStreamColumn` and rejects automatic widths without an explicit
+width. Rollover caps must be integers within Excel's sheet limit or Infinity;
+Infinity disables splitting, not physical grid validation.
+
 Spreadsheet writers share full inline cell resolution, including explicit
 formula caches (null included), rich text and `link()` in rows or object data.
 XLSX streams retain shared/array/dynamic formulas, checkboxes, links and

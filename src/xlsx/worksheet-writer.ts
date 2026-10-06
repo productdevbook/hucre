@@ -20,17 +20,18 @@ import type {
   PaperSize,
   PaperSizeName,
   RichTextRun,
-  Color,
+  ColumnDef,
+  FreezePane,
   Sparkline,
   Hyperlink,
 } from "../_types"
-import { serializeFontProps, type StylesCollector } from "./styles-writer"
+import { serializeFontProps, serializeColor, type StylesCollector } from "./styles-writer"
 import { dateToSerial } from "../_date"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape, xmlTextElement } from "../xml/writer"
-import { calculateColumnWidth } from "./auto-width"
+import { createColumnWidthCollector } from "./auto-width"
 import { DYNAMIC_ARRAY_CM } from "./metadata"
 import { hashSheetPassword } from "./password"
-import { validateColumnIndex } from "../_validate"
+import { validateColumnIndex, validateRowSize } from "../_validate"
 import { mergeDefined, resolveCellInput } from "../_inline-cells"
 import { normalizeSheetInput, columnCellStyle } from "../_sheet-input"
 
@@ -111,26 +112,22 @@ export function colToLetter(col: number): string {
 export function rowAttributes(
   rowIndex: number,
   rowDef?: RowDef,
-): Record<string, string | number | boolean> {
-  const attrs: Record<string, string | number | boolean> = { r: rowIndex + 1 }
-  if (rowDef?.height !== undefined) {
-    attrs["ht"] = rowDef.height
-    attrs["customHeight"] = 1
+): Record<string, string | number | boolean | undefined> {
+  return {
+    r: rowIndex + 1,
+    ht: rowDef?.height,
+    customHeight: rowDef?.height === undefined ? undefined : 1,
+    hidden: rowDef?.hidden ? 1 : undefined,
+    outlineLevel: rowDef?.outlineLevel || undefined,
+    collapsed: rowDef?.collapsed ? 1 : undefined,
   }
-  if (rowDef?.hidden) attrs["hidden"] = 1
-  if (rowDef?.outlineLevel) attrs["outlineLevel"] = rowDef.outlineLevel
-  if (rowDef?.collapsed) attrs["collapsed"] = 1
-  return attrs
 }
 
 /** True when a row definition asks for anything at all. */
 export function hasRowAttributes(rowDef?: RowDef): boolean {
-  return (
-    rowDef !== undefined &&
-    (rowDef.height !== undefined ||
-      Boolean(rowDef.hidden) ||
-      Boolean(rowDef.outlineLevel) ||
-      Boolean(rowDef.collapsed))
+  return Boolean(
+    rowDef &&
+    (rowDef.height !== undefined || rowDef.hidden || rowDef.outlineLevel || rowDef.collapsed),
   )
 }
 
@@ -272,7 +269,7 @@ export function writeWorksheetXml(
   {
     const sheetPrChildren: string[] = []
     if (sheet.view?.tabColor) {
-      sheetPrChildren.push(xmlSelfClose("tabColor", serializeColorAttrs(sheet.view.tabColor)))
+      sheetPrChildren.push(serializeColor("tabColor", sheet.view.tabColor))
     }
     if (sheet.outlineProperties) {
       const outlineAttrs: Record<string, string | number | boolean> = {}
@@ -307,32 +304,7 @@ export function writeWorksheetXml(
   const sheetViewParts: string[] = []
 
   if (sheet.freezePane) {
-    const fp = sheet.freezePane
-    const topLeftCell = cellRef(fp.rows ?? 0, fp.columns ?? 0)
-    const paneAttrs: Record<string, string | number> = {}
-
-    if (fp.columns && fp.columns > 0) {
-      paneAttrs["xSplit"] = fp.columns
-    }
-    if (fp.rows && fp.rows > 0) {
-      paneAttrs["ySplit"] = fp.rows
-    }
-    paneAttrs["topLeftCell"] = topLeftCell
-    paneAttrs["state"] = "frozen"
-
-    // Determine active pane
-    const hasXSplit = fp.columns && fp.columns > 0
-    const hasYSplit = fp.rows && fp.rows > 0
-
-    if (hasXSplit && hasYSplit) {
-      paneAttrs["activePane"] = "bottomRight"
-    } else if (hasXSplit) {
-      paneAttrs["activePane"] = "topRight"
-    } else {
-      paneAttrs["activePane"] = "bottomLeft"
-    }
-
-    sheetViewParts.push(xmlSelfClose("pane", paneAttrs))
+    sheetViewParts.push(serializeFrozenPane(sheet.freezePane))
   } else if (sheet.splitPane) {
     const sp = sheet.splitPane
     const paneAttrs: Record<string, string | number> = {}
@@ -391,71 +363,15 @@ export function writeWorksheetXml(
   if (sheet.defaultColWidth !== undefined) formatPrAttrs["defaultColWidth"] = sheet.defaultColWidth
   parts.push(xmlSelfClose("sheetFormatPr", formatPrAttrs))
 
-  // ── Columns ──
-  if (sheet.columns && sheet.columns.length > 0) {
-    const colElements: string[] = []
-    for (let i = 0; i < sheet.columns.length; i++) {
-      const col = sheet.columns[i]
-
-      // Calculate auto-width if requested and no explicit width is set
-      let effectiveWidth = col.width
-      if (col.autoWidth && effectiveWidth === undefined) {
-        const columnValues: CellValue[] = []
-        for (const row of resolvedRows) {
-          if (row && i < row.length && row[i]) {
-            columnValues.push(row[i]!.value)
-          }
-        }
-        effectiveWidth = calculateColumnWidth(columnValues, {
-          font: col.style?.font,
-          numFmt: col.numFmt ?? col.style?.numFmt,
-        })
-      }
-
-      // A column format has to land on `<col style="N">` as well as on the
-      // cells. Stamping the cells alone made it look right for the rows
-      // hucre wrote and nowhere else: in Excel a column format applies to
-      // every cell in the column including ones nobody has typed in yet,
-      // so a "currency" column stopped being one the moment the user
-      // added a row. It also meant the format vanished on read, since the
-      // reader has only `<col>` to look at. See #439 §W.
-      const columnStyle = columnCellStyle(col)
-      const columnStyleId = columnStyle ? styles.addStyle(columnStyle) : 0
-
-      if (
-        effectiveWidth !== undefined ||
-        col.hidden ||
-        col.outlineLevel ||
-        col.collapsed ||
-        columnStyleId !== 0
-      ) {
-        const colAttrs: Record<string, string | number | boolean> = {
-          min: i + 1,
-          max: i + 1,
-        }
-        if (effectiveWidth !== undefined) {
-          colAttrs["width"] = effectiveWidth
-          colAttrs["customWidth"] = true
-        }
-        if (columnStyleId !== 0) {
-          colAttrs["style"] = columnStyleId
-        }
-        if (col.hidden) {
-          colAttrs["hidden"] = true
-        }
-        if (col.outlineLevel) {
-          colAttrs["outlineLevel"] = col.outlineLevel
-        }
-        if (col.collapsed) {
-          colAttrs["collapsed"] = true
-        }
-        colElements.push(xmlSelfClose("col", colAttrs))
-      }
-    }
-    if (colElements.length > 0) {
-      parts.push(xmlElement("cols", undefined, colElements))
-    }
+  const columnWidths = createColumnWidthCollector(sheet.columns)
+  if (columnWidths.widths.size) {
+    for (const row of resolvedRows)
+      row.forEach((cell, col) => {
+        if (cell) columnWidths.add(col, cell)
+      })
   }
+  const columnsXml = serializeColumns(sheet.columns, styles, columnWidths.widths)
+  if (columnsXml) parts.push(columnsXml)
 
   // ── Sheet Data ──
   const rowElements: string[] = []
@@ -708,6 +624,51 @@ export function writeWorksheetXml(
     pivotTables: pivotEntries,
     hasDynamicArray,
   }
+}
+
+/** One frozen-pane contract for buffered and streamed XLSX layout. */
+export function serializeFrozenPane(fp: FreezePane): string {
+  const rows = fp.rows ?? 0
+  const columns = fp.columns ?? 0
+  validateRowSize(rows, columns + 1)
+  return xmlSelfClose("pane", {
+    xSplit: columns || undefined,
+    ySplit: rows || undefined,
+    topLeftCell: cellRef(rows, columns),
+    state: "frozen",
+    activePane: columns && rows ? "bottomRight" : columns ? "topRight" : "bottomLeft",
+  })
+}
+
+/** Shared column XML: defaults also apply to cells the user adds later. */
+export function serializeColumns(
+  columns: readonly ColumnDef[] | undefined,
+  styles: StylesCollector,
+  widths?: ReadonlyMap<number, number>,
+): string {
+  const elements: string[] = []
+  for (const [i, col] of (columns ?? []).entries()) {
+    const width = col.width ?? widths?.get(i)
+    const style = columnCellStyle(col)
+    const styleId = style ? styles.addStyle(style) : 0
+    if (width === undefined && !col.hidden && !col.outlineLevel && !col.collapsed && !styleId)
+      continue
+    // xmlSelfClose omits undefined attributes, keeping the column schema
+    // in one place for populated and empty columns alike.
+    elements.push(
+      xmlSelfClose("col", {
+        min: i + 1,
+        max: i + 1,
+        width,
+        customWidth: width === undefined ? undefined : true,
+        style: styleId || undefined,
+        hidden: col.hidden || undefined,
+        outlineLevel: col.outlineLevel || undefined,
+        collapsed: col.collapsed || undefined,
+      }),
+    )
+  }
+  return elements.length ? xmlElement("cols", undefined, elements) : ""
 }
 
 // ── Row Resolution ─────────────────────────────────────────────────
@@ -1387,28 +1348,6 @@ function serializeHeaderFooter(hf: HeaderFooter): string {
   return xmlElement("headerFooter", Object.keys(attrs).length > 0 ? attrs : undefined, children)
 }
 
-// ── Color Attribute Serialization ──────────────────────────────────────
-
-/** Serialize a Color object into XML attributes for a color element */
-function serializeColorAttrs(color: Color): Record<string, string | number> {
-  const attrs: Record<string, string | number> = {}
-  if (color.rgb !== undefined) {
-    // XLSX expects ARGB format (8 chars), add "FF" alpha prefix if only 6 chars
-    const rgb = color.rgb
-    attrs["rgb"] = rgb.length === 6 ? `FF${rgb}` : rgb
-  }
-  if (color.theme !== undefined) {
-    attrs["theme"] = color.theme
-  }
-  if (color.tint !== undefined) {
-    attrs["tint"] = color.tint
-  }
-  if (color.indexed !== undefined) {
-    attrs["indexed"] = color.indexed
-  }
-  return attrs
-}
-
 // ── Rich Text Serialization ──────────────────────────────────────────
 
 /** Serialize an array of RichTextRun into XML elements for an <is> (inline string) block */
@@ -1535,7 +1474,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
       csChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
     }
     for (const color of rule.colorScale.colors) {
-      csChildren.push(xmlSelfClose("color", serializeColorAttrs(color)))
+      csChildren.push(serializeColor("color", color))
     }
     children.push(xmlElement("colorScale", undefined, csChildren))
   }
@@ -1548,7 +1487,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
       if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
       dbChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
     }
-    dbChildren.push(xmlSelfClose("color", serializeColorAttrs(rule.dataBar.color)))
+    dbChildren.push(serializeColor("color", rule.dataBar.color))
     children.push(xmlElement("dataBar", undefined, dbChildren))
   }
 
@@ -1612,9 +1551,7 @@ function serializeSparklines(sparklines: Sparkline[]): string {
 
     const groupChildren: string[] = []
 
-    groupChildren.push(
-      xmlSelfClose("x14:colorSeries", serializeColorAttrs(sp.color ?? { rgb: "376092" })),
-    )
+    groupChildren.push(serializeColor("x14:colorSeries", sp.color ?? { rgb: "376092" }))
 
     // Sparkline element
     const sparklineEl = xmlElement("x14:sparkline", undefined, [

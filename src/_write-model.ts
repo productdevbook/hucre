@@ -1,5 +1,6 @@
 // Normalize once at the writer boundary. Keeping metadata on one model
 // removes the per-field copies that previously lost new Sheet fields.
+import { validateRowSize } from "./_validate"
 import { normalizeSheetInput } from "./_sheet-input"
 import type {
   SheetInput,
@@ -95,7 +96,13 @@ function populated(value: unknown): boolean {
 }
 
 export function prepareSheet(sheet: SheetInput, onDrop?: OnDrop): WritableSheet {
-  sheet = normalizeSheetInput(sheet)
+  // Object expansion is checked before lookups; positional rows are
+  // checked before lifting rich cells or invoking authoring-loss callbacks.
+  validateRowSize(Math.max(0, (sheet.rows?.length ?? 0) - 1), sheet.columns?.length ?? 0)
+  for (const row of sheet.rows ?? []) validateRowSize(0, row.length)
+  sheet = normalizeSheetInput(sheet, (height, width) =>
+    validateRowSize(Math.max(0, height - 1), width),
+  )
   const {
     kind,
     slicers: _slicers,

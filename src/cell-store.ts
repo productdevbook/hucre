@@ -4,17 +4,12 @@
 // 8,192 entries and an inner Map at most 2,097,152, below V8's 2^24 cap.
 import type { Cell, CellStore } from "./_types"
 import { InvalidArgumentError } from "./errors"
-import { MAX_COL_INDEX, MAX_ROW_INDEX } from "./limits"
+import { MAX_COL_INDEX } from "./limits"
+import { validCoordinates } from "./_validate"
 
 const BLOCK_BITS = 7
 const BLOCK_ROWS = 1 << BLOCK_BITS
 const COLUMNS = MAX_COL_INDEX + 1
-
-function validCoordinates(row: number, col: number): boolean {
-  // Excel's bounds are 2^20 - 1 and 2^14 - 1. Equality after masking
-  // requires an integer in that range, including for NaN and Infinity.
-  return (row & MAX_ROW_INDEX) === row && (col & MAX_COL_INDEX) === col
-}
 
 /** Build sparse cell metadata from zero-based [row, column, cell] entries. */
 export function createCellStore<T extends Partial<Cell> = Cell>(

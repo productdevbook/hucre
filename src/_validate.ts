@@ -4,11 +4,19 @@
 // after a date range, a name copied from a report title — produced a file
 // Excel opens with "unreadable content" and no warning from hucre.
 //
-// These run before any bytes are produced, so a rejected workbook leaves
-// no half-written output.
+// Known workbook metadata is checked before output. Streamed rows are
+// checked before their own serialization; earlier rows may already have
+// been consumed when a later invalid row rejects the stream.
 
 import { InvalidArgumentError } from "./errors"
-import { MAX_COL_INDEX } from "./limits"
+import { MAX_COL_INDEX, MAX_ROW_INDEX } from "./limits"
+
+/** Shared predicate for sparse lookups and authoring preflight. */
+export function validCoordinates(row: number, col: number): boolean {
+  // Excel's bounds are 2^20 - 1 and 2^14 - 1. Equality after masking
+  // requires an integer in that range, including for NaN and Infinity.
+  return (row & MAX_ROW_INDEX) === row && (col & MAX_COL_INDEX) === col
+}
 
 /**
  * Excel's hard limit on a sheet name. Enforced by Excel's UI, by the
@@ -131,9 +139,14 @@ export function validateSheetNames(sheets: ReadonlyArray<{ name: string }>): voi
  * file that otherwise looked fine. See #364.
  */
 export function validateColumnIndex(col: number): void {
-  if (!Number.isInteger(col) || col < 0 || col > MAX_COL_INDEX) {
-    throw new InvalidArgumentError(
-      `Column index ${col} is not a valid 0-based column ` + `(Excel allows 0..${MAX_COL_INDEX})`,
-    )
+  if (!validCoordinates(0, col)) {
+    throw new InvalidArgumentError(`Column index ${col}: expected 0..${MAX_COL_INDEX}`)
+  }
+}
+
+/** Preflight a complete row before styles, metadata or writer counters change. */
+export function validateRowSize(row: number, columns: number): void {
+  if (!validCoordinates(row, columns === 0 ? 0 : columns - 1)) {
+    throw new InvalidArgumentError("Invalid Excel cell coordinates.")
   }
 }
