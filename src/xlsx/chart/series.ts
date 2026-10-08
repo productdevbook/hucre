@@ -34,6 +34,7 @@ import type {
   ChartTrendline,
   WriteChartKind,
 } from "../../_types"
+import { quoteSheetName } from "../../_refs"
 import type { XmlElement } from "../../xml/parser"
 import { xmlElement, xmlEscape, xmlSelfClose } from "../../xml/writer"
 import {
@@ -198,16 +199,6 @@ export interface SeriesOptions {
 function qualifyRef(ref: string, sheetName: string): string {
   if (ref.includes("!")) return ref
   return `${quoteSheetName(sheetName)}!${ref}`
-}
-
-/**
- * Quote a sheet name when it contains characters Excel considers
- * unsafe in a 3D reference (whitespace, punctuation, etc.). Single
- * quotes inside the name are doubled per the OOXML spec.
- */
-function quoteSheetName(name: string): string {
-  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return name
-  return `'${name.replace(/'/g, "''")}'`
 }
 
 // ── Reader ────────────────────────────────────────────────────────

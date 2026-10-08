@@ -123,6 +123,17 @@ function qualifierOf(match: A1RangeMatch): string {
 }
 
 /**
+ * Quote a sheet name when it contains characters Excel considers
+ * unsafe in a 3D reference (whitespace, punctuation, etc.). Single
+ * quotes inside the name are doubled per the OOXML spec. The inverse
+ * of {@link unquoteSheet}.
+ */
+export function quoteSheetName(name: string): string {
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return name
+  return `'${name.replace(/'/g, "''")}'`
+}
+
+/**
  * The sheet *name* a qualifier denotes, with Excel's quoting removed.
  *
  * Only for comparing against {@link RefShift.sheetName}, which is a name
