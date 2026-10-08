@@ -187,6 +187,39 @@ describe("named ranges — writing", () => {
     expect(getElementText(printTitles)).toBe("Report!$1:$2,Report!$A:$B")
   })
 
+  it("quotes sheet names that need it in print area and titles (#587)", async () => {
+    const data = await writeXlsx({
+      sheets: [
+        {
+          name: "Detail Sheet",
+          rows: [["Header"]],
+          pageSetup: {
+            printArea: "$A$1:$B$4",
+            printTitlesRow: "$1:$4",
+            printTitlesColumn: "$A:$A",
+          },
+        },
+        {
+          name: "O'Brien",
+          rows: [["Header"]],
+          pageSetup: { printTitlesRow: "$1:$1" },
+        },
+      ],
+    })
+
+    const xml = await extractXml(data, "xl/workbook.xml")
+    const doc = parseXml(xml)
+
+    const defs = findChildren(findChild(doc, "definedNames"), "definedName")
+    const text = (name: string, sheetId: string) =>
+      getElementText(
+        defs.find((d: any) => d.attrs["name"] === name && d.attrs["localSheetId"] === sheetId),
+      )
+    expect(text("_xlnm.Print_Area", "0")).toBe("'Detail Sheet'!$A$1:$B$4")
+    expect(text("_xlnm.Print_Titles", "0")).toBe("'Detail Sheet'!$1:$4,'Detail Sheet'!$A:$A")
+    expect(text("_xlnm.Print_Titles", "1")).toBe("'O''Brien'!$1:$1")
+  })
+
   it("does not emit definedNames when none exist", async () => {
     const data = await writeXlsx({
       sheets: [{ name: "Sheet1", rows: [["Hello"]] }],
@@ -312,6 +345,21 @@ describe("named ranges — reading (round-trip)", () => {
     const workbook = await readXlsx(data)
     expect(workbook.sheets[0].pageSetup?.printTitlesRow).toBe("$1:$1")
     expect(workbook.sheets[0].pageSetup?.printTitlesColumn).toBe("$A:$A")
+    expect(workbook.namedRanges).toBeUndefined()
+  })
+
+  it("reads quoted print ranges back into pageSetup (#587)", async () => {
+    const pageSetup = {
+      printArea: "$A$1:$B$4",
+      printTitlesRow: "$1:$4",
+      printTitlesColumn: "$A:$A",
+    }
+    const data = await writeXlsx({
+      sheets: [{ name: "Detail Sheet", rows: [["Header"]], pageSetup }],
+    })
+
+    const workbook = await readXlsx(data)
+    expect(workbook.sheets[0].pageSetup).toMatchObject(pageSetup)
     expect(workbook.namedRanges).toBeUndefined()
   })
 

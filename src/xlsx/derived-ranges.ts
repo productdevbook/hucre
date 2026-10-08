@@ -9,6 +9,7 @@
 // else (#407), which is only true while every writer derives them the
 // same way. One implementation, two callers.
 
+import { quoteSheetName } from "../_refs"
 import type { NamedRange, TableDefinition, WriteSheet } from "../_types"
 import { colToLetter } from "./worksheet-writer"
 
@@ -23,11 +24,16 @@ export function buildNamedRanges(sheets: WriteSheet[], userRanges?: NamedRange[]
     const ps = sheet.pageSetup
     if (!ps) continue
 
+    // The defined name is a formula, so a sheet name with a space or
+    // punctuation has to be quoted. Excel opens `Detail Sheet!$1:$4`
+    // without complaint but silently ignores it as a print setting (#587).
+    const qualifier = quoteSheetName(sheet.name)
+
     // Print area → _xlnm.Print_Area
     if (ps.printArea) {
       result.push({
         name: "_xlnm.Print_Area",
-        range: `${sheet.name}!${ps.printArea}`,
+        range: `${qualifier}!${ps.printArea}`,
         scope: sheet.name,
       })
     }
@@ -35,10 +41,10 @@ export function buildNamedRanges(sheets: WriteSheet[], userRanges?: NamedRange[]
     // Print titles (repeat rows and/or columns)
     const titleParts: string[] = []
     if (ps.printTitlesRow) {
-      titleParts.push(`${sheet.name}!${ps.printTitlesRow}`)
+      titleParts.push(`${qualifier}!${ps.printTitlesRow}`)
     }
     if (ps.printTitlesColumn) {
-      titleParts.push(`${sheet.name}!${ps.printTitlesColumn}`)
+      titleParts.push(`${qualifier}!${ps.printTitlesColumn}`)
     }
     if (titleParts.length > 0) {
       result.push({
