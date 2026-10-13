@@ -11,7 +11,7 @@ import { writeOds } from "../src/ods/writer"
 import { readOds } from "../src/ods/reader"
 import { streamOdsRows } from "../src/ods/stream"
 import { ZipWriter } from "../src/zip/writer"
-import type { CellValue, WriteSheet } from "../src/_types"
+import type { CellValue, SheetInput } from "../src/_types"
 
 const encoder = new TextEncoder()
 
@@ -62,7 +62,7 @@ describe("ODS #415 — dates do not drift with the reader's time zone", () => {
     let value: CellValue = original
 
     for (let pass = 0; pass < 4; pass++) {
-      const sheets: WriteSheet[] = [{ name: "Sheet1", rows: [[value]] }]
+      const sheets: SheetInput[] = [{ name: "Sheet1", rows: [[value]] }]
       const wb = await readOds(await writeOds({ sheets }))
       value = wb.sheets[0]!.rows[0]![0]!
       expect(value).toBeInstanceOf(Date)

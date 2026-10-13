@@ -1,3 +1,4 @@
+import { createCellStore, setCell, getCell } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import type { Sheet, Workbook, Cell } from "../src/_types"
 import {
@@ -51,8 +52,8 @@ describe("cloneSheet", () => {
   })
 
   it("should clone and preserve cell styles", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "styled",
       type: "string",
       style: {
@@ -71,8 +72,8 @@ describe("cloneSheet", () => {
     const sheet = makeSheet({ rows: [["styled"]], cells })
     const cloned = cloneSheet(sheet, "Cloned")
 
-    const original = sheet.cells!.get("0,0")!
-    const clonedCell = cloned.cells!.get("0,0")!
+    const original = getCell(sheet.cells!, 0, 0)!
+    const clonedCell = getCell(cloned.cells!, 0, 0)!
 
     expect(clonedCell.style).toEqual(original.style)
   })
@@ -129,7 +130,7 @@ describe("cloneSheet", () => {
           range: "B1:B10",
           colorScale: {
             cfvo: [{ type: "min" }, { type: "max" }],
-            colors: ["FF63BE7B", "FFF8696B"],
+            colors: [{ rgb: "63BE7B" }, { rgb: "F8696B" }],
           },
         },
       ],
@@ -151,8 +152,8 @@ describe("cloneSheet", () => {
   })
 
   it("should be independent — modifying clone does not affect original", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", makeCell("original", { font: { bold: true } }))
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, makeCell("original", { font: { bold: true } }))
 
     const sheet = makeSheet({
       rows: [
@@ -169,23 +170,23 @@ describe("cloneSheet", () => {
     // Modify cloned data
     cloned.rows[0][0] = "MODIFIED"
     cloned.rows.push(["new row"])
-    cloned.cells!.get("0,0")!.value = "CHANGED"
-    cloned.cells!.get("0,0")!.style!.font!.bold = false
+    getCell(cloned.cells!, 0, 0)!.value = "CHANGED"
+    getCell(cloned.cells!, 0, 0)!.style!.font!.bold = false
     cloned.merges![0].startRow = 99
     cloned.dataValidations![0].values!.push("c")
 
     // Original should be unchanged
     expect(sheet.rows[0][0]).toBe("A")
     expect(sheet.rows.length).toBe(2)
-    expect(sheet.cells!.get("0,0")!.value).toBe("original")
-    expect(sheet.cells!.get("0,0")!.style!.font!.bold).toBe(true)
+    expect(getCell(sheet.cells!, 0, 0)!.value).toBe("original")
+    expect(getCell(sheet.cells!, 0, 0)!.style!.font!.bold).toBe(true)
     expect(sheet.merges![0].startRow).toBe(0)
     expect(sheet.dataValidations![0].values).toEqual(["a", "b"])
   })
 
   it("should clone and preserve comments", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "with comment",
       type: "string",
       comment: {
@@ -198,7 +199,7 @@ describe("cloneSheet", () => {
     const sheet = makeSheet({ rows: [["with comment"]], cells })
     const cloned = cloneSheet(sheet, "Cloned")
 
-    const clonedCell = cloned.cells!.get("0,0")!
+    const clonedCell = getCell(cloned.cells!, 0, 0)!
     expect(clonedCell.comment!.author).toBe("John")
     expect(clonedCell.comment!.text).toBe("This is a comment")
     expect(clonedCell.comment!.richText![0].text).toBe("Bold part")
@@ -206,12 +207,12 @@ describe("cloneSheet", () => {
 
     // Verify independence
     clonedCell.comment!.text = "Modified"
-    expect(sheet.cells!.get("0,0")!.comment!.text).toBe("This is a comment")
+    expect(getCell(sheet.cells!, 0, 0)!.comment!.text).toBe("This is a comment")
   })
 
   it("should clone and preserve hyperlinks", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "click me",
       type: "string",
       hyperlink: { target: "https://example.com", tooltip: "Visit example" },
@@ -220,13 +221,13 @@ describe("cloneSheet", () => {
     const sheet = makeSheet({ rows: [["click me"]], cells })
     const cloned = cloneSheet(sheet, "Cloned")
 
-    const clonedCell = cloned.cells!.get("0,0")!
+    const clonedCell = getCell(cloned.cells!, 0, 0)!
     expect(clonedCell.hyperlink!.target).toBe("https://example.com")
     expect(clonedCell.hyperlink!.tooltip).toBe("Visit example")
 
     // Verify independence
     clonedCell.hyperlink!.target = "https://other.com"
-    expect(sheet.cells!.get("0,0")!.hyperlink!.target).toBe("https://example.com")
+    expect(getCell(sheet.cells!, 0, 0)!.hyperlink!.target).toBe("https://example.com")
   })
 
   it("should clone an empty sheet", () => {
@@ -475,8 +476,8 @@ describe("copySheetToWorkbook", () => {
   })
 
   it("should produce an independent copy in target workbook", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", makeCell("value"))
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, makeCell("value"))
 
     const sourceSheet = makeSheet({
       name: "Source",
@@ -490,11 +491,11 @@ describe("copySheetToWorkbook", () => {
 
     // Modify target
     targetWorkbook.sheets[0].rows[0][0] = "modified"
-    targetWorkbook.sheets[0].cells!.get("0,0")!.value = "modified"
+    getCell(targetWorkbook.sheets[0].cells!, 0, 0)!.value = "modified"
 
     // Source unchanged
     expect(sourceSheet.rows[0][0]).toBe("value")
-    expect(sourceSheet.cells!.get("0,0")!.value).toBe("value")
+    expect(getCell(sourceSheet.cells!, 0, 0)!.value).toBe("value")
   })
 })
 
@@ -526,13 +527,13 @@ describe("copyRange", () => {
   })
 
   it("should copy cell styles", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "styled",
       type: "string",
       style: { font: { bold: true, color: { rgb: "FF0000" } } },
     })
-    cells.set("0,1", {
+    setCell(cells, 0, 1, {
       value: "other",
       type: "string",
       style: { font: { italic: true } },
@@ -552,14 +553,14 @@ describe("copyRange", () => {
       { startRow: 1, startCol: 0 },
     )
 
-    expect(sheet.cells!.get("1,0")!.value).toBe("styled")
-    expect(sheet.cells!.get("1,0")!.style!.font!.bold).toBe(true)
-    expect(sheet.cells!.get("1,1")!.value).toBe("other")
-    expect(sheet.cells!.get("1,1")!.style!.font!.italic).toBe(true)
+    expect(getCell(sheet.cells!, 1, 0)!.value).toBe("styled")
+    expect(getCell(sheet.cells!, 1, 0)!.style!.font!.bold).toBe(true)
+    expect(getCell(sheet.cells!, 1, 1)!.value).toBe("other")
+    expect(getCell(sheet.cells!, 1, 1)!.style!.font!.italic).toBe(true)
 
     // Verify independence
-    sheet.cells!.get("1,0")!.style!.font!.bold = false
-    expect(sheet.cells!.get("0,0")!.style!.font!.bold).toBe(true)
+    getCell(sheet.cells!, 1, 0)!.style!.font!.bold = false
+    expect(getCell(sheet.cells!, 0, 0)!.style!.font!.bold).toBe(true)
   })
 
   it("should handle overlapping source and target ranges", () => {

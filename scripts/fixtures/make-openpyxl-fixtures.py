@@ -21,7 +21,7 @@ reading of the same spec, and it emits four shapes Excel never does:
 
 ``openpyxl-basic.xlsx`` deliberately mirrors ``excel-basic.xlsx``, so the
 two producers can be read into the same model and compared;
-``test/real-files.test.ts`` asserts they agree.
+``test/integration/real-files.test.ts`` asserts they agree.
 
 Determinism: document timestamps are pinned, so regenerating differs only
 in ZIP entry times, and creator/lastModifiedBy are blanked to match the

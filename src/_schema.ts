@@ -356,7 +356,7 @@ function coerceToString(raw: CellValue): { value: string } {
   if (raw instanceof Date) {
     return { value: raw.toISOString() }
   }
-  return { value: String(raw) }
+  return { value: raw.error }
 }
 
 function coerceToNumber(

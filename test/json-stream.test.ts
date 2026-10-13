@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { NdjsonStreamWriter, streamNdjsonRows, readNdjsonStream } from "../src/json"
+import { NdjsonStreamWriter, streamNdjsonRows } from "../src/json"
 
 function streamFromString(s: string): ReadableStream<Uint8Array> {
   const enc = new TextEncoder()
@@ -29,22 +29,22 @@ function chunkedStream(parts: string[]): ReadableStream<Uint8Array> {
 describe("NdjsonStreamWriter", () => {
   it("buffers writes into NDJSON output", () => {
     const w = new NdjsonStreamWriter()
-    w.write({ a: 1 })
-    w.write({ a: 2 })
+    w.addObject({ a: 1 })
+    w.addObject({ a: 2 })
     expect(w.toString()).toBe('{"a":1}\n{"a":2}\n')
   })
 
-  it("throws when writing after end()", () => {
+  it("throws when writing after finish()", () => {
     const w = new NdjsonStreamWriter()
-    w.end()
-    expect(() => w.write({ a: 1 })).toThrow()
+    w.finishText()
+    expect(() => w.addObject({ a: 1 })).toThrow()
   })
 
   it("emits a ReadableStream that can be drained", async () => {
     const w = new NdjsonStreamWriter()
-    w.write({ a: 1 })
-    w.write({ a: 2 })
-    w.end()
+    w.addObject({ a: 1 })
+    w.addObject({ a: 2 })
+    w.finishText()
 
     const reader = w.toStream().getReader()
     const dec = new TextDecoder()
@@ -60,7 +60,7 @@ describe("NdjsonStreamWriter", () => {
   it("converts Date values to ISO strings", () => {
     const w = new NdjsonStreamWriter()
     const d = new Date("2025-04-25T00:00:00Z")
-    w.write({ at: d })
+    w.addObject({ at: d })
     expect(w.toString().trim()).toBe(`{"at":"${d.toISOString()}"}`)
   })
 })
@@ -70,7 +70,7 @@ describe("streamNdjsonRows", () => {
     const stream = streamFromString('{"a":1}\n{"a":2}\n{"a":3}\n')
     const rows: unknown[] = []
     for await (const row of streamNdjsonRows(stream)) {
-      rows.push(row)
+      rows.push(row.values)
     }
     expect(rows).toEqual([{ a: 1 }, { a: 2 }, { a: 3 }])
   })
@@ -78,14 +78,14 @@ describe("streamNdjsonRows", () => {
   it("handles split-across-chunk lines", async () => {
     const stream = chunkedStream(['{"a":', '1}\n{"a"', ":2}\n"])
     const rows: unknown[] = []
-    for await (const row of streamNdjsonRows(stream)) rows.push(row)
+    for await (const row of streamNdjsonRows(stream)) rows.push(row.values)
     expect(rows).toEqual([{ a: 1 }, { a: 2 }])
   })
 
   it("handles trailing line without newline", async () => {
     const stream = streamFromString('{"a":1}\n{"a":2}')
     const rows: unknown[] = []
-    for await (const row of streamNdjsonRows(stream)) rows.push(row)
+    for await (const row of streamNdjsonRows(stream)) rows.push(row.values)
     expect(rows).toEqual([{ a: 1 }, { a: 2 }])
   })
 
@@ -93,7 +93,7 @@ describe("streamNdjsonRows", () => {
     const stream = streamFromString('{"a":{"b":1}}\n{"a":{"b":2}}\n')
     const rows: Record<string, unknown>[] = []
     for await (const row of streamNdjsonRows(stream, { flattenRows: true })) {
-      rows.push(row)
+      rows.push(row.values)
     }
     expect(rows).toEqual([{ "a.b": 1 }, { "a.b": 2 }])
   })
@@ -114,17 +114,9 @@ describe("streamNdjsonRows", () => {
     for await (const row of streamNdjsonRows(stream, {
       onError: (_l, ln) => errs.push(ln),
     })) {
-      rows.push(row)
+      rows.push(row.values)
     }
     expect(rows).toEqual([{ a: 1 }, { a: 2 }])
     expect(errs).toEqual([2])
-  })
-})
-
-describe("readNdjsonStream (deprecated alias)", () => {
-  it("is the same function as streamNdjsonRows", () => {
-    // Renamed so every streaming reader in the library reads
-    // stream*Rows; the old name stays for one major. See #365.
-    expect(readNdjsonStream).toBe(streamNdjsonRows)
   })
 })

@@ -230,8 +230,16 @@ describe("fromHtml resource bounds", () => {
     // costs 16,384 entries.
     const html = `<table>${'<tr><td colspan="16384">x</td></tr>'.repeat(1500)}</table>`
     expect(html.length).toBeLessThan(60_000)
-    expect(() => fromHtml(html)).toThrow(ParseError)
-    expect(() => fromHtml(html)).toThrow(String(MAX_TOTAL_CELLS))
+    // Exercise the large input once: separate throw assertions used to
+    // allocate the same 20-million-slot bound twice under V8 coverage.
+    let failure: unknown
+    try {
+      fromHtml(html)
+    } catch (error) {
+      failure = error
+    }
+    expect(failure).toBeInstanceOf(ParseError)
+    expect(failure).toHaveProperty("message", expect.stringContaining(String(MAX_TOTAL_CELLS)))
   }, 20_000)
 
   it("refuses a page of hostile rowspans, not just one", () => {

@@ -1,3 +1,4 @@
+import { createCellStore, setCell, getCell } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { ZipReader } from "../src/zip/reader"
 import { ZipWriter } from "../src/zip/writer"
@@ -5,7 +6,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { openXlsx, saveXlsx, ROUNDTRIP_STATE } from "../src/xlsx/roundtrip"
 import { InvalidArgumentError } from "../src/errors"
-import type { WriteSheet, Cell } from "../src/_types"
+import type { SheetInput, Cell } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -30,7 +31,7 @@ async function zipExtractText(data: Uint8Array, path: string): Promise<string> {
 }
 
 /** Create a minimal valid XLSX from writeXlsx for testing */
-async function createBasicXlsx(sheets: WriteSheet[]): Promise<Uint8Array> {
+async function createBasicXlsx(sheets: SheetInput[]): Promise<Uint8Array> {
   return writeXlsx({ sheets })
 }
 
@@ -149,7 +150,7 @@ describe("roundtrip — openXlsx", () => {
   })
 
   it("rejects a plain Workbook that never went through openXlsx", async () => {
-    const wb = { sheets: [{ name: "Sheet1", rows: [["A"]], cells: new Map() }] }
+    const wb = { sheets: [{ name: "Sheet1", rows: [["A"]], cells: createCellStore() }] }
     await expect(saveXlsx(wb as never)).rejects.toThrow(InvalidArgumentError)
   })
 
@@ -481,8 +482,8 @@ describe("roundtrip — preserve data validations", () => {
 
 describe("roundtrip — preserve hyperlinks", () => {
   it("preserves external hyperlink through round-trip", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Click me",
       type: "string",
       hyperlink: { target: "https://example.com" },
@@ -501,15 +502,15 @@ describe("roundtrip — preserve hyperlinks", () => {
     const wb2 = await readXlsx(saved)
 
     expect(wb2.sheets[0].cells).toBeDefined()
-    const cell = wb2.sheets[0].cells!.get("0,0")
+    const cell = getCell(wb2.sheets[0].cells!, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.hyperlink).toBeDefined()
     expect(cell!.hyperlink!.target).toBe("https://example.com")
   })
 
   it("preserves internal hyperlink through round-trip", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Go to B1",
       type: "string",
       hyperlink: { target: "", location: "Sheet1!B1" },
@@ -527,7 +528,7 @@ describe("roundtrip — preserve hyperlinks", () => {
     const saved = await saveXlsx(wb)
     const wb2 = await readXlsx(saved)
 
-    const cell = wb2.sheets[0].cells?.get("0,0")
+    const cell = getCell(wb2.sheets[0].cells, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.hyperlink).toBeDefined()
     expect(cell!.hyperlink!.location).toBe("Sheet1!B1")
@@ -622,8 +623,8 @@ describe("roundtrip — preserve images", () => {
 
 describe("roundtrip — preserve comments", () => {
   it("preserves comments through round-trip", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Hello",
       type: "string",
       comment: { text: "This is a comment", author: "Tester" },
@@ -642,7 +643,7 @@ describe("roundtrip — preserve comments", () => {
     const wb2 = await readXlsx(saved)
 
     expect(wb2.sheets[0].cells).toBeDefined()
-    const cell = wb2.sheets[0].cells!.get("0,0")
+    const cell = getCell(wb2.sheets[0].cells!, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.comment).toBeDefined()
     expect(cell!.comment!.text).toBe("This is a comment")
@@ -650,13 +651,13 @@ describe("roundtrip — preserve comments", () => {
   })
 
   it("preserves multiple comments on different cells", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "A1",
       type: "string",
       comment: { text: "Comment on A1" },
     })
-    cells.set("1,1", {
+    setCell(cells, 1, 1, {
       value: "B2",
       type: "string",
       comment: { text: "Comment on B2", author: "Alice" },
@@ -677,8 +678,8 @@ describe("roundtrip — preserve comments", () => {
     const saved = await saveXlsx(wb)
     const wb2 = await readXlsx(saved)
 
-    const cellA1 = wb2.sheets[0].cells!.get("0,0")
-    const cellB2 = wb2.sheets[0].cells!.get("1,1")
+    const cellA1 = getCell(wb2.sheets[0].cells!, 0, 0)
+    const cellB2 = getCell(wb2.sheets[0].cells!, 1, 1)
     expect(cellA1?.comment?.text).toBe("Comment on A1")
     expect(cellB2?.comment?.text).toBe("Comment on B2")
     expect(cellB2?.comment?.author).toBe("Alice")
@@ -892,8 +893,8 @@ describe("roundtrip — complex scenarios", () => {
   })
 
   it("roundtrips with styles", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Bold",
       type: "string",
       style: {
@@ -916,7 +917,7 @@ describe("roundtrip — complex scenarios", () => {
     const wb2 = await readXlsx(saved, { readStyles: true })
     expect(wb2.sheets[0].rows[0][0]).toBe("Bold")
     // The style should be preserved as long as the cell has style info
-    const cell = wb2.sheets[0].cells?.get("0,0")
+    const cell = getCell(wb2.sheets[0].cells, 0, 0)
     expect(cell).toBeDefined()
     if (cell?.style?.font) {
       expect(cell.style.font.bold).toBe(true)

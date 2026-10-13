@@ -1,3 +1,5 @@
+import { getCell } from "../src/cell-store"
+import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { readXlsx } from "../src/xlsx/reader"
 import { writeXlsx } from "../src/xlsx/writer"
@@ -72,7 +74,7 @@ describe("a style-only cell does not inflate the grid", () => {
     // 16,126 columns wide — WVF is column 16,125, zero-based.
     expect(wb.sheets[0]!.rows).toHaveLength(45)
     expect(wb.sheets[0]!.rows[0]).toHaveLength(16126)
-    expect(wb.sheets[0]!.cells?.get("44,16125")).toBeDefined()
+    expect(getCell(wb.sheets[0]!.cells, 44, 16125)).toBeDefined()
   })
 })
 
@@ -121,7 +123,7 @@ describe("what still counts as carrying data", () => {
   it("an error value", async () => {
     const wb = await readXlsx(await sheetWith('<row r="1"><c r="C1" t="e"><v>#REF!</v></c></row>'))
 
-    expect(wb.sheets[0]!.rows[0]![2]).toBe("#REF!")
+    expect(wb.sheets[0]!.rows[0]![2]).toEqual(cellError("#REF!"))
   })
 
   it("an inline string", async () => {

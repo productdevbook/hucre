@@ -1,3 +1,4 @@
+import { createCellStore, setCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
@@ -7,7 +8,7 @@ import { XlsxStreamWriter } from "../src/xlsx/stream-writer"
 import { streamCsvRows, CsvStreamWriter } from "../src/csv/stream"
 import { parseCsv } from "../src/csv/reader"
 import { writeCsv } from "../src/csv/writer"
-import type { CellValue, WriteSheet } from "../src/_types"
+import type { CellValue, SheetInput } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -21,16 +22,16 @@ async function collectStreamRows(
   return rows
 }
 
-function collectSyncRows(gen: Generator<CellValue[], void, undefined>): CellValue[][] {
+async function collectCsvRows(
+  gen: AsyncGenerator<StreamRow, void, undefined>,
+): Promise<CellValue[][]> {
   const rows: CellValue[][] = []
-  for (const row of gen) {
-    rows.push(row)
-  }
+  for await (const row of gen) rows.push(row.values)
   return rows
 }
 
 /** Create a simple test XLSX via the regular writer */
-async function createTestXlsx(sheets: WriteSheet[]): Promise<Uint8Array> {
+async function createTestXlsx(sheets: SheetInput[]): Promise<Uint8Array> {
   return writeXlsx({ sheets })
 }
 
@@ -662,9 +663,9 @@ describe("streamXlsxRows — ReadableStream input", () => {
   }, 30_000)
 
   it("formula cells return cached result from ReadableStream", async () => {
-    const cells = new Map<string, { formula: string; formulaResult: number }>()
-    cells.set("0,2", { formula: "A1+B1", formulaResult: 30 })
-    cells.set("1,2", { formula: "A2+B2", formulaResult: 70 })
+    const cells = createCellStore<{ formula: string; formulaResult: number }>()
+    setCell(cells, 0, 2, { formula: "A1+B1", formulaResult: 30 })
+    setCell(cells, 1, 2, { formula: "A2+B2", formulaResult: 70 })
 
     const xlsx = await writeXlsx({
       sheets: [
@@ -893,9 +894,9 @@ describe("XlsxStreamWriter", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("streamCsvRows", () => {
-  it("streams rows from CSV string", () => {
+  it("streams rows from CSV string", async () => {
     const csv = "a,b,c\n1,2,3\n4,5,6"
-    const rows = collectSyncRows(streamCsvRows(csv))
+    const rows = await collectCsvRows(streamCsvRows(csv))
 
     expect(rows).toHaveLength(3)
     expect(rows[0]).toEqual(["a", "b", "c"])
@@ -903,18 +904,18 @@ describe("streamCsvRows", () => {
     expect(rows[2]).toEqual(["4", "5", "6"])
   })
 
-  it("values match non-streaming parse", () => {
+  it("values match non-streaming parse", async () => {
     const csv = 'name,age,city\n"Alice",30,"New York"\nBob,25,London'
 
-    const streamRows = collectSyncRows(streamCsvRows(csv))
+    const streamRows = await collectCsvRows(streamCsvRows(csv))
     const regularRows = parseCsv(csv)
 
     expect(streamRows).toEqual(regularRows)
   })
 
-  it("handles quoted fields", () => {
+  it("handles quoted fields", async () => {
     const csv = '"hello, world",simple,"with ""quotes"""\na,b,c'
-    const rows = collectSyncRows(streamCsvRows(csv))
+    const rows = await collectCsvRows(streamCsvRows(csv))
 
     expect(rows).toHaveLength(2)
     expect(rows[0][0]).toBe("hello, world")
@@ -922,9 +923,9 @@ describe("streamCsvRows", () => {
     expect(rows[0][2]).toBe('with "quotes"')
   })
 
-  it("type inference works per-row", () => {
+  it("type inference works per-row", async () => {
     const csv = "true,42,hello,2024-01-15\nfalse,3.14,world,not-a-date"
-    const rows = collectSyncRows(streamCsvRows(csv, { typeInference: true }))
+    const rows = await collectCsvRows(streamCsvRows(csv, { typeInference: true }))
 
     expect(rows).toHaveLength(2)
     expect(rows[0][0]).toBe(true)
@@ -938,11 +939,11 @@ describe("streamCsvRows", () => {
     expect(rows[1][3]).toBe("not-a-date")
   })
 
-  it("header row handling", () => {
+  it("header row handling", async () => {
     const csv = "name,age\nAlice,30\nBob,25"
-    const rows = collectSyncRows(streamCsvRows(csv, { header: true }))
+    const rows = await collectCsvRows(streamCsvRows(csv, { hasHeaderRow: true }))
 
-    // `header: true` marks the header row without consuming it, matching
+    // `hasHeaderRow: true` marks the header row without consuming it, matching
     // parseCsv — see #353. Use skipHeaderRow to drop it.
     expect(rows).toHaveLength(3)
     expect(rows[0]).toEqual(["name", "age"])
@@ -950,23 +951,25 @@ describe("streamCsvRows", () => {
     expect(rows[2]).toEqual(["Bob", "25"])
   })
 
-  it("skipHeaderRow consumes the header row", () => {
+  it("skipHeaderRow consumes the header row", async () => {
     const csv = "name,age\nAlice,30\nBob,25"
-    const rows = collectSyncRows(streamCsvRows(csv, { header: true, skipHeaderRow: true }))
+    const rows = await collectCsvRows(
+      streamCsvRows(csv, { hasHeaderRow: true, skipHeaderRow: true }),
+    )
 
     expect(rows).toHaveLength(2)
     expect(rows[0]).toEqual(["Alice", "30"])
     expect(rows[1]).toEqual(["Bob", "25"])
   })
 
-  it("empty input yields no rows", () => {
-    const rows = collectSyncRows(streamCsvRows(""))
+  it("empty input yields no rows", async () => {
+    const rows = await collectCsvRows(streamCsvRows(""))
     expect(rows).toHaveLength(0)
   })
 
-  it("handles CRLF line endings", () => {
+  it("handles CRLF line endings", async () => {
     const csv = "a,b\r\n1,2\r\n3,4"
-    const rows = collectSyncRows(streamCsvRows(csv))
+    const rows = await collectCsvRows(streamCsvRows(csv))
 
     expect(rows).toHaveLength(3)
     expect(rows[0]).toEqual(["a", "b"])
@@ -974,35 +977,35 @@ describe("streamCsvRows", () => {
     expect(rows[2]).toEqual(["3", "4"])
   })
 
-  it("handles trailing newline without extra empty row", () => {
+  it("handles trailing newline without extra empty row", async () => {
     const csv = "a,b\n1,2\n"
-    const rows = collectSyncRows(streamCsvRows(csv))
+    const rows = await collectCsvRows(streamCsvRows(csv))
 
     expect(rows).toHaveLength(2)
     expect(rows[0]).toEqual(["a", "b"])
     expect(rows[1]).toEqual(["1", "2"])
   })
 
-  it("skips BOM by default", () => {
+  it("skips BOM by default", async () => {
     const csv = "\uFEFFa,b\n1,2"
-    const rows = collectSyncRows(streamCsvRows(csv))
+    const rows = await collectCsvRows(streamCsvRows(csv))
 
     expect(rows).toHaveLength(2)
     expect(rows[0][0]).toBe("a")
   })
 
-  it("skips comment rows", () => {
+  it("skips comment rows", async () => {
     const csv = "# comment\na,b\n# another\n1,2"
-    const rows = collectSyncRows(streamCsvRows(csv, { comment: "#" }))
+    const rows = await collectCsvRows(streamCsvRows(csv, { comment: "#" }))
 
     expect(rows).toHaveLength(2)
     expect(rows[0]).toEqual(["a", "b"])
     expect(rows[1]).toEqual(["1", "2"])
   })
 
-  it("skips empty rows when configured", () => {
+  it("skips empty rows when configured", async () => {
     const csv = "a,b\n\n1,2\n\n3,4"
-    const rows = collectSyncRows(streamCsvRows(csv, { skipEmptyRows: true }))
+    const rows = await collectCsvRows(streamCsvRows(csv, { skipEmptyRows: true }))
 
     expect(rows).toHaveLength(3)
     expect(rows[0]).toEqual(["a", "b"])
@@ -1010,18 +1013,18 @@ describe("streamCsvRows", () => {
     expect(rows[2]).toEqual(["3", "4"])
   })
 
-  it("handles custom delimiter", () => {
+  it("handles custom delimiter", async () => {
     const csv = "a;b;c\n1;2;3"
-    const rows = collectSyncRows(streamCsvRows(csv, { delimiter: ";" }))
+    const rows = await collectCsvRows(streamCsvRows(csv, { delimiter: ";" }))
 
     expect(rows).toHaveLength(2)
     expect(rows[0]).toEqual(["a", "b", "c"])
     expect(rows[1]).toEqual(["1", "2", "3"])
   })
 
-  it("handles quoted fields with newlines inside", () => {
+  it("handles quoted fields with newlines inside", async () => {
     const csv = '"line1\nline2",b\nc,d'
-    const rows = collectSyncRows(streamCsvRows(csv))
+    const rows = await collectCsvRows(streamCsvRows(csv))
 
     expect(rows).toHaveLength(2)
     expect(rows[0][0]).toBe("line1\nline2")
@@ -1040,7 +1043,7 @@ describe("CsvStreamWriter", () => {
     writer.addRow(["a", "b", "c"])
     writer.addRow(["1", "2", "3"])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("a,b,c\r\n1,2,3")
   })
 
@@ -1059,7 +1062,7 @@ describe("CsvStreamWriter", () => {
     for (const row of rows) {
       writer.addRow(row)
     }
-    const result = writer.finish()
+    const result = writer.finishText()
 
     expect(result).toBe(expected)
   })
@@ -1071,7 +1074,7 @@ describe("CsvStreamWriter", () => {
     writer.addRow(["Alice", 30])
     writer.addRow(["Bob", 25])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("Name,Age\r\nAlice,30\r\nBob,25")
   })
 
@@ -1079,7 +1082,7 @@ describe("CsvStreamWriter", () => {
     const writer = new CsvStreamWriter({ bom: true })
     writer.addRow(["a", "b"])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("\uFEFFa,b")
   })
 
@@ -1087,7 +1090,7 @@ describe("CsvStreamWriter", () => {
     const writer = new CsvStreamWriter()
     writer.addRow(["text", 42, true, null, false])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("text,42,true,,false")
   })
 
@@ -1095,7 +1098,7 @@ describe("CsvStreamWriter", () => {
     const writer = new CsvStreamWriter()
     writer.addRow(["hello, world", "simple"])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe('"hello, world",simple')
   })
 
@@ -1103,7 +1106,7 @@ describe("CsvStreamWriter", () => {
     const writer = new CsvStreamWriter()
     writer.addRow(["line1\nline2", "ok"])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe('"line1\nline2",ok')
   })
 
@@ -1111,7 +1114,7 @@ describe("CsvStreamWriter", () => {
     const writer = new CsvStreamWriter()
     writer.addRow(['say "hello"', "ok"])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe('"say ""hello""",ok')
   })
 
@@ -1119,7 +1122,7 @@ describe("CsvStreamWriter", () => {
     const writer = new CsvStreamWriter({ delimiter: ";" })
     writer.addRow(["a", "b", "c"])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("a;b;c")
   })
 
@@ -1128,7 +1131,7 @@ describe("CsvStreamWriter", () => {
     writer.addRow(["a", "b"])
     writer.addRow(["1", "2"])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("a,b\r\n1,2")
   })
 
@@ -1137,13 +1140,13 @@ describe("CsvStreamWriter", () => {
     const writer = new CsvStreamWriter()
     writer.addRow([date])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("2024-07-04T00:00:00.000Z")
   })
 
   it("handles empty output", () => {
     const writer = new CsvStreamWriter()
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("")
   })
 
@@ -1151,7 +1154,7 @@ describe("CsvStreamWriter", () => {
     const writer = new CsvStreamWriter({ quoteStyle: "all" })
     writer.addRow(["a", "b"])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe('"a","b"')
   })
 
@@ -1162,7 +1165,7 @@ describe("CsvStreamWriter", () => {
     })
     writer.addRow([1, 2])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("\uFEFFX,Y\r\n1,2")
   })
 })

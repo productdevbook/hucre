@@ -1,0 +1,69 @@
+<!doctype html><meta charset="utf-8" /><title>hucre V2 runtime verification</title>
+<h1>hucre V2 browser and Worker verification</h1>
+<p id="runtime"></p>
+<p id="main">Browser: running</p>
+<p id="worker">Worker: waiting</p>
+<pre id="log"></pre>
+<script type="module">
+  const log = document.querySelector("#log")
+  const append = (...args) => {
+    log.textContent += args.join(" ") + "\n"
+  }
+  const original = console.log.bind(console)
+  console.log = (...args) => {
+    append(...args)
+    original(...args)
+  }
+  document.querySelector("#runtime").textContent = navigator.userAgent
+  try {
+    await import("/scripts/smoke.mjs")
+    const h = await import("/dist/index.mjs")
+    const encrypted = await h.writeXlsx(
+      { sheets: [{ name: "Crypto", rows: [["Name"], ["Ada"]] }] },
+      { encryption: { password: "local-test-only", spinCount: 32 } },
+    )
+    const decrypted = await h.readXlsx(encrypted, { password: "local-test-only" })
+    if (decrypted.sheets[0].rows[1][0] !== "Ada") throw new Error("browser crypto failed")
+    append("  ok   browser crypto round trip")
+    document.querySelector("#main").textContent =
+      "Browser: PASS — built ESM smoke and encrypted XLSX round trip"
+    const worker = new Worker("/worker.mjs", { type: "module" })
+    worker.onerror = (event) => {
+      document.querySelector("#worker").textContent = "Worker: FAIL — " + event.message
+      worker.terminate()
+    }
+    worker.onmessage = ({ data }) => {
+      if (data.log) append("worker", data.log)
+      if (data.ready) {
+        const workbook = {
+          sheets: [
+            {
+              name: "Clone",
+              rows: [],
+              cells: h.createCellStore([
+                [127, 2, { value: new Date("2026-10-05T00:00:00Z"), type: "date" }],
+              ]),
+            },
+          ],
+        }
+        worker.postMessage({ workbook, encrypted }, [encrypted.buffer])
+        if (encrypted.byteLength !== 0) throw new Error("buffer transfer failed")
+      }
+      if (data.done) {
+        const value = h.getCell(data.workbook.sheets[0].cells, 128, 2)?.value
+        const pass =
+          data.pass && value instanceof Date && value.toISOString() === "2026-10-05T00:00:00.000Z"
+        document.querySelector("#worker").textContent = pass
+          ? "Worker: PASS — built ESM smoke, native workbook cloning, buffer transfer and crypto"
+          : "Worker: FAIL — returned model"
+        worker.terminate()
+      }
+      if (data.error) {
+        document.querySelector("#worker").textContent = "Worker: FAIL — " + data.error
+        worker.terminate()
+      }
+    }
+  } catch (error) {
+    document.querySelector("#main").textContent = "Browser: FAIL — " + error.stack
+  }
+</script>

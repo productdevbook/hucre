@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { shiftFormula } from "../src/_refs"
 import { insertRows } from "../src/sheet-ops"
@@ -88,11 +89,11 @@ describe("through the operation a caller actually runs", () => {
     const sheet: Sheet = {
       name: "S",
       rows: [["a"], ["b"], ["c"]],
-      cells: new Map([["2,0", { value: 1, type: "formula", formula: "'My Sheet'!A3" }]]),
+      cells: createCellStore([[2, 0, { value: 1, type: "formula", formula: "'My Sheet'!A3" }]]),
     }
 
     insertRows(sheet, 0, 1)
 
-    expect(sheet.cells!.get("3,0")?.formula).toBe("'My Sheet'!A3")
+    expect(getCell(sheet.cells!, 3, 0)?.formula).toBe("'My Sheet'!A3")
   })
 })

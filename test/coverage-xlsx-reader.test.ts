@@ -1,3 +1,4 @@
+import { getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { ZipWriter } from "../src/zip/writer"
 import { readXlsx } from "../src/xlsx/reader"
@@ -475,8 +476,8 @@ describe("legacy comments", () => {
         `</commentList></comments>`,
     })
     const cells = wb.sheets[0].cells!
-    expect(cells.get("0,0")!.comment!.text).toBe("on data")
-    const orphan = cells.get("8,3")!
+    expect(getCell(cells, 0, 0)!.comment!.text).toBe("on data")
+    const orphan = getCell(cells, 8, 3)!
     expect(orphan.value).toBeNull()
     expect(orphan.comment!.text).toBe("orphan")
   })

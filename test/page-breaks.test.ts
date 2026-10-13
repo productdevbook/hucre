@@ -4,11 +4,11 @@ import { readXlsx } from "../src/xlsx/reader"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
 import { createSharedStrings, writeWorksheetXml } from "../src/xlsx/worksheet-writer"
 import { parseXml } from "../src/xml/parser"
-import type { WriteSheet } from "../src/_types"
+import type { SheetInput } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function writeXml(sheet: WriteSheet): string {
+function writeXml(sheet: SheetInput): string {
   const styles = createStylesCollector()
   const ss = createSharedStrings()
   const result = writeWorksheetXml(sheet, styles, ss)
@@ -27,7 +27,7 @@ function findChildren(el: { children: Array<unknown> }, localName: string): any[
 
 describe("page breaks — row breaks writing", () => {
   it("writes row breaks with correct XML structure", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["A"], ["B"], ["C"]],
       rowBreaks: [9, 24], // 0-based: break after row 10 and 25
@@ -55,7 +55,7 @@ describe("page breaks — row breaks writing", () => {
   })
 
   it("sorts row breaks in output", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["A"]],
       rowBreaks: [24, 9], // unsorted
@@ -77,7 +77,7 @@ describe("page breaks — row breaks writing", () => {
 
 describe("page breaks — column breaks writing", () => {
   it("writes column breaks with correct XML structure", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["A"]],
       colBreaks: [4], // 0-based: break after column E
@@ -104,7 +104,7 @@ describe("page breaks — column breaks writing", () => {
 
 describe("page breaks — both row and column breaks", () => {
   it("writes both row and column breaks", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["A"]],
       rowBreaks: [9],
@@ -123,7 +123,7 @@ describe("page breaks — both row and column breaks", () => {
 
 describe("page breaks — no breaks", () => {
   it("omits rowBreaks/colBreaks elements when no breaks defined", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["A"]],
     }
@@ -136,7 +136,7 @@ describe("page breaks — no breaks", () => {
   })
 
   it("omits elements for empty arrays", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["A"]],
       rowBreaks: [],

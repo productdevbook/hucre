@@ -5,7 +5,7 @@ import { addChart, getCharts } from "../src/xlsx/chart-helpers"
 import { cloneChart } from "../src/xlsx/chart-clone"
 import { copySheetToWorkbook } from "../src/sheet-ops"
 import { ZipReader } from "../src/zip/reader"
-import type { SheetChart, WriteSheet } from "../src/_types"
+import type { SheetChart, SheetInput } from "../src/_types"
 
 const decoder = new TextDecoder("utf-8")
 
@@ -19,7 +19,7 @@ async function readPart(data: Uint8Array, path: string): Promise<string> {
   return decoder.decode(bytes)
 }
 
-function dataRows(): WriteSheet {
+function dataRows(): SheetInput {
   return {
     name: "Data",
     rows: [
@@ -165,7 +165,7 @@ describe("issue #136 — model charts survive the roundtrip (saveXlsx)", () => {
     expect(parsed.length).toBe(kinds.length)
 
     // Compose a dashboard: clone each template chart onto a fresh sheet.
-    const dashboard: WriteSheet = {
+    const dashboard: SheetInput = {
       name: "Dashboard",
       rows: [
         ["Region", "Sales"],

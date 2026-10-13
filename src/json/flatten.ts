@@ -1,6 +1,7 @@
 // ── JSON Flatten ──────────────────────────────────────────────────────
 // Flatten nested objects/arrays into dot-path keyed CellValue records.
 
+import { isCellError } from "../cell-error"
 import type { CellValue } from "../_types"
 import { reviveIsoDate } from "../_date"
 
@@ -88,6 +89,12 @@ function walk(
 
   if (value instanceof Date) {
     out[prefix] = value
+    return
+  }
+
+  // An error is a leaf, and a text format carries its token.
+  if (isCellError(value)) {
+    out[prefix] = value.error
     return
   }
 

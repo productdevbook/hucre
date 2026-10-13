@@ -34,7 +34,9 @@ describe("valid base64 decodes to the bytes it encoded", () => {
     const image = imageFromBase64(PNG, "png", ANCHOR)
 
     // The PNG signature: 89 50 4E 47 0D 0A 1A 0A.
-    expect([...image.data.slice(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    expect(Array.from(image.data.slice(0, 8))).toEqual([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ])
     expect(image.type).toBe("png")
   })
 

@@ -16,9 +16,9 @@
 // `hucre/ods`, `hucre/json`, `hucre/xml` — is stable. If you only need
 // to read or write spreadsheets, you do not need anything here.
 //
-// Everything below is also still exported from the root for backward
-// compatibility, marked `@deprecated` there. This subpath is where they
-// belong.
+// The raw-XML parsers below are exported from here only. The chart
+// helpers that take a model (`cloneChart`, `addChart`, `getCharts`) are
+// also on the root, because they are not part of the parse pipeline.
 
 // ── Charts ─────────────────────────────────────────────────────────
 export { parseChart } from "./xlsx/chart-reader"

@@ -1,9 +1,10 @@
+import { createCellStore, setCell, getCell } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { ZipReader } from "../src/zip/reader"
 import { parseXml } from "../src/xml/parser"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
-import type { WriteSheet, Cell } from "../src/_types"
+import type { SheetInput, Cell } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -43,8 +44,8 @@ function findCellElements(doc: any): any[] {
 
 describe("shared formula writing", () => {
   it("writes shared formula master cell with t, si, ref, and formula text", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("1,1", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 1, 1, {
       formula: "A2*2",
       formulaType: "shared",
       formulaSharedIndex: 0,
@@ -52,7 +53,7 @@ describe("shared formula writing", () => {
       formulaResult: 10,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Val", "Doubled"], [5]],
       cells,
@@ -76,16 +77,16 @@ describe("shared formula writing", () => {
   })
 
   it("writes shared formula slave cell with t, si, and self-closing f", async () => {
-    const cells = new Map<string, Partial<Cell>>()
+    const cells = createCellStore<Partial<Cell>>()
     // Slave cell: formula text is empty string, has si but no ref
-    cells.set("2,1", {
+    setCell(cells, 2, 1, {
       formula: "",
       formulaType: "shared",
       formulaSharedIndex: 0,
       formulaResult: 14,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Val", "Doubled"], [5], [7]],
       cells,
@@ -112,9 +113,9 @@ describe("shared formula writing", () => {
   })
 
   it("writes master + slave shared formula cells together", async () => {
-    const cells = new Map<string, Partial<Cell>>()
+    const cells = createCellStore<Partial<Cell>>()
     // Master cell B2: has formula text and ref
-    cells.set("1,1", {
+    setCell(cells, 1, 1, {
       formula: "A2*2",
       formulaType: "shared",
       formulaSharedIndex: 0,
@@ -122,21 +123,21 @@ describe("shared formula writing", () => {
       formulaResult: 10,
     })
     // Slave cell B3
-    cells.set("2,1", {
+    setCell(cells, 2, 1, {
       formula: "",
       formulaType: "shared",
       formulaSharedIndex: 0,
       formulaResult: 14,
     })
     // Slave cell B4
-    cells.set("3,1", {
+    setCell(cells, 3, 1, {
       formula: "",
       formulaType: "shared",
       formulaSharedIndex: 0,
       formulaResult: 20,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Val", "Doubled"], [5], [7], [10]],
       cells,
@@ -171,15 +172,15 @@ describe("shared formula writing", () => {
 
 describe("array formula writing", () => {
   it("writes array formula with t=array and ref", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("1,1", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 1, 1, {
       formula: "SUM(A2:A10*C2:C10)",
       formulaType: "array",
       formulaRef: "B2:B10",
       formulaResult: 100,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["A", "B"], [1]],
       cells,
@@ -204,8 +205,8 @@ describe("array formula writing", () => {
   // CT_Cell carries `cm` (§18.3.1.4), CT_CellFormula has no such
   // attribute, so Excel never saw the marker at all.
   it("writes dynamic array formula with cm=1 on the cell, not the formula", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("1,1", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 1, 1, {
       formula: "SORT(A2:A10)",
       formulaType: "array",
       formulaRef: "B2:B10",
@@ -213,7 +214,7 @@ describe("array formula writing", () => {
       formulaResult: 1,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["A", "B"], [3]],
       cells,
@@ -235,8 +236,8 @@ describe("array formula writing", () => {
   })
 
   it("marks a plain (non-array) dynamic formula on the cell too", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", { formula: "UNIQUE(B1:B5)", formulaDynamic: true })
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, { formula: "UNIQUE(B1:B5)", formulaDynamic: true })
 
     const xlsx = await writeXlsx({ sheets: [{ name: "Sheet1", rows: [[null]], cells }] })
     const doc = parseXml(await extractXml(xlsx, "xl/worksheets/sheet1.xml"))
@@ -250,11 +251,11 @@ describe("array formula writing", () => {
 // ── The metadata part `cm` indexes into ──────────────────────────────
 
 describe("dynamic array cell metadata part", () => {
-  const dynamicSheet: WriteSheet = {
+  const dynamicSheet: SheetInput = {
     name: "Sheet1",
     rows: [[null]],
-    cells: new Map<string, Partial<Cell>>([
-      ["0,0", { formula: "UNIQUE(B1:B5)", formulaDynamic: true }],
+    cells: createCellStore<Partial<Cell>>([
+      [0, 0, { formula: "UNIQUE(B1:B5)", formulaDynamic: true }],
     ]),
   }
 
@@ -313,8 +314,8 @@ describe("dynamic array cell metadata part", () => {
         {
           name: "Sheet1",
           rows: [[1]],
-          cells: new Map<string, Partial<Cell>>([
-            ["0,1", { formula: "SUM(A1:A2)", formulaType: "array", formulaRef: "B1:B1" }],
+          cells: createCellStore<Partial<Cell>>([
+            [0, 1, { formula: "SUM(A1:A2)", formulaType: "array", formulaRef: "B1:B1" }],
           ]),
         },
       ],
@@ -329,13 +330,13 @@ describe("dynamic array cell metadata part", () => {
 
 describe("normal formula writing (backward compatibility)", () => {
   it("writes normal formula without t attribute", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,1", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 1, {
       formula: "SUM(A1:A10)",
       formulaResult: 55,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [[1]],
       cells,
@@ -363,22 +364,22 @@ describe("normal formula writing (backward compatibility)", () => {
 
 describe("shared formula reading", () => {
   it("reads shared formula master cell with type, si, and ref", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("1,1", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 1, 1, {
       formula: "A2*2",
       formulaType: "shared",
       formulaSharedIndex: 0,
       formulaRef: "B2:B4",
       formulaResult: 10,
     })
-    cells.set("2,1", {
+    setCell(cells, 2, 1, {
       formula: "",
       formulaType: "shared",
       formulaSharedIndex: 0,
       formulaResult: 14,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Val", "Doubled"], [5], [7]],
       cells,
@@ -389,7 +390,7 @@ describe("shared formula reading", () => {
     const sheetCells = workbook.sheets[0].cells!
 
     // Master cell B2 = "1,1"
-    const master = sheetCells.get("1,1")
+    const master = getCell(sheetCells, 1, 1)
     expect(master).toBeDefined()
     expect(master!.formula).toBe("A2*2")
     expect(master!.formulaType).toBe("shared")
@@ -397,7 +398,7 @@ describe("shared formula reading", () => {
     expect(master!.formulaRef).toBe("B2:B4")
 
     // Slave cell B3 = "2,1"
-    const slave = sheetCells.get("2,1")
+    const slave = getCell(sheetCells, 2, 1)
     expect(slave).toBeDefined()
     expect(slave!.formula).toBe("")
     expect(slave!.formulaType).toBe("shared")
@@ -411,15 +412,15 @@ describe("shared formula reading", () => {
 
 describe("array formula reading", () => {
   it("reads array formula with type and ref", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("1,1", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 1, 1, {
       formula: "SUM(A2:A10*C2:C10)",
       formulaType: "array",
       formulaRef: "B2:B10",
       formulaResult: 100,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["A", "B"], [1]],
       cells,
@@ -429,7 +430,7 @@ describe("array formula reading", () => {
     const workbook = await readXlsx(xlsx)
     const sheetCells = workbook.sheets[0].cells!
 
-    const cell = sheetCells.get("1,1")
+    const cell = getCell(sheetCells, 1, 1)
     expect(cell).toBeDefined()
     expect(cell!.formula).toBe("SUM(A2:A10*C2:C10)")
     expect(cell!.formulaType).toBe("array")
@@ -438,8 +439,8 @@ describe("array formula reading", () => {
   })
 
   it("reads dynamic array formula with formulaDynamic flag", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("1,1", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 1, 1, {
       formula: "SORT(A2:A10)",
       formulaType: "array",
       formulaRef: "B2:B10",
@@ -447,7 +448,7 @@ describe("array formula reading", () => {
       formulaResult: 1,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["A", "B"], [3]],
       cells,
@@ -457,7 +458,7 @@ describe("array formula reading", () => {
     const workbook = await readXlsx(xlsx)
     const sheetCells = workbook.sheets[0].cells!
 
-    const cell = sheetCells.get("1,1")
+    const cell = getCell(sheetCells, 1, 1)
     expect(cell).toBeDefined()
     expect(cell!.formula).toBe("SORT(A2:A10)")
     expect(cell!.formulaType).toBe("array")
@@ -470,9 +471,9 @@ describe("array formula reading", () => {
 
 describe("shared formula round-trip", () => {
   it("preserves shared formula metadata through write → read", async () => {
-    const cells = new Map<string, Partial<Cell>>()
+    const cells = createCellStore<Partial<Cell>>()
     // Master
-    cells.set("1,1", {
+    setCell(cells, 1, 1, {
       formula: "A2+10",
       formulaType: "shared",
       formulaSharedIndex: 0,
@@ -481,7 +482,7 @@ describe("shared formula round-trip", () => {
     })
     // Slaves
     for (let r = 2; r <= 4; r++) {
-      cells.set(`${r},1`, {
+      setCell(cells, r, 1, {
         formula: "",
         formulaType: "shared",
         formulaSharedIndex: 0,
@@ -489,7 +490,7 @@ describe("shared formula round-trip", () => {
       })
     }
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Input", "Output"], [10], [20], [30], [40]],
       cells,
@@ -500,7 +501,7 @@ describe("shared formula round-trip", () => {
     const readCells = workbook.sheets[0].cells!
 
     // Verify master
-    const master = readCells.get("1,1")
+    const master = getCell(readCells, 1, 1)
     expect(master!.formulaType).toBe("shared")
     expect(master!.formulaSharedIndex).toBe(0)
     expect(master!.formulaRef).toBe("B2:B5")
@@ -508,7 +509,7 @@ describe("shared formula round-trip", () => {
 
     // Verify slaves
     for (let r = 2; r <= 4; r++) {
-      const slave = readCells.get(`${r},1`)
+      const slave = getCell(readCells, r, 1)
       expect(slave).toBeDefined()
       expect(slave!.formulaType).toBe("shared")
       expect(slave!.formulaSharedIndex).toBe(0)
@@ -518,16 +519,16 @@ describe("shared formula round-trip", () => {
   })
 
   it("preserves multiple shared formula groups", async () => {
-    const cells = new Map<string, Partial<Cell>>()
+    const cells = createCellStore<Partial<Cell>>()
     // Group 0: B column
-    cells.set("1,1", {
+    setCell(cells, 1, 1, {
       formula: "A2*2",
       formulaType: "shared",
       formulaSharedIndex: 0,
       formulaRef: "B2:B3",
       formulaResult: 10,
     })
-    cells.set("2,1", {
+    setCell(cells, 2, 1, {
       formula: "",
       formulaType: "shared",
       formulaSharedIndex: 0,
@@ -535,21 +536,21 @@ describe("shared formula round-trip", () => {
     })
 
     // Group 1: C column
-    cells.set("1,2", {
+    setCell(cells, 1, 2, {
       formula: "A2*3",
       formulaType: "shared",
       formulaSharedIndex: 1,
       formulaRef: "C2:C3",
       formulaResult: 15,
     })
-    cells.set("2,2", {
+    setCell(cells, 2, 2, {
       formula: "",
       formulaType: "shared",
       formulaSharedIndex: 1,
       formulaResult: 21,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Val", "x2", "x3"], [5], [7]],
       cells,
@@ -560,12 +561,12 @@ describe("shared formula round-trip", () => {
     const readCells = workbook.sheets[0].cells!
 
     // Group 0
-    expect(readCells.get("1,1")!.formulaSharedIndex).toBe(0)
-    expect(readCells.get("2,1")!.formulaSharedIndex).toBe(0)
+    expect(getCell(readCells, 1, 1)!.formulaSharedIndex).toBe(0)
+    expect(getCell(readCells, 2, 1)!.formulaSharedIndex).toBe(0)
 
     // Group 1
-    expect(readCells.get("1,2")!.formulaSharedIndex).toBe(1)
-    expect(readCells.get("2,2")!.formulaSharedIndex).toBe(1)
+    expect(getCell(readCells, 1, 2)!.formulaSharedIndex).toBe(1)
+    expect(getCell(readCells, 2, 2)!.formulaSharedIndex).toBe(1)
   })
 })
 
@@ -573,15 +574,15 @@ describe("shared formula round-trip", () => {
 
 describe("array formula round-trip", () => {
   it("preserves array formula metadata through write → read", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("1,1", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 1, 1, {
       formula: "SUM(A2:A5*C2:C5)",
       formulaType: "array",
       formulaRef: "B2:B2",
       formulaResult: 100,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["A", "B", "C"],
@@ -594,7 +595,7 @@ describe("array formula round-trip", () => {
     const workbook = await readXlsx(xlsx)
     const readCells = workbook.sheets[0].cells!
 
-    const cell = readCells.get("1,1")
+    const cell = getCell(readCells, 1, 1)
     expect(cell!.formulaType).toBe("array")
     expect(cell!.formulaRef).toBe("B2:B2")
     expect(cell!.formula).toBe("SUM(A2:A5*C2:C5)")
@@ -602,8 +603,8 @@ describe("array formula round-trip", () => {
   })
 
   it("preserves dynamic array formula through write → read", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,1", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 1, {
       formula: "UNIQUE(A1:A5)",
       formulaType: "array",
       formulaRef: "B1:B5",
@@ -611,7 +612,7 @@ describe("array formula round-trip", () => {
       formulaResult: "alpha",
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["alpha"]],
       cells,
@@ -621,7 +622,7 @@ describe("array formula round-trip", () => {
     const workbook = await readXlsx(xlsx)
     const readCells = workbook.sheets[0].cells!
 
-    const cell = readCells.get("0,1")
+    const cell = getCell(readCells, 0, 1)
     expect(cell!.formulaType).toBe("array")
     expect(cell!.formulaRef).toBe("B1:B5")
     expect(cell!.formulaDynamic).toBe(true)
@@ -633,13 +634,13 @@ describe("array formula round-trip", () => {
 
 describe("normal formula round-trip", () => {
   it("normal formula has no formulaType after round-trip", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,1", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 1, {
       formula: "A1+1",
       formulaResult: 6,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [[5]],
       cells,
@@ -649,7 +650,7 @@ describe("normal formula round-trip", () => {
     const workbook = await readXlsx(xlsx)
     const readCells = workbook.sheets[0].cells!
 
-    const cell = readCells.get("0,1")
+    const cell = getCell(readCells, 0, 1)
     expect(cell).toBeDefined()
     expect(cell!.formula).toBe("A1+1")
     expect(cell!.formulaType).toBeUndefined()

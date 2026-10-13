@@ -12,6 +12,7 @@
 // for `buildBarAxes` / `buildScatterAxes` and into chart/dataTable for
 // `buildDataTable`.
 
+import { InvalidArgumentError } from "../../errors"
 import type {
   ChartAxisCrossBetween,
   ChartAxisInfo,
@@ -1061,7 +1062,7 @@ export function buildPlotArea(chart: SheetChart, sheetName: string): string {
     default: {
       // exhaustiveness guard
       const _exhaustive: never = chart.type
-      throw new Error(`Unsupported chart type: ${String(_exhaustive)}`)
+      throw new InvalidArgumentError(`Unsupported chart type: ${String(_exhaustive)}`)
     }
   }
 

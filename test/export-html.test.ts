@@ -1,3 +1,4 @@
+import { createCellStore, setCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { toHtml } from "../src/export/html"
 import type { Sheet, Cell, MergeRange } from "../src/_types"
@@ -37,7 +38,7 @@ describe("toHtml", () => {
       ["Name", "Value"],
       ["foo", 42],
     ])
-    const html = toHtml(sheet, { headerRow: true, classes: false })
+    const html = toHtml(sheet, { hasHeaderRow: true, classes: false })
     expect(html).toContain("<thead>")
     expect(html).toContain("</thead>")
     expect(html).toContain('<th scope="col">Name</th>')
@@ -72,8 +73,8 @@ describe("toHtml", () => {
   })
 
   it("inline styles from CellStyle (bold, color, background, alignment)", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "Bold",
       type: "string",
       style: {
@@ -91,8 +92,8 @@ describe("toHtml", () => {
   })
 
   it("inline styles: border", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "Bordered",
       type: "string",
       style: {
@@ -109,8 +110,8 @@ describe("toHtml", () => {
   })
 
   it("inline styles: italic, underline, strikethrough, font-size, font-family", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "Styled",
       type: "string",
       style: {
@@ -241,7 +242,7 @@ describe("toHtml", () => {
       ["Name", "Price"],
       ["Widget", 9.99],
     ])
-    const html = toHtml(sheet, { includeStyleTag: true, headerRow: true })
+    const html = toHtml(sheet, { includeStyleTag: true, hasHeaderRow: true })
     // Light mode styles
     expect(html).toContain("color:#1a1a1a")
     expect(html).toContain("background:#fff")
@@ -299,8 +300,8 @@ describe("toHtml", () => {
   })
 
   it("styles: false does not add style attribute", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "Styled",
       type: "string",
       style: { font: { bold: true } },
@@ -326,8 +327,8 @@ describe("toHtml", () => {
   })
 
   it("header row with classes and styles combined", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "Name",
       type: "string",
       style: { font: { bold: true } },
@@ -339,15 +340,15 @@ describe("toHtml", () => {
       ],
       { cells },
     )
-    const html = toHtml(sheet, { headerRow: true, styles: true, classes: true })
+    const html = toHtml(sheet, { hasHeaderRow: true, styles: true, classes: true })
     expect(html).toContain("<th")
     expect(html).toContain("font-weight:bold")
     expect(html).toContain('class="hucre-num"')
   })
 
   it("dashed and dotted border styles", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "X",
       type: "string",
       style: {
@@ -364,8 +365,8 @@ describe("toHtml", () => {
   })
 
   it("medium border width", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "X",
       type: "string",
       style: {

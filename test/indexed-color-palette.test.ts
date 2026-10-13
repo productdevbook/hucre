@@ -1,3 +1,4 @@
+import { cellEntries } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { readFileSync } from "node:fs"
 import { parseStyles } from "../src/xlsx/styles"
@@ -160,7 +161,7 @@ describe("real files keep working", () => {
     // point of the boundary cases above.
     const bytes = new Uint8Array(readFileSync("test/fixtures/excel-styled.xlsx"))
     const wb = await readXlsx(bytes, { readStyles: true })
-    const styled = [...(wb.sheets[0]!.cells?.values() ?? [])]
+    const styled = [...cellEntries(wb.sheets[0]!.cells)].map(([, , cell]) => cell)
 
     expect(styled.length).toBeGreaterThan(0)
     for (const cell of styled) {

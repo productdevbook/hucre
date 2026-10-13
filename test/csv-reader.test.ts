@@ -330,7 +330,7 @@ describe("parseCsv", () => {
 
   it("should parse CSV objects with headers", () => {
     const { data, headers } = parseCsvObjects("name,age\nAlice,30\nBob,25", {
-      header: true,
+      hasHeaderRow: true,
     })
     expect(headers).toEqual(["name", "age"])
     expect(data).toEqual([
@@ -341,26 +341,26 @@ describe("parseCsv", () => {
 
   it("should handle header row with trailing spaces", () => {
     const { headers } = parseCsvObjects(" name , age \nAlice,30", {
-      header: true,
+      hasHeaderRow: true,
     })
     expect(headers).toEqual(["name", "age"])
   })
 
   it("should return empty data and headers for empty input", () => {
-    const { data, headers } = parseCsvObjects("", { header: true })
+    const { data, headers } = parseCsvObjects("", { hasHeaderRow: true })
     expect(data).toEqual([])
     expect(headers).toEqual([])
   })
 
   it("should handle only headers, no data rows", () => {
-    const { data, headers } = parseCsvObjects("name,age\n", { header: true })
+    const { data, headers } = parseCsvObjects("name,age\n", { hasHeaderRow: true })
     expect(headers).toEqual(["name", "age"])
     expect(data).toEqual([])
   })
 
   it("should apply type inference on object values", () => {
     const { data } = parseCsvObjects("name,age\nAlice,30", {
-      header: true,
+      hasHeaderRow: true,
       typeInference: true,
     })
     expect(data[0]!.age).toBe(30)

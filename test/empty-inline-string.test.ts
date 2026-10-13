@@ -112,7 +112,7 @@ describe("hucre's three XLSX writers agree with each other", () => {
     const variants = [
       await writeXlsx({ sheets: [{ name: "S", rows: ROWS }] }),
       await drain(writeXlsxStream(ROWS, { name: "S" })),
-      await drain(writeXlsxStream(ROWS, { name: "S", inlineStrings: true })),
+      await drain(writeXlsxStream(ROWS, { name: "S", stringMode: "inline" })),
       await incremental.finish(),
     ]
 

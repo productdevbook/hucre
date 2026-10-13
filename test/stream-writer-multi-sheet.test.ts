@@ -1,3 +1,4 @@
+import { getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import {
   writeXlsxStream,
@@ -137,7 +138,7 @@ describe("writeXlsxStreamSheets", () => {
           { name: "One", rows: [["repeated"]] },
           { name: "Two", rows: [["repeated"]] },
         ],
-        { inlineStrings: false },
+        { stringMode: "shared" },
       ),
     )
     const wb = await readXlsx(bytes)
@@ -321,7 +322,7 @@ describe("writeXlsxStreamSheets — formatting is per sheet", () => {
 
     const [report, rejects] = wb.sheets
 
-    expect(report!.cells!.get("0,0")!.style!.font!.name).toBe("Manrope")
+    expect(getCell(report!.cells!, 0, 0)!.style!.font!.name).toBe("Manrope")
     expect(report!.rowDefs!.get(0)!.height).toBe(30)
     expect(report!.merges).toEqual([{ startRow: 0, startCol: 0, endRow: 0, endCol: 2 }])
 

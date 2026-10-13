@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeOds } from "../src/ods/writer"
 import { readOds } from "../src/ods/reader"
@@ -28,11 +29,11 @@ async function styleOf(numFmt: string): Promise<CellStyle | undefined> {
       {
         name: "S",
         rows: [[1234.5]],
-        cells: new Map([["0,0", { value: 1234.5, style: { numFmt } }]]),
+        cells: createCellStore([[0, 0, { value: 1234.5, style: { numFmt } }]]),
       },
     ],
   })
-  return (await readOds(bytes, { readStyles: true })).sheets[0]!.cells?.get("0,0")?.style
+  return getCell((await readOds(bytes, { readStyles: true })).sheets[0]!.cells, 0, 0)?.style
 }
 
 async function contentXml(numFmt: string): Promise<string> {
@@ -41,7 +42,7 @@ async function contentXml(numFmt: string): Promise<string> {
       {
         name: "S",
         rows: [[1234.5]],
-        cells: new Map([["0,0", { value: 1234.5, style: { numFmt } }]]),
+        cells: createCellStore([[0, 0, { value: 1234.5, style: { numFmt } }]]),
       },
     ],
   })
@@ -77,11 +78,11 @@ describe("a scientific format survives ODS", () => {
         {
           name: "S",
           rows: [[1234.5]],
-          cells: new Map([["0,0", { value: 1234.5, style: { numFmt: "0.00E+00" } }]]),
+          cells: createCellStore([[0, 0, { value: 1234.5, style: { numFmt: "0.00E+00" } }]]),
         },
       ],
     })
-    const back = (await readXlsx(bytes, { readStyles: true })).sheets[0]!.cells?.get("0,0")
+    const back = getCell((await readXlsx(bytes, { readStyles: true })).sheets[0]!.cells, 0, 0)
 
     expect(back?.style?.numFmt).toBe("0.00E+00")
   })

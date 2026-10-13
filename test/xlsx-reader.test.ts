@@ -1,3 +1,5 @@
+import { getCell } from "../src/cell-store"
+import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { ZipWriter } from "../src/zip/writer"
 import { readXlsx } from "../src/xlsx/reader"
@@ -551,8 +553,8 @@ describe("readXlsx", () => {
     // The formula cell should have the cached numeric value
     expect(wb.sheets[0].rows[1][0]).toBe(30)
     // Cell details should contain the formula
-    expect(wb.sheets[0].cells?.get("1,0")?.formula).toBe("A1+B1")
-    expect(wb.sheets[0].cells?.get("1,0")?.formulaResult).toBe(30)
+    expect(getCell(wb.sheets[0].cells, 1, 0)?.formula).toBe("A1+B1")
+    expect(getCell(wb.sheets[0].cells, 1, 0)?.formulaResult).toBe(30)
   })
 
   it("reads date cells via number format detection", async () => {
@@ -734,8 +736,8 @@ describe("readXlsx", () => {
     expect(wb.sheets[0].rows[0][0]).toBe(1234.56)
     expect(wb.sheets[0].rows[0][1]).toBe(0.75)
     // With readStyles, cells should have style info
-    expect(wb.sheets[0].cells?.get("0,0")?.style?.numFmt).toBe("#,##0.00")
-    expect(wb.sheets[0].cells?.get("0,1")?.style?.numFmt).toBe("0.00%")
+    expect(getCell(wb.sheets[0].cells, 0, 0)?.style?.numFmt).toBe("#,##0.00")
+    expect(getCell(wb.sheets[0].cells, 0, 1)?.style?.numFmt).toBe("0.00%")
   })
 
   it("reads rich text cells from shared strings", async () => {
@@ -759,11 +761,11 @@ describe("readXlsx", () => {
 
     const wb = await readXlsx(xlsx)
     expect(wb.sheets[0].rows[0][0]).toBe("Bold and Italic")
-    expect(wb.sheets[0].cells?.get("0,0")?.richText).toHaveLength(3)
-    expect(wb.sheets[0].cells?.get("0,0")?.richText![0].text).toBe("Bold")
-    expect(wb.sheets[0].cells?.get("0,0")?.richText![0].font?.bold).toBe(true)
-    expect(wb.sheets[0].cells?.get("0,0")?.richText![2].text).toBe("Italic")
-    expect(wb.sheets[0].cells?.get("0,0")?.richText![2].font?.italic).toBe(true)
+    expect(getCell(wb.sheets[0].cells, 0, 0)?.richText).toHaveLength(3)
+    expect(getCell(wb.sheets[0].cells, 0, 0)?.richText![0].text).toBe("Bold")
+    expect(getCell(wb.sheets[0].cells, 0, 0)?.richText![0].font?.bold).toBe(true)
+    expect(getCell(wb.sheets[0].cells, 0, 0)?.richText![2].text).toBe("Italic")
+    expect(getCell(wb.sheets[0].cells, 0, 0)?.richText![2].font?.italic).toBe(true)
   })
 
   it("reads with readStyles option", async () => {
@@ -793,12 +795,12 @@ describe("readXlsx", () => {
 
     // Without readStyles
     const wb1 = await readXlsx(xlsx)
-    expect(wb1.sheets[0].cells?.get("0,0")?.style).toBeUndefined()
+    expect(getCell(wb1.sheets[0].cells, 0, 0)?.style).toBeUndefined()
 
     // With readStyles
     const wb2 = await readXlsx(xlsx, { readStyles: true })
-    expect(wb2.sheets[0].cells?.get("0,0")?.style?.font?.bold).toBe(true)
-    expect(wb2.sheets[0].cells?.get("0,0")?.style?.font?.name).toBe("Arial")
+    expect(getCell(wb2.sheets[0].cells, 0, 0)?.style?.font?.bold).toBe(true)
+    expect(getCell(wb2.sheets[0].cells, 0, 0)?.style?.font?.name).toBe("Arial")
   })
 
   it("reads 1904 date system", async () => {
@@ -983,9 +985,9 @@ describe("readXlsx", () => {
     })
 
     const wb = await readXlsx(xlsx)
-    expect(wb.sheets[0].rows[0][0]).toBe("#VALUE!")
-    expect(wb.sheets[0].rows[0][1]).toBe("#REF!")
-    expect(wb.sheets[0].rows[0][2]).toBe("#DIV/0!")
+    expect(wb.sheets[0].rows[0][0]).toEqual(cellError("#VALUE!"))
+    expect(wb.sheets[0].rows[0][1]).toEqual(cellError("#REF!"))
+    expect(wb.sheets[0].rows[0][2]).toEqual(cellError("#DIV/0!"))
   })
 
   it("reads str type cells (formula string results)", async () => {
@@ -1002,7 +1004,7 @@ describe("readXlsx", () => {
 
     const wb = await readXlsx(xlsx)
     expect(wb.sheets[0].rows[0][0]).toBe("Hello World")
-    expect(wb.sheets[0].cells?.get("0,0")?.formula).toBe('CONCATENATE("Hello"," ","World")')
+    expect(getCell(wb.sheets[0].cells, 0, 0)?.formula).toBe('CONCATENATE("Hello"," ","World")')
   })
 
   it("accepts ArrayBuffer input", async () => {

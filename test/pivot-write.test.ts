@@ -3,7 +3,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { ZipReader } from "../src/zip/reader"
 import { resolvePivotSource, writePivotTable } from "../src/xlsx/pivot-writer"
-import type { WritePivotTable, WriteSheet } from "../src/_types"
+import type { WritePivotTable, SheetInput } from "../src/_types"
 
 const decoder = new TextDecoder("utf-8")
 
@@ -368,8 +368,8 @@ describe("writePivotTable", () => {
 // ── End-to-end through writeXlsx ──────────────────────────────────────
 
 describe("writeXlsx — pivot tables", () => {
-  function buildSheet(): { dataSheet: WriteSheet; pivotSheet: WriteSheet } {
-    const dataSheet: WriteSheet = {
+  function buildSheet(): { dataSheet: SheetInput; pivotSheet: SheetInput } {
+    const dataSheet: SheetInput = {
       name: "Data",
       rows: [
         ["Region", "Product", "Revenue"],
@@ -379,7 +379,7 @@ describe("writeXlsx — pivot tables", () => {
         ["US", "B", 75],
       ],
     }
-    const pivotSheet: WriteSheet = {
+    const pivotSheet: SheetInput = {
       name: "Pivot",
       rows: [],
       pivotTables: [

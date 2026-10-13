@@ -8,15 +8,18 @@
 //
 // Internal: not exported from any entry point.
 
-import type { CellValue, Sheet, Workbook } from "./_types"
+import type { Cell, CellValue, Sheet, Workbook } from "./_types"
+import type { ValueSheet } from "./_sheet-values"
+import { sheetGrid, type GridProjectionOptions } from "./_sheet-grid"
+import { assertGridSize } from "./_grid"
 import { ParseError } from "./errors"
 
 /** The projection knobs shared by the object readers. */
-export interface RowsToObjectsOptions {
-  /** Row index to use as headers. Callers resolve the default. */
-  headerRow: number
-  /** Skip rows where every cell is null/undefined/"". */
-  skipEmptyRows: boolean
+export interface RowsToObjectsOptions extends GridProjectionOptions {
+  /** 0-based header row. Default: 0. */
+  headerRow?: number
+  /** Skip rows where every effective cell is null/"". Default: true. */
+  skipEmptyRows?: boolean
   /** Transform header values (after String/trim normalization). */
   transformHeader?: (header: string, index: number) => string
   /** Transform each cell value. */
@@ -26,7 +29,7 @@ export interface RowsToObjectsOptions {
     rowIndex: number,
     colIndex: number,
   ) => CellValue
-  /** Maximum number of data rows to return (after the header row). */
+  /** Maximum returned data rows, after empty-row filtering; not a parse limit. */
   maxRows?: number
 }
 
@@ -67,67 +70,66 @@ export function disambiguate(headers: string[]): string[] {
   })
 }
 
-/**
- * Project `rows` onto objects keyed by the header row.
- *
- * `rowIndex` handed to `transformValue` is the index into `rows`, not the
- * index into the returned data — the row's position in the source is what
- * callers reach for when reporting problems.
- */
+/** Lazy table projection; output bounds count selected rows, not sparse gaps. */
+export function projectTable(
+  sheet: ValueSheet<Partial<Cell>>,
+  options: RowsToObjectsOptions = {},
+): { headers: string[]; rows: Generator<[number, CellValue[]]> } {
+  const grid = sheetGrid(sheet)
+  const headerRow = options.headerRow ?? 0
+  if (!Number.isInteger(headerRow) || headerRow < 0 || headerRow >= grid.height) {
+    return { headers: [], rows: (function* (): Generator<[number, CellValue[]]> {})() }
+  }
+  const skipEmptyRows = options.skipEmptyRows ?? true
+  const available = grid.height - headerRow - 1
+  const dataRows =
+    options.maxRows !== undefined && options.maxRows < available
+      ? Math.max(0, Math.ceil(options.maxRows))
+      : available
+  // Keeping blanks makes the output rectangle known up front. A per-row
+  // check alone would build up to the limit before rejecting a sparse
+  // corner, and would already have invoked user transforms on that work.
+  assertGridSize(skipEmptyRows ? 1 : dataRows + 1, grid.width, options.maxTotalCells)
+  const headers = disambiguate(
+    grid.row(headerRow).map((value, col) => {
+      const header = value === null ? "" : String(value).trim()
+      return options.transformHeader ? options.transformHeader(header, col) : header
+    }),
+  )
+  function* rows(): Generator<[number, CellValue[]]> {
+    let count = 0
+    for (const index of grid.indexes(headerRow + 1, skipEmptyRows)) {
+      if (options.maxRows !== undefined && count >= options.maxRows) break
+      // Check before even one more row is padded. Sparse reads bypass the
+      // reader's box limit, but an object export still allocates its output.
+      assertGridSize(count + 2, headers.length, options.maxTotalCells)
+      yield [index, grid.row(index, headers.length)]
+      count++
+    }
+  }
+  return { headers, rows: rows() }
+}
+
+/** Prototype-looking labels are ordinary own properties, never setters. */
+export function rowObject(headers: string[], values: CellValue[]): Record<string, CellValue> {
+  return Object.fromEntries(headers.map((header, col) => [header, values[col] ?? null]))
+}
+
+/** Physical row indexes survive sparse selection and empty-row filtering. */
 export function rowsToObjects<T extends Record<string, CellValue> = Record<string, CellValue>>(
-  rows: CellValue[][],
-  options: RowsToObjectsOptions,
+  source: CellValue[][] | ValueSheet<Partial<Cell>>,
+  options: RowsToObjectsOptions = {},
 ): ObjectsResult<T> {
-  const {
-    headerRow: headerRowIdx,
-    skipEmptyRows,
-    transformHeader,
-    transformValue,
-    maxRows,
-  } = options
-
-  if (headerRowIdx < 0 || rows.length <= headerRowIdx) {
-    return { data: [], headers: [] }
-  }
-
-  let headers = rows[headerRowIdx]!.map((h) => {
-    if (h === null || h === undefined) return ""
-    return String(h).trim()
-  })
-
-  if (transformHeader) {
-    headers = headers.map((h, i) => transformHeader(h, i))
-  }
-
-  // Two columns sharing a header used to collapse into one key: the later
-  // column overwrote the earlier and its values were gone. That is not
-  // exotic input — it is what a real spreadsheet looks like when someone
-  // repeated a label or left two spacer columns. See #439 §AG.
-  //
-  // Only repeats are renamed; the first column with a given name keeps it,
-  // which is what a caller reading `data[0].name` expects.
-  headers = disambiguate(headers)
-
+  const { headers, rows } = projectTable(Array.isArray(source) ? { rows: source } : source, options)
   const data: T[] = []
-  for (let i = headerRowIdx + 1; i < rows.length; i++) {
-    if (maxRows !== undefined && data.length >= maxRows) break
-    const row = rows[i]!
-
-    if (skipEmptyRows && row.every((v) => v === null || v === undefined || v === "")) {
-      continue
-    }
-
-    const obj: Record<string, CellValue> = {}
-    for (let j = 0; j < headers.length; j++) {
-      let val: CellValue = j < row.length ? (row[j] ?? null) : null
-      if (transformValue) {
-        val = transformValue(val, headers[j]!, i, j)
+  for (const [index, values] of rows) {
+    if (options.transformValue) {
+      for (let col = 0; col < values.length; col++) {
+        values[col] = options.transformValue(values[col]!, headers[col]!, index, col)
       }
-      obj[headers[j]!] = val
     }
-    data.push(obj as T)
+    data.push(rowObject(headers, values) as T)
   }
-
   return { data, headers }
 }
 
@@ -165,7 +167,7 @@ export function selectSheet(workbook: Workbook, selector: number | string): Shee
  * that appears halfway through an export — was dropped along with the
  * rows that only had it. See #439.
  */
-export function collectHeaders(rows: Record<string, CellValue>[]): string[] {
+export function collectHeaders(rows: Record<string, unknown>[]): string[] {
   const seen = new Set<string>()
   const headers: string[] = []
   for (const row of rows) {

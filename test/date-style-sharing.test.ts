@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
@@ -48,10 +49,12 @@ describe("a styled date keeps its own style", () => {
   it("the style survives alongside the added format", async () => {
     const style: CellStyle = { font: { bold: true } }
     const bytes = await writeXlsx({
-      sheets: [{ name: "S", rows: [[DAY]], cells: new Map([["0,0", { value: DAY, style }]]) }],
+      sheets: [
+        { name: "S", rows: [[DAY]], cells: createCellStore([[0, 0, { value: DAY, style }]]) },
+      ],
     })
 
-    const cell = (await readXlsx(bytes, { readStyles: true })).sheets[0]!.cells?.get("0,0")
+    const cell = getCell((await readXlsx(bytes, { readStyles: true })).sheets[0]!.cells, 0, 0)
 
     expect(cell?.style?.font?.bold).toBe(true)
     expect(cell?.style?.numFmt).toBe("yyyy-mm-dd")
@@ -67,9 +70,9 @@ describe("a styled date keeps its own style", () => {
         {
           name: "S",
           rows: [[DAY, DAY]],
-          cells: new Map([
-            ["0,0", { value: DAY, style: bold }],
-            ["0,1", { value: DAY, style: italic }],
+          cells: createCellStore([
+            [0, 0, { value: DAY, style: bold }],
+            [0, 1, { value: DAY, style: italic }],
           ]),
         },
       ],
@@ -77,19 +80,21 @@ describe("a styled date keeps its own style", () => {
 
     const cells = (await readXlsx(bytes, { readStyles: true })).sheets[0]!.cells!
 
-    expect(cells.get("0,0")?.style?.font?.bold).toBe(true)
-    expect(cells.get("0,0")?.style?.font?.italic).toBeUndefined()
-    expect(cells.get("0,1")?.style?.font?.italic).toBe(true)
-    expect(cells.get("0,1")?.style?.font?.bold).toBeUndefined()
+    expect(getCell(cells, 0, 0)?.style?.font?.bold).toBe(true)
+    expect(getCell(cells, 0, 0)?.style?.font?.italic).toBeUndefined()
+    expect(getCell(cells, 0, 1)?.style?.font?.italic).toBe(true)
+    expect(getCell(cells, 0, 1)?.style?.font?.bold).toBeUndefined()
   })
 
   it("an explicit numFmt on a date is not overwritten", async () => {
     const style: CellStyle = { numFmt: "dd/mm/yyyy" }
     const bytes = await writeXlsx({
-      sheets: [{ name: "S", rows: [[DAY]], cells: new Map([["0,0", { value: DAY, style }]]) }],
+      sheets: [
+        { name: "S", rows: [[DAY]], cells: createCellStore([[0, 0, { value: DAY, style }]]) },
+      ],
     })
 
-    const cell = (await readXlsx(bytes, { readStyles: true })).sheets[0]!.cells?.get("0,0")
+    const cell = getCell((await readXlsx(bytes, { readStyles: true })).sheets[0]!.cells, 0, 0)
 
     expect(cell?.style?.numFmt).toBe("dd/mm/yyyy")
   })
@@ -99,7 +104,9 @@ describe("a styled date keeps its own style", () => {
     // the format to theirs would be a surprising side effect.
     const style: CellStyle = { font: { bold: true } }
     await writeXlsx({
-      sheets: [{ name: "S", rows: [[DAY]], cells: new Map([["0,0", { value: DAY, style }]]) }],
+      sheets: [
+        { name: "S", rows: [[DAY]], cells: createCellStore([[0, 0, { value: DAY, style }]]) },
+      ],
     })
 
     expect(style).toEqual({ font: { bold: true } })

@@ -1,3 +1,4 @@
+import { createCellStore } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { fieldsOf } from "./_reflect"
 import { WorkbookBuilder } from "../src/builder"
@@ -8,30 +9,30 @@ import { readXlsx } from "../src/xlsx/reader"
 //
 //   _columns _rows _merges _freezePane _validations _cells _hidden _veryHidden
 //
-// out of `WriteSheet`'s 28, and there was no escape hatch. The first
+// out of `SheetInput`'s 28, and there was no escape hatch. The first
 // sheet needing a page setup or a conditional rule had to abandon the
-// builder entirely. `WorkbookBuilder` reached four of `WriteOptions`.
+// builder entirely. `WorkbookBuilder` reached four of `WorkbookInput`.
 //
 // The named methods below cover what a builder is for; `set` covers the
 // rest, so the class cannot fall behind the type again.
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("the builder can express the whole model", () => {
-  it("reaches every WriteSheet field", async () => {
+  it("reaches every SheetInput field", async () => {
     // `set` takes anything on the type, so this is the guarantee: whatever
-    // `WriteSheet` grows, the builder can already say it.
+    // `SheetInput` grows, the builder can already say it.
     const builder = WorkbookBuilder.create().addSheet("S").row(["a"])
 
-    for (const field of fieldsOf("WriteSheet")) {
+    for (const field of fieldsOf("SheetInput")) {
       if (field === "name") continue
       expect(() => builder.set({ [field]: undefined } as never), field).not.toThrow()
     }
   })
 
-  it("reaches every WriteOptions field", () => {
+  it("reaches every WorkbookInput field", () => {
     const builder = WorkbookBuilder.create()
 
-    for (const field of fieldsOf("WriteOptions")) {
+    for (const field of fieldsOf("WorkbookInput")) {
       if (field === "sheets") continue
       expect(() => builder.set({ [field]: undefined } as never), field).not.toThrow()
     }
@@ -39,6 +40,44 @@ describe("the builder can express the whole model", () => {
 })
 
 describe("the named methods produce a readable workbook", () => {
+  it("uses set() for the basic sheet fields as well as extra metadata", async () => {
+    const bytes = await WorkbookBuilder.create()
+      .addSheet("S")
+      .row(["Before", 1])
+      .freeze(1)
+      .hidden(true)
+      .set({
+        rows: [["After", 2]],
+        freezePane: { rows: 2 },
+        hidden: false,
+        columns: [{ width: 18 }],
+        cells: createCellStore([[0, 1, { value: 3 }]]),
+      })
+      .build()
+    const sheet = (await readXlsx(bytes)).sheets[0]
+    expect(sheet.rows).toEqual([["After", 3]])
+    expect(sheet.freezePane?.rows).toBe(2)
+    expect(sheet.hidden).toBeFalsy()
+    expect(sheet.columns?.[0].width).toBe(18)
+  })
+
+  it("carries metadata from set(), with the later call winning", async () => {
+    const bytes = await WorkbookBuilder.create()
+      .properties({ title: "Before" })
+      .dateSystem("1900")
+      .set({ properties: { title: "After" }, dateSystem: "1904", activeSheet: 1 })
+      .addSheet("First")
+      .row(["a"])
+      .done()
+      .addSheet("Second")
+      .row(["b"])
+      .build()
+    const workbook = await readXlsx(bytes)
+    expect(workbook.properties?.title).toBe("After")
+    expect(workbook.dateSystem).toBe("1904")
+    expect(workbook.activeSheet).toBe(1)
+  })
+
   it("carries a page setup, a view, a header/footer and protection", async () => {
     const bytes = await WorkbookBuilder.create()
       .addSheet("S")

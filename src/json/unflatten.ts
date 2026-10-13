@@ -13,6 +13,7 @@
 // shared body, and any change to the shared part would silently be a change
 // to the XML output.
 
+import { isCellError } from "../cell-error"
 import type { CellValue } from "../_types"
 
 /** A rebuilt row: leaf cells plus the nested objects reconstructed from paths. */
@@ -102,5 +103,7 @@ export function unflattenRows(rows: Record<string, CellValue>[]): UnflattenedRow
 
 /** A node we built, as opposed to a cell value. Cells are never plain objects. */
 function isContainer(value: unknown): value is UnflattenedRow {
-  return typeof value === "object" && value !== null && !(value instanceof Date)
+  return (
+    typeof value === "object" && value !== null && !(value instanceof Date) && !isCellError(value)
+  )
 }

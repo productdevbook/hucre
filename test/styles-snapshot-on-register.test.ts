@@ -1,3 +1,4 @@
+import { getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
 import { writeXlsxStream } from "../src/xlsx/stream-writer"
@@ -82,7 +83,7 @@ describe("styles are snapshotted when registered", () => {
     const wb = await readXlsx(bytes, { readStyles: true })
     const cells = wb.sheets[0]!.cells!
 
-    expect(cells.get("0,0")!.style!.font!.bold ?? false).toBe(false)
-    expect(cells.get("1,0")!.style!.font!.bold).toBe(true)
+    expect(getCell(cells, 0, 0)!.style!.font!.bold ?? false).toBe(false)
+    expect(getCell(cells, 1, 0)!.style!.font!.bold).toBe(true)
   })
 })

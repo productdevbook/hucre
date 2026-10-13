@@ -9,14 +9,14 @@
 // else (#407), which is only true while every writer derives them the
 // same way. One implementation, two callers.
 
-import type { NamedRange, TableDefinition, WriteSheet } from "../_types"
+import type { NamedRange, TableDefinition, SheetInput } from "../_types"
 import { colToLetter } from "./worksheet-writer"
 
 /**
  * Build the full list of named ranges, merging user-defined ranges with
  * auto-generated _xlnm.Print_Area and _xlnm.Print_Titles from sheet pageSetup.
  */
-export function buildNamedRanges(sheets: WriteSheet[], userRanges?: NamedRange[]): NamedRange[] {
+export function buildNamedRanges(sheets: SheetInput[], userRanges?: NamedRange[]): NamedRange[] {
   const result: NamedRange[] = userRanges ? [...userRanges] : []
 
   for (const sheet of sheets) {
@@ -56,7 +56,7 @@ export function buildNamedRanges(sheets: WriteSheet[], userRanges?: NamedRange[]
  * Auto-calculate table range from sheet data and table column count.
  * Assumes header row is row 1 and data fills remaining rows.
  */
-export function computeTableRange(table: TableDefinition, sheet: WriteSheet): string {
+export function computeTableRange(table: TableDefinition, sheet: SheetInput): string {
   const colCount = table.columns.length
   let rowCount = 0
 

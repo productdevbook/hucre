@@ -1,3 +1,4 @@
+import { valuesOf } from "./_stream"
 import { describe, expect, it } from "vitest"
 import {
   jsonToWorkbook,
@@ -165,13 +166,13 @@ describe("NdjsonStreamWriter unflatten", () => {
   it("restores nesting on the streaming path too", () => {
     const w = new NdjsonStreamWriter({ unflatten: true })
     w.addObject({ "user.name": "Ada" })
-    expect(w.finish()).toBe('{"user":{"name":"Ada"}}\n')
+    expect(w.finishText()).toBe('{"user":{"name":"Ada"}}\n')
   })
 
   it("is off by default", () => {
     const w = new NdjsonStreamWriter()
     w.addObject({ "user.name": "Ada" })
-    expect(w.finish()).toBe('{"user.name":"Ada"}\n')
+    expect(w.finishText()).toBe('{"user.name":"Ada"}\n')
   })
 })
 
@@ -206,7 +207,7 @@ describe("typeInference revives dates", () => {
     // the same question.
     const cases = ["2024-01-15", "2024-01-15T10:30:00Z", "2024-13-45", "3/4/2021", "2024", "hello"]
     for (const raw of cases) {
-      const viaCsv = parseCsv(`v\n"${raw}"`, { typeInference: true, header: true })[1]![0]
+      const viaCsv = parseCsv(`v\n"${raw}"`, { typeInference: true, hasHeaderRow: true })[1]![0]
       const viaJson = parseJson(`[{"v":${JSON.stringify(raw)}}]`, { typeInference: true }).data[0]!
         .v
       expect([raw, viaJson instanceof Date]).toEqual([raw, viaCsv instanceof Date])
@@ -232,25 +233,27 @@ describe("typeInference revives dates", () => {
         flattenRows: true,
       }),
     )
-    expect(flat[0]!["a.d"]).toBeInstanceOf(Date)
+    expect(flat[0]!.values["a.d"]).toBeInstanceOf(Date)
 
     const raw = await drain(
       streamNdjsonRows(streamOf(`{"a":{"d":"${iso}"}}\n`), { typeInference: true }),
     )
-    expect((raw[0]!.a as unknown as { d: unknown }).d).toBeInstanceOf(Date)
+    expect((raw[0]!.values.a as unknown as { d: unknown }).d).toBeInstanceOf(Date)
   })
 
   it("leaves streamNdjsonRows rows untouched without the option", async () => {
     const rows = await drain(streamNdjsonRows(streamOf(`{"d":"${iso}"}\n`)))
-    expect(rows[0]!.d).toBe(iso)
+    expect(rows[0]!.values.d).toBe(iso)
   })
 })
 
 describe("the shared ISO rule did not change CSV", () => {
-  it("still infers dates in parseCsv and streamCsvRows alike", () => {
-    const rows = parseCsv("when\n2024-01-15", { typeInference: true, header: true })
+  it("still infers dates in parseCsv and streamCsvRows alike", async () => {
+    const rows = parseCsv("when\n2024-01-15", { typeInference: true, hasHeaderRow: true })
     expect(rows[1]![0]).toBeInstanceOf(Date)
-    const streamed = [...streamCsvRows("when\n2024-01-15", { typeInference: true, header: true })]
+    const streamed = await valuesOf(
+      streamCsvRows("when\n2024-01-15", { typeInference: true, hasHeaderRow: true }),
+    )
     expect(streamed[1]![0]).toBeInstanceOf(Date)
   })
 })

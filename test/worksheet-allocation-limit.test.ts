@@ -1,3 +1,4 @@
+import { getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { ParseError } from "../src/errors"
 import { parseWorksheet, parseWorksheetStream } from "../src/xlsx/worksheet"
@@ -90,7 +91,7 @@ describe.each(["buffered", "streamed"] as const)("%s worksheet allocation limit"
       sparse: true,
     })
     expect(sheet.rows).toEqual([])
-    expect(sheet.cells?.get("7,16383")?.value).toBe(1)
+    expect(getCell(sheet.cells, 7, 16383)?.value).toBe(1)
   })
 
   it("applies the bound only to cells admitted by the range", async () => {

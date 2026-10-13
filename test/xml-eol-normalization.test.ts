@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest"
 import { parseXml } from "../src/xml/parser"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
-import { ZipReader } from "../src/zip/reader"
-import { ZipWriter } from "../src/zip/writer"
+import { xlsxWithCells } from "./support/xlsx"
 
 // ═══════════════════════════════════════════════════════════════════════
 // #493 — XML 1.0 §2.11 requires a processor to turn a literal CRLF, and
@@ -20,9 +19,6 @@ import { ZipWriter } from "../src/zip/writer"
 // builds its own XML with `\n`, so the reader had never been shown what
 // Excel actually emits.
 // ═══════════════════════════════════════════════════════════════════════
-
-const enc = new TextEncoder()
-const dec = new TextDecoder()
 
 const textOf = (xml: string): string => {
   const el = parseXml(xml)
@@ -78,18 +74,7 @@ describe("attribute values get the same treatment", () => {
 describe("through the readers", () => {
   /** Put a raw shared string into a workbook, bytes and all. */
   async function withSharedString(inner: string): Promise<Uint8Array> {
-    const base = await writeXlsx({ sheets: [{ name: "S", rows: [["placeholder"]] }] })
-    const all = await new ZipReader(base).extractAll()
-    const zw = new ZipWriter()
-    for (const [name, data] of all) {
-      zw.add(
-        name,
-        name === "xl/sharedStrings.xml"
-          ? enc.encode(dec.decode(data).replace(/<si>.*<\/si>/, `<si><t>${inner}</t></si>`))
-          : data,
-      )
-    }
-    return zw.build()
+    return xlsxWithCells('<c r="A1" t="s"><v>0</v></c>', inner)
   }
 
   it("a cell Excel wrote with a literal CRLF reads as LF", async () => {

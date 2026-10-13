@@ -1,8 +1,9 @@
+import { assertGridSize, padToRectangle } from "../_grid"
 import type { Sheet, CellValue, MergeRange, SheetA11y } from "../_types"
 import { parseSax } from "../xml/parser"
 import { XmlError, ParseError } from "../errors"
 import { inferType } from "../_infer"
-import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_SPAN_CELLS, MAX_TOTAL_CELLS } from "../limits"
+import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_SPAN_CELLS } from "../limits"
 import { decodeHtmlEntities } from "./html-entities"
 
 /** Type marker `toHtml` writes as a CSS class on a cell. */
@@ -52,6 +53,8 @@ export interface HtmlImportOptions {
    * table at all.
    */
   tableIndex?: number
+  /** Maximum cells in the dense rectangle. Default: 20,000,000. */
+  maxTotalCells?: number
 }
 
 /**
@@ -150,22 +153,16 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
   // We need to track the actual grid column for each cell due to rowspan reservations
   let currentRow = -1
 
-  // Slots this table has materialized: placed values plus colspan padding.
-  // A single `<td colspan="16384">` costs 30 bytes of markup and 16,384
-  // array entries, so 175 KB of them reached 82 million entries and five
-  // seconds before this counter existed.
-  let gridCells = 0
-
-  function spend(): void {
-    if (++gridCells > MAX_TOTAL_CELLS) {
-      throw new ParseError(`HTML table spans over ${MAX_TOTAL_CELLS} cells`)
-    }
-  }
+  // Count the bounding rectangle rather than just placed slots: a wide
+  // first row followed by short ones grows again during final padding.
+  let width = 0
+  const cellLimit = options?.maxTotalCells
 
   /** Append one slot to the current row, dropping anything past the last column. */
   function pushSlot(value: CellValue): void {
-    if (currentRowCells.length > MAX_COL_INDEX) return
-    spend()
+    if (currentRow > MAX_ROW_INDEX || currentRowCells.length > MAX_COL_INDEX) return
+    width = Math.max(width, currentRowCells.length + 1)
+    assertGridSize(currentRow + 1, width, cellLimit)
     currentRowCells.push(value)
   }
 
@@ -180,6 +177,7 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
   function endRow(): void {
     inRow = false
     if (rows.length <= MAX_ROW_INDEX) {
+      assertGridSize(currentRow + 1, width, cellLimit)
       rows.push(currentRowCells)
       fromTfoot.push(inTfoot)
     }
@@ -202,6 +200,7 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
   function closeCell(): void {
     inCell = false
     rowCellCount++
+    if (currentRow > MAX_ROW_INDEX) return
 
     // Find the next available column in this row
     let col = currentRowCells.length
@@ -456,6 +455,7 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
   if (headerRow !== undefined) a11y.headerRow = headerRow
   const described = summary !== "" || headerRow !== undefined
 
+  padToRectangle(rows, cellLimit)
   return {
     name: options?.sheetName ?? "Sheet1",
     rows,

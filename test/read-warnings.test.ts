@@ -1,3 +1,4 @@
+import { getCell, createCellStore } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
@@ -74,7 +75,7 @@ describe("a dropped cell format is reported", () => {
     const warnings: ReadWarning[] = []
     const wb = await readXlsx(bytes, { readStyles: true, onWarning: (w) => warnings.push(w) })
 
-    expect(wb.sheets[0]!.cells?.get("0,0")?.style).toBeUndefined()
+    expect(getCell(wb.sheets[0]!.cells, 0, 0)?.style).toBeUndefined()
     expect(warnings.some((w) => w.code === "unresolved-style")).toBe(true)
     expect(warnings.find((w) => w.code === "unresolved-style")!.message).toContain("9999")
   })
@@ -184,8 +185,8 @@ describe("a hyperlink pointing at a relationship that is not there", () => {
         {
           name: "Data",
           rows: [["click"]],
-          cells: new Map([
-            ["0,0", { value: "click", hyperlink: { target: "https://example.com" } }],
+          cells: createCellStore([
+            [0, 0, { value: "click", hyperlink: { target: "https://example.com" } }],
           ]),
         },
       ],
@@ -203,7 +204,7 @@ describe("a hyperlink pointing at a relationship that is not there", () => {
     const wb = await readXlsx(bytes, { onWarning: (w) => warnings.push(w) })
 
     // Lenient: an empty target, not an exception.
-    expect(wb.sheets[0]!.cells?.get("0,0")?.hyperlink?.target).toBe("")
+    expect(getCell(wb.sheets[0]!.cells, 0, 0)?.hyperlink?.target).toBe("")
 
     const warning = warnings.find((w) => w.code === "unresolved-hyperlink")
     expect(warning).toBeDefined()

@@ -1,3 +1,6 @@
+import { sheetGrid } from "./_sheet-grid"
+import { effectiveValue } from "./_sheet-values"
+import { cellEntries } from "./cell-store"
 // ── Accessibility Helpers ──────────────────────────────────────────
 // Audit and helpers for generating WCAG 2.1 AA-compliant spreadsheets.
 //
@@ -14,15 +17,7 @@
 // merged cells overlapping a header row, blank rows splitting data, and
 // missing document-level title/description.
 
-import type {
-  A11yCode,
-  A11yIssue,
-  Cell,
-  CellValue,
-  Sheet,
-  Workbook,
-  WorkbookProperties,
-} from "./_types"
+import type { A11yCode, A11yIssue, Sheet, Workbook, WorkbookProperties } from "./_types"
 import { cellRef } from "./xlsx/worksheet-writer"
 
 // ── Public API ─────────────────────────────────────────────────────
@@ -257,39 +252,23 @@ function auditSheet(sheet: Sheet, issues: A11yIssue[]): void {
 }
 
 function detectBlankRows(sheet: Sheet, issues: A11yIssue[]): void {
-  const rows = sheet.rows
-  if (!rows || rows.length === 0) return
-
-  let firstNonEmpty = -1
-  let lastNonEmpty = -1
-  for (let r = 0; r < rows.length; r++) {
-    if (rowHasContent(rows[r])) {
-      if (firstNonEmpty === -1) firstNonEmpty = r
-      lastNonEmpty = r
-    }
-  }
-  if (firstNonEmpty === -1) return
-
-  for (let r = firstNonEmpty + 1; r < lastNonEmpty; r++) {
-    if (!rowHasContent(rows[r])) {
-      const ref = `${r + 1}:${r + 1}`
+  let previous = -1
+  for (const row of sheetGrid(sheet).indexes(0, true)) {
+    if (previous !== -1 && row > previous + 1) {
+      // A sparse million-row gap is one finding, not a million objects.
+      // Keep physical coordinates without constructing intermediate rows.
+      const start = previous + 2
+      const ref = `${start}:${row}`
       push(
         issues,
         "info",
         "blank-row-in-data",
-        `Sheet "${sheet.name}" has a blank row at row ${r + 1}; screen readers may assume the table ended`,
+        `Sheet "${sheet.name}" has blank rows at ${ref}; screen readers may assume the table ended`,
         { sheet: sheet.name, ref },
       )
     }
+    previous = row
   }
-}
-
-function rowHasContent(row: CellValue[] | undefined): boolean {
-  if (!row) return false
-  for (const v of row) {
-    if (v !== null && v !== undefined && v !== "") return true
-  }
-  return false
 }
 
 function auditSheetContrast(
@@ -301,10 +280,11 @@ function auditSheetContrast(
   if (!sheet.cells || sheet.cells.size === 0) return
 
   let inspected = 0
-  for (const [key, cell] of sheet.cells) {
+  for (const [row, col, cell] of cellEntries(sheet.cells)) {
     if (inspected >= sampleLimit) break
     inspected++
-    if (!hasUserText(cell)) continue
+    const value = effectiveValue(cell, sheet.rows[row]?.[col] ?? null)
+    if (value === null || value === "") continue
 
     const fill = cell.style?.fill
     if (!fill || fill.type !== "pattern") continue
@@ -314,9 +294,6 @@ function auditSheetContrast(
 
     const ratio = contrastRatio(fg, bg)
     if (ratio < minContrast) {
-      const [rowStr, colStr] = key.split(",")
-      const row = parseInt(rowStr, 10)
-      const col = parseInt(colStr, 10)
       const ref = cellRef(row, col)
       push(
         issues,
@@ -327,11 +304,6 @@ function auditSheetContrast(
       )
     }
   }
-}
-
-function hasUserText(cell: Partial<Cell>): boolean {
-  const v = cell.value
-  return v !== null && v !== undefined && v !== ""
 }
 
 function resolveRgb(rgb: string | undefined): string | null {

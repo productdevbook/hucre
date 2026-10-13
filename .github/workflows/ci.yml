@@ -12,12 +12,14 @@ on:
   push:
     branches:
       - main
+      - v2
     paths-ignore:
       - "docs/**"
 
   pull_request:
     branches:
       - main
+      - v2
     paths-ignore:
       - "docs/**"
 

@@ -5,7 +5,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
 import { createSharedStrings, writeWorksheetXml } from "../src/xlsx/worksheet-writer"
-import type { WriteSheet, PageSetup, HeaderFooter } from "../src/_types"
+import type { SheetInput, PageSetup, HeaderFooter } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -25,7 +25,7 @@ function getElementText(el: { children: Array<unknown> }): string {
   return el.children.filter((c: unknown) => typeof c === "string").join("")
 }
 
-function writeXml(sheet: WriteSheet): string {
+function writeXml(sheet: SheetInput): string {
   const styles = createStylesCollector()
   const ss = createSharedStrings()
   const result = writeWorksheetXml(sheet, styles, ss)
@@ -40,7 +40,7 @@ function parseSheet(xml: string) {
 
 describe("page margins — writing", () => {
   it("writes custom page margins", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       pageSetup: {
@@ -62,7 +62,7 @@ describe("page margins — writing", () => {
   })
 
   it("writes default margins when no pageSetup specified", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
     }
@@ -85,7 +85,7 @@ describe("page margins — writing", () => {
 
 describe("page setup — writing", () => {
   it("writes paper size and orientation", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       pageSetup: { paperSize: "a4", orientation: "landscape" },
@@ -101,7 +101,7 @@ describe("page setup — writing", () => {
   })
 
   it("writes scale", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       pageSetup: { scale: 75 },
@@ -116,7 +116,7 @@ describe("page setup — writing", () => {
   })
 
   it("writes fit to page", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       pageSetup: { fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
@@ -139,7 +139,7 @@ describe("page setup — writing", () => {
   it("writes fitToPage on its own", () => {
     // `fitToPage: true` with neither count used to emit nothing at all:
     // no <pageSetup>, no <pageSetUpPr>, no warning. See #407.
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       pageSetup: { fitToPage: true },
@@ -165,7 +165,7 @@ describe("page setup — writing", () => {
     ]
 
     for (const [name, expected] of paperSizes) {
-      const sheet: WriteSheet = {
+      const sheet: SheetInput = {
         name: "Test",
         rows: [["Data"]],
         pageSetup: { paperSize: name as PageSetup["paperSize"] },
@@ -181,7 +181,7 @@ describe("page setup — writing", () => {
   })
 
   it("does not emit pageSetup when no settings are specified", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
     }
@@ -198,7 +198,7 @@ describe("page setup — writing", () => {
 
 describe("header/footer — writing", () => {
   it("writes header with formatting codes", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       headerFooter: {
@@ -218,7 +218,7 @@ describe("header/footer — writing", () => {
   })
 
   it("writes footer with page number codes", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       headerFooter: {
@@ -236,7 +236,7 @@ describe("header/footer — writing", () => {
   })
 
   it("writes both header and footer", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       headerFooter: {
@@ -258,7 +258,7 @@ describe("header/footer — writing", () => {
   })
 
   it("writes differentOddEven header/footer", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       headerFooter: {
@@ -283,7 +283,7 @@ describe("header/footer — writing", () => {
   })
 
   it("writes differentFirst header/footer", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       headerFooter: {
@@ -306,7 +306,7 @@ describe("header/footer — writing", () => {
   })
 
   it("does not emit headerFooter when not specified", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
     }
@@ -323,7 +323,7 @@ describe("header/footer — writing", () => {
 
 describe("print settings — element order", () => {
   it("places pageMargins after hyperlinks and before drawing", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       pageSetup: { paperSize: "a4", orientation: "landscape" },
@@ -349,7 +349,7 @@ describe("print settings — element order", () => {
   })
 
   it("places pageMargins after dataValidations", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       dataValidations: [{ type: "list", values: ["A", "B"], range: "A1:A10" }],

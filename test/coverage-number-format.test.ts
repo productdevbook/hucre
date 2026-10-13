@@ -50,7 +50,7 @@ describe("formatValue — input coercion", () => {
   // The 1904 workbook flag shifts the epoch by 1462 days.
   it("honours the 1904 date system when serializing a Date", () => {
     const jan15 = new Date(Date.UTC(2021, 0, 15))
-    expect(formatValue(jan15, "0", { is1904: true })).toBe("42749")
+    expect(formatValue(jan15, "0", { dateSystem: "1904" })).toBe("42749")
     expect(formatValue(jan15, "0")).toBe("44211")
   })
 
@@ -835,7 +835,7 @@ describe("serial conversion", () => {
   })
 
   it("uses 1 Jan 1904 as day zero in the 1904 system", () => {
-    expect(serialToDate(0, true).toISOString()).toBe("1904-01-01T00:00:00.000Z")
+    expect(serialToDate(0, "1904").toISOString()).toBe("1904-01-01T00:00:00.000Z")
   })
 
   it("round-trips a moment through the serial and back", () => {
@@ -843,8 +843,8 @@ describe("serial conversion", () => {
   })
 
   it("round-trips through the 1904 system too", () => {
-    const s = dateToSerial(MOMENT, true)
-    expect(serialToDate(s, true).getTime()).toBe(MOMENT.getTime())
+    const s = dateToSerial(MOMENT, "1904")
+    expect(serialToDate(s, "1904").getTime()).toBe(MOMENT.getTime())
   })
 
   it("splits a serial fraction into clock components", () => {

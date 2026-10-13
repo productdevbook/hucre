@@ -5,7 +5,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
 import { createSharedStrings, writeWorksheetXml } from "../src/xlsx/worksheet-writer"
 import { readXlsx } from "../src/xlsx/reader"
-import type { WriteSheet, DataValidation } from "../src/_types"
+import type { SheetInput, DataValidation } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ function getElementText(el: { children: Array<unknown> }): string {
   return el.children.filter((c: unknown) => typeof c === "string").join("")
 }
 
-function writeXml(sheet: WriteSheet): string {
+function writeXml(sheet: SheetInput): string {
   const styles = createStylesCollector()
   const ss = createSharedStrings()
   const result = writeWorksheetXml(sheet, styles, ss)
@@ -44,7 +44,7 @@ function parseWorksheetXml(xml: string) {
 
 describe("data validation — writing", () => {
   it("writes list validation with explicit values", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Status"]],
       dataValidations: [
@@ -81,7 +81,7 @@ describe("data validation — writing", () => {
   })
 
   it("writes list validation with formula reference", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Category"]],
       dataValidations: [
@@ -107,7 +107,7 @@ describe("data validation — writing", () => {
   })
 
   it("writes whole number between validation", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Quantity"]],
       dataValidations: [
@@ -140,7 +140,7 @@ describe("data validation — writing", () => {
   })
 
   it("writes decimal greaterThan validation", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Price"]],
       dataValidations: [
@@ -170,7 +170,7 @@ describe("data validation — writing", () => {
   })
 
   it("writes text length validation", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Code"]],
       dataValidations: [
@@ -196,7 +196,7 @@ describe("data validation — writing", () => {
   })
 
   it("writes custom formula validation", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Email"]],
       dataValidations: [
@@ -221,7 +221,7 @@ describe("data validation — writing", () => {
   })
 
   it("writes multiple validations on same sheet", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Status", "Quantity", "Price"]],
       dataValidations: [
@@ -263,7 +263,7 @@ describe("data validation — writing", () => {
   })
 
   it("writes validation with input/error messages", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       dataValidations: [
@@ -301,7 +301,7 @@ describe("data validation — writing", () => {
     const errorStyles = ["stop", "warning", "information"] as const
 
     for (const errorStyle of errorStyles) {
-      const sheet: WriteSheet = {
+      const sheet: SheetInput = {
         name: "Test",
         rows: [["Value"]],
         dataValidations: [
@@ -326,7 +326,7 @@ describe("data validation — writing", () => {
   })
 
   it("writes validation with allowBlank", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
       dataValidations: [
@@ -348,7 +348,7 @@ describe("data validation — writing", () => {
   })
 
   it("does not emit dataValidations when none are provided", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Value"]],
     }

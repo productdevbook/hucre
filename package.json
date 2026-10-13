@@ -72,6 +72,18 @@
     "./ooxml": {
       "types": "./dist/ooxml.d.mts",
       "default": "./dist/ooxml.mjs"
+    },
+    "./cell": {
+      "types": "./dist/cell.d.mts",
+      "default": "./dist/cell.mjs"
+    },
+    "./format": {
+      "types": "./dist/format.d.mts",
+      "default": "./dist/format.mjs"
+    },
+    "./a11y": {
+      "types": "./dist/a11y.d.mts",
+      "default": "./dist/a11y.mjs"
     }
   },
   "scripts": {
@@ -86,9 +98,12 @@
     "lint:fix": "oxlint . --fix && oxfmt .",
     "fmt": "oxfmt .",
     "test": "bun run lint && bun run typecheck && vitest run",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.cli.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.cli.json && tsc --noEmit -p tsconfig.test.json",
     "release": "bun run test && bun run build && bumpp --commit --tag --push --all",
-    "prepack": "bun run build"
+    "prepack": "bun run build",
+    "test:unit": "vitest run --exclude 'test/integration/**'",
+    "test:integration": "vitest run test/integration",
+    "smoke:browser": "node scripts/browser-smoke/server.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

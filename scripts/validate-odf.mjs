@@ -105,12 +105,12 @@ async function drain(stream) {
 async function documents() {
   const out = []
 
-  const cells = new Map([["0,0", { value: "Name", style: STYLE }]])
+  const cells = hucre.createCellStore([[0, 0, { value: "Name", style: STYLE }]])
   NUMBER_FORMATS.forEach((numFmt, i) => {
-    cells.set(`${i + 1},0`, { value: 1234.5, style: { numFmt } })
+    hucre.setCell(cells, i + 1, 0, { value: 1234.5, style: { numFmt } })
   })
-  cells.set(`${NUMBER_FORMATS.length + 1},0`, { value: 1, formula: "A2+1" })
-  cells.set(`${NUMBER_FORMATS.length + 2},0`, {
+  hucre.setCell(cells, NUMBER_FORMATS.length + 1, 0, { value: 1, formula: "A2+1" })
+  hucre.setCell(cells, NUMBER_FORMATS.length + 2, 0, {
     value: "link",
     hyperlink: { target: "https://example.test", tooltip: "t" },
   })
@@ -198,7 +198,7 @@ let failures = 0
 for (const [label, bytes] of await documents()) {
   console.log(`\n${label}  (${bytes.length} bytes)`)
 
-  const checks = [...PARTS.map((p) => [p, schema])]
+  const checks = PARTS.map((p) => [p, schema])
   if (manifestSchema) checks.push(["META-INF/manifest.xml", manifestSchema])
 
   for (const [part, rng] of checks) {

@@ -1,3 +1,4 @@
+import { createCellStore, setCell, getCell } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { ZipReader } from "../src/zip/reader"
 import { ZipWriter } from "../src/zip/writer"
@@ -36,15 +37,15 @@ function zipHas(data: Uint8Array, path: string): boolean {
 
 describe("writeComments", () => {
   it("returns null when no cells have comments", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", { value: "Hello" })
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, { value: "Hello" })
     const result = writeComments(cells, 0)
     expect(result).toBeNull()
   })
 
   it("writes single comment on a cell", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Hello",
       comment: { text: "This is a comment" },
     })
@@ -64,8 +65,8 @@ describe("writeComments", () => {
   })
 
   it("writes comment with author", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Hello",
       comment: { text: "Review this", author: "John Doe" },
     })
@@ -77,16 +78,16 @@ describe("writeComments", () => {
   })
 
   it("writes multiple comments on different cells", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Cell A1",
       comment: { text: "Comment on A1" },
     })
-    cells.set("2,1", {
+    setCell(cells, 2, 1, {
       value: "Cell B3",
       comment: { text: "Comment on B3", author: "Alice" },
     })
-    cells.set("1,0", {
+    setCell(cells, 1, 0, {
       value: "Cell A2",
       comment: { text: "Comment on A2", author: "Bob" },
     })
@@ -101,8 +102,8 @@ describe("writeComments", () => {
   })
 
   it("generates VML drawing with correct row and column", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "A1",
       comment: { text: "Comment" },
     })
@@ -118,12 +119,12 @@ describe("writeComments", () => {
   })
 
   it("generates VML with correct positions for multiple comments", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "A1",
       comment: { text: "First" },
     })
-    cells.set("4,2", {
+    setCell(cells, 4, 2, {
       value: "C5",
       comment: { text: "Second" },
     })
@@ -137,16 +138,16 @@ describe("writeComments", () => {
   })
 
   it("deduplicates authors", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "A1",
       comment: { text: "First", author: "Alice" },
     })
-    cells.set("1,0", {
+    setCell(cells, 1, 0, {
       value: "A2",
       comment: { text: "Second", author: "Alice" },
     })
-    cells.set("2,0", {
+    setCell(cells, 2, 0, {
       value: "A3",
       comment: { text: "Third", author: "Bob" },
     })
@@ -224,8 +225,8 @@ describe("parseComments", () => {
 
 describe("XLSX comment writing", () => {
   it("writes comments.xml and VML to ZIP", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Hello",
       comment: { text: "A comment", author: "Author" },
     })
@@ -257,8 +258,8 @@ describe("XLSX comment writing", () => {
   })
 
   it("includes legacyDrawing in worksheet XML when comments exist", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Hello",
       comment: { text: "Comment" },
     })
@@ -281,8 +282,8 @@ describe("XLSX comment writing", () => {
   })
 
   it("updates content types when comments exist", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Hello",
       comment: { text: "Comment" },
     })
@@ -307,8 +308,8 @@ describe("XLSX comment writing", () => {
   })
 
   it("includes comment and vmlDrawing relationships in sheet rels", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Hello",
       comment: { text: "Comment" },
     })
@@ -326,14 +327,14 @@ describe("XLSX comment writing", () => {
   })
 
   it("writes comments on multiple sheets", async () => {
-    const cells1 = new Map<string, Partial<Cell>>()
-    cells1.set("0,0", {
+    const cells1 = createCellStore<Partial<Cell>>()
+    setCell(cells1, 0, 0, {
       value: "Sheet1",
       comment: { text: "Comment on Sheet1" },
     })
 
-    const cells2 = new Map<string, Partial<Cell>>()
-    cells2.set("0,0", {
+    const cells2 = createCellStore<Partial<Cell>>()
+    setCell(cells2, 0, 0, {
       value: "Sheet2",
       comment: { text: "Comment on Sheet2" },
     })
@@ -532,7 +533,7 @@ describe("XLSX comment reading", () => {
     const sheet = workbook.sheets[0]
 
     expect(sheet.cells).toBeDefined()
-    const cell = sheet.cells!.get("0,0")
+    const cell = getCell(sheet.cells!, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.comment).toBeDefined()
     expect(cell!.comment!.text).toBe("Hello comment")
@@ -555,11 +556,11 @@ describe("XLSX comment reading", () => {
     const workbook = await readXlsx(xlsxData)
     const sheet = workbook.sheets[0]
 
-    const cellA1 = sheet.cells!.get("0,0")
+    const cellA1 = getCell(sheet.cells!, 0, 0)
     expect(cellA1!.comment!.text).toBe("First comment")
     expect(cellA1!.comment!.author).toBe("Alice")
 
-    const cellB1 = sheet.cells!.get("0,1")
+    const cellB1 = getCell(sheet.cells!, 0, 1)
     expect(cellB1!.comment!.text).toBe("Second comment")
     expect(cellB1!.comment!.author).toBe("Bob")
   })
@@ -573,7 +574,7 @@ describe("XLSX comment reading", () => {
     const workbook = await readXlsx(xlsxData)
     const sheet = workbook.sheets[0]
 
-    const cell = sheet.cells!.get("0,0")
+    const cell = getCell(sheet.cells!, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.comment!.text).toBe("Comment on number")
     expect(cell!.value).toBe(42)
@@ -584,8 +585,8 @@ describe("XLSX comment reading", () => {
 
 describe("XLSX comment round-trip", () => {
   it("round-trips single comment", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Hello",
       comment: { text: "This is a comment", author: "Test Author" },
     })
@@ -598,7 +599,7 @@ describe("XLSX comment round-trip", () => {
     const sheet = workbook.sheets[0]
 
     expect(sheet.cells).toBeDefined()
-    const cell = sheet.cells!.get("0,0")
+    const cell = getCell(sheet.cells!, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.comment).toBeDefined()
     expect(cell!.comment!.text).toBe("This is a comment")
@@ -606,8 +607,8 @@ describe("XLSX comment round-trip", () => {
   })
 
   it("round-trips comment without author", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Hello",
       comment: { text: "No author comment" },
     })
@@ -619,23 +620,23 @@ describe("XLSX comment round-trip", () => {
     const workbook = await readXlsx(written)
     const sheet = workbook.sheets[0]
 
-    const cell = sheet.cells!.get("0,0")
+    const cell = getCell(sheet.cells!, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.comment).toBeDefined()
     expect(cell!.comment!.text).toBe("No author comment")
   })
 
   it("round-trips multiple comments on different cells", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "A1",
       comment: { text: "Comment A1", author: "Alice" },
     })
-    cells.set("1,0", {
+    setCell(cells, 1, 0, {
       value: "A2",
       comment: { text: "Comment A2", author: "Bob" },
     })
-    cells.set("0,1", {
+    setCell(cells, 0, 1, {
       value: "B1",
       comment: { text: "Comment B1", author: "Alice" },
     })
@@ -653,28 +654,28 @@ describe("XLSX comment round-trip", () => {
     const workbook = await readXlsx(written)
     const sheet = workbook.sheets[0]
 
-    const cellA1 = sheet.cells!.get("0,0")
+    const cellA1 = getCell(sheet.cells!, 0, 0)
     expect(cellA1!.comment!.text).toBe("Comment A1")
     expect(cellA1!.comment!.author).toBe("Alice")
 
-    const cellA2 = sheet.cells!.get("1,0")
+    const cellA2 = getCell(sheet.cells!, 1, 0)
     expect(cellA2!.comment!.text).toBe("Comment A2")
     expect(cellA2!.comment!.author).toBe("Bob")
 
-    const cellB1 = sheet.cells!.get("0,1")
+    const cellB1 = getCell(sheet.cells!, 0, 1)
     expect(cellB1!.comment!.text).toBe("Comment B1")
     expect(cellB1!.comment!.author).toBe("Alice")
   })
 
   it("round-trips comments on multiple sheets", async () => {
-    const cells1 = new Map<string, Partial<Cell>>()
-    cells1.set("0,0", {
+    const cells1 = createCellStore<Partial<Cell>>()
+    setCell(cells1, 0, 0, {
       value: "Sheet1",
       comment: { text: "Comment on Sheet1" },
     })
 
-    const cells2 = new Map<string, Partial<Cell>>()
-    cells2.set("0,0", {
+    const cells2 = createCellStore<Partial<Cell>>()
+    setCell(cells2, 0, 0, {
       value: "Sheet2",
       comment: { text: "Comment on Sheet2", author: "User" },
     })
@@ -688,17 +689,17 @@ describe("XLSX comment round-trip", () => {
 
     const workbook = await readXlsx(written)
 
-    const cell1 = workbook.sheets[0].cells!.get("0,0")
+    const cell1 = getCell(workbook.sheets[0].cells!, 0, 0)
     expect(cell1!.comment!.text).toBe("Comment on Sheet1")
 
-    const cell2 = workbook.sheets[1].cells!.get("0,0")
+    const cell2 = getCell(workbook.sheets[1].cells!, 0, 0)
     expect(cell2!.comment!.text).toBe("Comment on Sheet2")
     expect(cell2!.comment!.author).toBe("User")
   })
 
   it("preserves cell value alongside comment", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Important data",
       comment: { text: "Review this value" },
     })
@@ -714,14 +715,14 @@ describe("XLSX comment round-trip", () => {
     expect(sheet.rows[0][0]).toBe("Important data")
 
     // Comment should also be present
-    const cell = sheet.cells!.get("0,0")
+    const cell = getCell(sheet.cells!, 0, 0)
     expect(cell!.comment!.text).toBe("Review this value")
     expect(cell!.value).toBe("Important data")
   })
 
   it("round-trips comments alongside hyperlinks", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Link with comment",
       hyperlink: { target: "https://example.com" },
       comment: { text: "This cell has both" },
@@ -734,7 +735,7 @@ describe("XLSX comment round-trip", () => {
     const workbook = await readXlsx(written)
     const sheet = workbook.sheets[0]
 
-    const cell = sheet.cells!.get("0,0")
+    const cell = getCell(sheet.cells!, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.hyperlink).toBeDefined()
     expect(cell!.hyperlink!.target).toBe("https://example.com")

@@ -1,3 +1,4 @@
+import { getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
 import { writeXlsx } from "../src/xlsx/writer"
@@ -91,8 +92,8 @@ describe("style identity reuse is scoped to the writer that can rely on it", () 
     const wb = await readXlsx(bytes, { readStyles: true })
     const cells = wb.sheets[0]!.cells!
 
-    for (const ref of ["0,0", "1,0", "2,0"]) {
-      expect(cells.get(ref)!.style!.numFmt).toBe("0.00")
+    for (const row of [0, 1, 2]) {
+      expect(getCell(cells, row, 0)!.style!.numFmt).toBe("0.00")
     }
     expect(bytes.length).toBeGreaterThan(0)
   })
@@ -110,7 +111,7 @@ describe("style identity reuse is scoped to the writer that can rely on it", () 
     const wb = await readXlsx(bytes, { readStyles: true })
     const cells = wb.sheets[0]!.cells!
 
-    expect(cells.get("0,0")!.style!.numFmt).toBe("0.00")
-    expect(cells.get("1,0")!.style!.numFmt).toBe("0.0000")
+    expect(getCell(cells, 0, 0)!.style!.numFmt).toBe("0.00")
+    expect(getCell(cells, 1, 0)!.style!.numFmt).toBe("0.0000")
   })
 })

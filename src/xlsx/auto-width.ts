@@ -9,7 +9,9 @@
 // slightly wider (~1.05x). CJK characters count as 2 units.
 // ─────────────────────────────────────────────────────────────────────
 
-import type { CellValue, FontStyle } from "../_types"
+import { isCellError } from "../cell-error"
+import type { CellValue, FontStyle, Cell, ColumnDef } from "../_types"
+import { columnCellStyle } from "../_sheet-input"
 import { formatDate } from "../_date"
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -256,6 +258,8 @@ export function measureValueWidth(value: CellValue, numFmt?: string): number {
     return measureLineWidth(str)
   }
 
+  if (isCellError(value)) return measureLineWidth(value.error)
+
   if (value instanceof Date) {
     if (numFmt) {
       const formatted = formatDate(value, numFmt)
@@ -291,37 +295,65 @@ export function calculateColumnWidth(
     padding?: number
   },
 ): number {
-  const minWidth = options?.minWidth ?? DEFAULT_MIN_WIDTH
-  const maxWidth = options?.maxWidth ?? MAX_COLUMN_WIDTH
-  const padding = options?.padding ?? DEFAULT_PADDING
-  const isBold = options?.font?.bold === true
-
   let maxContentWidth = 0
 
   for (const value of values) {
-    const w = measureValueWidth(value, options?.numFmt)
-    if (w > maxContentWidth) {
-      maxContentWidth = w
-    }
+    maxContentWidth = Math.max(maxContentWidth, measureValueWidth(value, options?.numFmt))
   }
 
-  // Apply font multiplier for proportional fonts
-  let width = maxContentWidth * PROPORTIONAL_FONT_MULTIPLIER
+  return widthFromContent(maxContentWidth, options)
+}
 
-  // Apply bold multiplier if needed
-  if (isBold) {
-    width *= BOLD_MULTIPLIER
-  }
-
-  // Add padding
-  width += padding
+// Avoid a one-element array and value loop for every autosized streamed cell.
+function widthFromContent(
+  maxContentWidth: number,
+  options?: Parameters<typeof calculateColumnWidth>[1],
+): number {
+  const minWidth = options?.minWidth ?? DEFAULT_MIN_WIDTH
+  const maxWidth = options?.maxWidth ?? MAX_COLUMN_WIDTH
+  const padding = options?.padding ?? DEFAULT_PADDING
+  // Apply the font factors and padding before snapping to Excel units.
+  let width =
+    maxContentWidth *
+      PROPORTIONAL_FONT_MULTIPLIER *
+      (options?.font?.bold === true ? BOLD_MULTIPLIER : 1) +
+    padding
 
   // Round up to nearest 0.5 (Excel snaps to these increments)
   width = Math.ceil(width * 2) / 2
 
   // Clamp to min/max
-  if (width < minWidth) width = minWidth
-  if (width > maxWidth) width = maxWidth
+  return Math.min(maxWidth, Math.max(minWidth, width))
+}
 
-  return width
+/** Keep only per-column maxima; callers pass already-resolved cells. */
+export function createColumnWidthCollector(columns?: readonly ColumnDef[]): {
+  widths: Map<number, number>
+  add(index: number, cell: Partial<Cell>): void
+} {
+  const selected: Array<{ font?: FontStyle; numFmt?: string } | undefined> = []
+  const widths = new Map<number, number>()
+  columns?.forEach((col, index) => {
+    if (!col.autoWidth || col.width !== undefined) return
+    const options = columnCellStyle(col) ?? {}
+    selected[index] = options
+    widths.set(index, widthFromContent(0, options))
+  })
+  return {
+    widths,
+    add(index: number, cell: Partial<Cell>): void {
+      const options = selected[index]
+      if (!options) return
+      const display = cell.richText?.length
+        ? cell.richText.map((run) => run.text).join("")
+        : (cell.value ?? null)
+      widths.set(
+        index,
+        Math.max(
+          widths.get(index)!,
+          widthFromContent(measureValueWidth(display, options.numFmt), options),
+        ),
+      )
+    },
+  }
 }

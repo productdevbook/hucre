@@ -1,3 +1,4 @@
+import { createCellStore } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { ZipReader } from "../src/zip/reader"
 import { parseXml } from "../src/xml/parser"
@@ -12,7 +13,7 @@ import {
   colToLetter,
   cellRef,
 } from "../src/xlsx/worksheet-writer"
-import type { WriteSheet, CellStyle, CellValue } from "../src/_types"
+import type { SheetInput, CellStyle, CellValue } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -134,7 +135,7 @@ describe("writeContentTypes", () => {
 
 describe("writeWorkbookXml", () => {
   it("generates workbook with correct sheet names", () => {
-    const sheets: WriteSheet[] = [{ name: "Sheet1" }, { name: "Data" }]
+    const sheets: SheetInput[] = [{ name: "Sheet1" }, { name: "Data" }]
     const xml = writeWorkbookXml(sheets)
     const doc = parseXml(xml)
 
@@ -151,7 +152,7 @@ describe("writeWorkbookXml", () => {
   })
 
   it("marks hidden sheets", () => {
-    const sheets: WriteSheet[] = [
+    const sheets: SheetInput[] = [
       { name: "Visible" },
       { name: "Hidden", hidden: true },
       { name: "VeryHidden", veryHidden: true },
@@ -412,7 +413,7 @@ describe("StylesCollector", () => {
 
 describe("writeWorksheetXml", () => {
   it("generates worksheet with string/number/boolean cells", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [
         ["Hello", 42, true],
@@ -462,7 +463,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("handles null and undefined values", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [[null, "hello", null]],
     }
@@ -483,7 +484,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("generates date cells with serial numbers", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [
         [new Date(Date.UTC(2024, 0, 15))], // Jan 15, 2024
@@ -511,12 +512,13 @@ describe("writeWorksheetXml", () => {
   })
 
   it("writes formula cells", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [[10, 20]],
-      cells: new Map([
+      cells: createCellStore([
         [
-          "0,2",
+          0,
+          2,
           {
             formula: "A1+B1",
             formulaResult: 30,
@@ -548,7 +550,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("writes merged cells", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Merged Header"]],
       merges: [{ startRow: 0, startCol: 0, endRow: 0, endCol: 3 }],
@@ -568,7 +570,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("writes freeze panes", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Header"]],
       freezePane: { rows: 1, columns: 0 },
@@ -593,7 +595,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("writes freeze panes for columns", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["A", "B"]],
       freezePane: { rows: 0, columns: 2 },
@@ -612,7 +614,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("writes freeze panes for both rows and columns", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["A"]],
       freezePane: { rows: 1, columns: 1 },
@@ -632,7 +634,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("writes auto filter", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [
         ["Name", "Age"],
@@ -652,7 +654,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("writes column widths", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       columns: [{ width: 20 }, { width: 30 }, {}, { width: 15, hidden: true }],
       rows: [["A", "B", "C", "D"]],
@@ -680,7 +682,7 @@ describe("writeWorksheetXml", () => {
   })
 
   it("writes empty sheet", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Empty",
       rows: [],
     }
@@ -860,9 +862,10 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [["Styled"]],
-          cells: new Map([
+          cells: createCellStore([
             [
-              "0,0",
+              0,
+              0,
               {
                 value: "Styled",
                 style: {
@@ -1072,9 +1075,10 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [[10, 20, null]],
-          cells: new Map([
+          cells: createCellStore([
             [
-              "0,2",
+              0,
+              2,
               {
                 formula: "SUM(A1:B1)",
                 formulaResult: 30,
@@ -1149,9 +1153,10 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [[1234.56]],
-          cells: new Map([
+          cells: createCellStore([
             [
-              "0,0",
+              0,
+              0,
               {
                 value: 1234.56,
                 style: { numFmt: "#,##0.00" },
@@ -1194,9 +1199,9 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [["A", "B"]],
-          cells: new Map([
-            ["0,0", { value: "A", style: boldStyle }],
-            ["0,1", { value: "B", style: boldStyle }],
+          cells: createCellStore([
+            [0, 0, { value: "A", style: boldStyle }],
+            [0, 1, { value: "B", style: boldStyle }],
           ]),
         },
       ],
@@ -1288,9 +1293,10 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [["Centered"]],
-          cells: new Map([
+          cells: createCellStore([
             [
-              "0,0",
+              0,
+              0,
               {
                 value: "Centered",
                 style: {
@@ -1328,9 +1334,10 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [["Protected"]],
-          cells: new Map([
+          cells: createCellStore([
             [
-              "0,0",
+              0,
+              0,
               {
                 value: "Protected",
                 style: {
@@ -1362,9 +1369,10 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [["Gradient"]],
-          cells: new Map([
+          cells: createCellStore([
             [
-              "0,0",
+              0,
+              0,
               {
                 value: "Gradient",
                 style: {
@@ -1401,10 +1409,10 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [[1234.5, 0.75, 42]],
-          cells: new Map([
-            ["0,0", { value: 1234.5, style: { numFmt: "#,##0.00" } }],
-            ["0,1", { value: 0.75, style: { numFmt: "0.00%" } }],
-            ["0,2", { value: 42, style: { numFmt: "#,##0.00" } }],
+          cells: createCellStore([
+            [0, 0, { value: 1234.5, style: { numFmt: "#,##0.00" } }],
+            [0, 1, { value: 0.75, style: { numFmt: "0.00%" } }],
+            [0, 2, { value: 42, style: { numFmt: "#,##0.00" } }],
           ]),
         },
       ],
@@ -1455,7 +1463,9 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [["Original", 100]],
-          cells: new Map([["0,0", { value: "Overridden", style: { font: { bold: true } } }]]),
+          cells: createCellStore([
+            [0, 0, { value: "Overridden", style: { font: { bold: true } } }],
+          ]),
         },
       ],
     })
@@ -1484,9 +1494,9 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [["Single", "Double"]],
-          cells: new Map([
-            ["0,0", { value: "Single", style: { font: { underline: true } } }],
-            ["0,1", { value: "Double", style: { font: { underline: "double" } } }],
+          cells: createCellStore([
+            [0, 0, { value: "Single", style: { font: { underline: true } } }],
+            [0, 1, { value: "Double", style: { font: { underline: "double" } } }],
           ]),
         },
       ],

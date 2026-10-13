@@ -49,7 +49,7 @@ describe("object writers take the union of every record's keys", () => {
     // Previously: "a\n1\n\n3" — one column, and the middle record blank.
     expect(csv.split(/\r?\n/)[0]).toBe("a,b,c")
 
-    const { headers, data } = parseCsvObjects(csv, { header: true, typeInference: true })
+    const { headers, data } = parseCsvObjects(csv, { hasHeaderRow: true, typeInference: true })
 
     expect(headers).toEqual(["a", "b", "c"])
     expect(data).toHaveLength(3)

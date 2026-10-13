@@ -1,3 +1,4 @@
+import { createCellStore, setCell, getCell, hasCell } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import type { Sheet, Cell } from "../src/_types"
 import {
@@ -110,11 +111,11 @@ describe("insertRows", () => {
     expect(sheet.merges).toEqual([{ startRow: 0, startCol: 0, endRow: 4, endCol: 0 }])
   })
 
-  it("should update cells Map keys correctly", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", makeCell("A1"))
-    cells.set("1,0", makeCell("A2"))
-    cells.set("2,1", makeCell("B3"))
+  it("should update cell metadata coordinates correctly", () => {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, makeCell("A1"))
+    setCell(cells, 1, 0, makeCell("A2"))
+    setCell(cells, 2, 1, makeCell("B3"))
 
     const sheet = makeSheet({
       rows: [["A1"], ["A2"], [null, "B3"]],
@@ -123,10 +124,10 @@ describe("insertRows", () => {
 
     insertRows(sheet, 1, 2)
 
-    expect(sheet.cells!.get("0,0")!.value).toBe("A1")
-    expect(sheet.cells!.has("1,0")).toBe(false)
-    expect(sheet.cells!.get("3,0")!.value).toBe("A2")
-    expect(sheet.cells!.get("4,1")!.value).toBe("B3")
+    expect(getCell(sheet.cells!, 0, 0)!.value).toBe("A1")
+    expect(hasCell(sheet.cells!, 1, 0)).toBe(false)
+    expect(getCell(sheet.cells!, 3, 0)!.value).toBe("A2")
+    expect(getCell(sheet.cells!, 4, 1)!.value).toBe("B3")
   })
 
   it("should work on an empty sheet", () => {
@@ -307,12 +308,12 @@ describe("deleteRows", () => {
     expect(sheet.rows).toEqual([])
   })
 
-  it("should update cells Map correctly", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", makeCell("A1"))
-    cells.set("1,0", makeCell("A2"))
-    cells.set("2,0", makeCell("A3"))
-    cells.set("3,0", makeCell("A4"))
+  it("should update cell store correctly", () => {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, makeCell("A1"))
+    setCell(cells, 1, 0, makeCell("A2"))
+    setCell(cells, 2, 0, makeCell("A3"))
+    setCell(cells, 3, 0, makeCell("A4"))
 
     const sheet = makeSheet({
       rows: [["A1"], ["A2"], ["A3"], ["A4"]],
@@ -322,10 +323,10 @@ describe("deleteRows", () => {
     // Delete row 1
     deleteRows(sheet, 1, 1)
 
-    expect(sheet.cells!.get("0,0")!.value).toBe("A1")
-    expect(sheet.cells!.has("1,0")).toBe(true)
-    expect(sheet.cells!.get("1,0")!.value).toBe("A3")
-    expect(sheet.cells!.get("2,0")!.value).toBe("A4")
+    expect(getCell(sheet.cells!, 0, 0)!.value).toBe("A1")
+    expect(hasCell(sheet.cells!, 1, 0)).toBe(true)
+    expect(getCell(sheet.cells!, 1, 0)!.value).toBe("A3")
+    expect(getCell(sheet.cells!, 2, 0)!.value).toBe("A4")
   })
 
   it("should do nothing when count is 0", () => {
@@ -447,11 +448,11 @@ describe("insertColumns", () => {
     expect(sheet.columns![3].header).toBe("Col3")
   })
 
-  it("should update cells Map keys", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", makeCell("A1"))
-    cells.set("0,1", makeCell("B1"))
-    cells.set("1,0", makeCell("A2"))
+  it("should update cell metadata coordinates", () => {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, makeCell("A1"))
+    setCell(cells, 0, 1, makeCell("B1"))
+    setCell(cells, 1, 0, makeCell("A2"))
 
     const sheet = makeSheet({
       rows: [["A1", "B1"], ["A2"]],
@@ -460,9 +461,9 @@ describe("insertColumns", () => {
 
     insertColumns(sheet, 1, 1)
 
-    expect(sheet.cells!.get("0,0")!.value).toBe("A1")
-    expect(sheet.cells!.get("0,2")!.value).toBe("B1")
-    expect(sheet.cells!.get("1,0")!.value).toBe("A2")
+    expect(getCell(sheet.cells!, 0, 0)!.value).toBe("A1")
+    expect(getCell(sheet.cells!, 0, 2)!.value).toBe("B1")
+    expect(getCell(sheet.cells!, 1, 0)!.value).toBe("A2")
   })
 
   it("should update merge ranges", () => {
@@ -586,11 +587,11 @@ describe("deleteColumns", () => {
     expect(sheet.columns![1].header).toBe("Col3")
   })
 
-  it("should update cells Map correctly", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", makeCell("A1"))
-    cells.set("0,1", makeCell("B1"))
-    cells.set("0,2", makeCell("C1"))
+  it("should update cell store correctly", () => {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, makeCell("A1"))
+    setCell(cells, 0, 1, makeCell("B1"))
+    setCell(cells, 0, 2, makeCell("C1"))
 
     const sheet = makeSheet({
       rows: [["A1", "B1", "C1"]],
@@ -599,9 +600,9 @@ describe("deleteColumns", () => {
 
     deleteColumns(sheet, 1, 1)
 
-    expect(sheet.cells!.get("0,0")!.value).toBe("A1")
-    expect(sheet.cells!.has("0,1")).toBe(true)
-    expect(sheet.cells!.get("0,1")!.value).toBe("C1")
+    expect(getCell(sheet.cells!, 0, 0)!.value).toBe("A1")
+    expect(hasCell(sheet.cells!, 0, 1)).toBe(true)
+    expect(getCell(sheet.cells!, 0, 1)!.value).toBe("C1")
   })
 
   it("should remove merge fully within deleted columns", () => {
@@ -747,11 +748,11 @@ describe("moveRows", () => {
     expect(sheet.rows).toEqual([["A"], ["B"], ["C"]])
   })
 
-  it("should update cells Map when moving rows", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", makeCell("A1"))
-    cells.set("1,0", makeCell("B1"))
-    cells.set("2,0", makeCell("C1"))
+  it("should update cell store when moving rows", () => {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, makeCell("A1"))
+    setCell(cells, 1, 0, makeCell("B1"))
+    setCell(cells, 2, 0, makeCell("C1"))
 
     const sheet = makeSheet({
       rows: [["A1"], ["B1"], ["C1"]],
@@ -762,9 +763,9 @@ describe("moveRows", () => {
     moveRows(sheet, 0, 1, 2)
 
     // Result: ["B1"], ["A1"], ["C1"]
-    expect(sheet.cells!.get("0,0")!.value).toBe("B1")
-    expect(sheet.cells!.get("1,0")!.value).toBe("A1")
-    expect(sheet.cells!.get("2,0")!.value).toBe("C1")
+    expect(getCell(sheet.cells!, 0, 0)!.value).toBe("B1")
+    expect(getCell(sheet.cells!, 1, 0)!.value).toBe("A1")
+    expect(getCell(sheet.cells!, 2, 0)!.value).toBe("C1")
   })
 })
 

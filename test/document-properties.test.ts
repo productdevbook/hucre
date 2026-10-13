@@ -5,7 +5,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { writeCoreProperties, writeAppProperties } from "../src/xlsx/doc-props-writer"
 import { parseCoreProperties, parseAppProperties } from "../src/xlsx/doc-props-reader"
-import type { WriteOptions, WorkbookProperties } from "../src/_types"
+import type { WorkbookInput, WorkbookProperties } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -174,7 +174,7 @@ describe("parseAppProperties", () => {
 
 describe("XLSX document properties integration", () => {
   it("writes properties and includes docProps files in ZIP", async () => {
-    const options: WriteOptions = {
+    const options: WorkbookInput = {
       sheets: [{ name: "Sheet1", rows: [["Hello"]] }],
       properties: {
         title: "Test Workbook",
@@ -203,7 +203,7 @@ describe("XLSX document properties integration", () => {
     const created = new Date("2026-01-15T10:00:00Z")
     const modified = new Date("2026-03-24T12:00:00Z")
 
-    const options: WriteOptions = {
+    const options: WorkbookInput = {
       sheets: [{ name: "Sheet1", rows: [["data"]] }],
       properties: {
         title: "Full Props Test",
@@ -239,7 +239,7 @@ describe("XLSX document properties integration", () => {
   })
 
   it("generates minimal core.xml with modified date when no properties provided", async () => {
-    const options: WriteOptions = {
+    const options: WorkbookInput = {
       sheets: [{ name: "Sheet1", rows: [["data"]] }],
     }
 

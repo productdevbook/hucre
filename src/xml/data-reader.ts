@@ -3,6 +3,7 @@
 // (GS1, Trendyol, SAP B1, Logo GO, Netsis) don't pay full-DOM memory cost.
 
 import type { CellValue } from "../_types"
+import { assertGridSize } from "../_grid"
 import { ParseError } from "../errors"
 import { parseSax } from "./parser"
 
@@ -41,6 +42,8 @@ export interface XmlReadOptions {
   ) => CellValue
   /** Maximum number of rows. */
   maxRows?: number
+  /** Maximum cells in the normalized table. Default: 20,000,000. */
+  maxTotalCells?: number
 }
 
 export interface XmlReadResult<T extends Record<string, CellValue> = Record<string, CellValue>> {
@@ -121,6 +124,10 @@ export function readXml<T extends Record<string, CellValue> = Record<string, Cel
       }
     }
   }
+
+  // The union may be much wider than any source row. Bound the product
+  // before copying every missing field into every normalized record.
+  assertGridSize(flatRows.length, headers.length, options?.maxTotalCells)
 
   if (options?.transformHeader) {
     const orig = headers

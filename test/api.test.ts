@@ -111,20 +111,28 @@ describe("write()", () => {
   })
 
   it("writes XLSX when format is explicitly 'xlsx'", async () => {
-    const output = await write({
-      sheets: [{ name: "Test", rows: [["A", "B"]] }],
-      format: "xlsx",
-    })
+    const output = await write(
+      {
+        sheets: [{ name: "Test", rows: [["A", "B"]] }],
+      },
+      {
+        format: "xlsx",
+      },
+    )
 
     const workbook = await readXlsx(output)
     expect(workbook.sheets[0]!.name).toBe("Test")
   })
 
   it("writes ODS when format is 'ods'", async () => {
-    const output = await write({
-      sheets: [{ name: "OdsSheet", rows: [["Value", 100]] }],
-      format: "ods",
-    })
+    const output = await write(
+      {
+        sheets: [{ name: "OdsSheet", rows: [["Value", 100]] }],
+      },
+      {
+        format: "ods",
+      },
+    )
 
     const workbook = await readOds(output)
     expect(workbook.sheets[0]!.name).toBe("OdsSheet")
@@ -385,10 +393,14 @@ describe("round-trip", () => {
       ["value2", 99.5],
     ]
 
-    const output = await write({
-      sheets: [{ name: "Data", rows }],
-      format: "xlsx",
-    })
+    const output = await write(
+      {
+        sheets: [{ name: "Data", rows }],
+      },
+      {
+        format: "xlsx",
+      },
+    )
 
     const workbook = await read(output)
     expect(workbook.sheets[0]!.name).toBe("Data")
@@ -401,10 +413,14 @@ describe("round-trip", () => {
       ["foo", 123],
     ]
 
-    const output = await write({
-      sheets: [{ name: "ODS", rows }],
-      format: "ods",
-    })
+    const output = await write(
+      {
+        sheets: [{ name: "ODS", rows }],
+      },
+      {
+        format: "ods",
+      },
+    )
 
     const workbook = await read(output)
     expect(workbook.sheets[0]!.name).toBe("ODS")

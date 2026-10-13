@@ -4,7 +4,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
 import { createSharedStrings, writeWorksheetXml } from "../src/xlsx/worksheet-writer"
-import type { WriteSheet } from "../src/_types"
+import type { SheetInput } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -12,7 +12,7 @@ function findChild(el: { children: Array<unknown> }, localName: string): any {
   return el.children.find((c: any) => typeof c !== "string" && (c.local || c.tag) === localName)
 }
 
-function writeXml(sheet: WriteSheet): string {
+function writeXml(sheet: SheetInput): string {
   const styles = createStylesCollector()
   const ss = createSharedStrings()
   const result = writeWorksheetXml(sheet, styles, ss)
@@ -27,7 +27,7 @@ function parseSheet(xml: string) {
 
 describe("view settings — showGridLines", () => {
   it("writes showGridLines='0' when gridlines hidden", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       view: { showGridLines: false },
@@ -41,7 +41,7 @@ describe("view settings — showGridLines", () => {
   })
 
   it("does not emit showGridLines when true (default)", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       view: { showGridLines: true },
@@ -59,7 +59,7 @@ describe("view settings — showGridLines", () => {
 
 describe("view settings — showRowColHeaders", () => {
   it("writes showRowColHeaders='0' when headers hidden", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       view: { showRowColHeaders: false },
@@ -73,7 +73,7 @@ describe("view settings — showRowColHeaders", () => {
   })
 
   it("does not emit showRowColHeaders when true (default)", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
     }
@@ -90,7 +90,7 @@ describe("view settings — showRowColHeaders", () => {
 
 describe("view settings — zoomScale", () => {
   it("writes zoomScale='75' when zoom is 75%", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       view: { zoomScale: 75 },
@@ -104,7 +104,7 @@ describe("view settings — zoomScale", () => {
   })
 
   it("writes zoomScale='150' when zoom is 150%", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       view: { zoomScale: 150 },
@@ -118,7 +118,7 @@ describe("view settings — zoomScale", () => {
   })
 
   it("does not emit zoomScale when not set", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
     }
@@ -135,7 +135,7 @@ describe("view settings — zoomScale", () => {
 
 describe("view settings — rightToLeft (RTL)", () => {
   it("writes rightToLeft='1' when RTL enabled", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       view: { rightToLeft: true },
@@ -149,7 +149,7 @@ describe("view settings — rightToLeft (RTL)", () => {
   })
 
   it("does not emit rightToLeft when false", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       view: { rightToLeft: false },
@@ -167,7 +167,7 @@ describe("view settings — rightToLeft (RTL)", () => {
 
 describe("view settings — tabColor", () => {
   it("writes sheetPr with tabColor when tab color is set", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       view: { tabColor: { rgb: "0000FF" } },
@@ -183,7 +183,7 @@ describe("view settings — tabColor", () => {
   })
 
   it("writes tabColor with theme color", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       view: { tabColor: { theme: 4, tint: -0.25 } },
@@ -198,7 +198,7 @@ describe("view settings — tabColor", () => {
   })
 
   it("sheetPr appears before sheetViews in XML", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       view: { tabColor: { rgb: "FF0000" } },
@@ -213,7 +213,7 @@ describe("view settings — tabColor", () => {
   })
 
   it("does not emit sheetPr when no tabColor", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       view: { showGridLines: false },
@@ -228,7 +228,7 @@ describe("view settings — tabColor", () => {
 
 describe("view settings — defaults", () => {
   it("no extra attributes when no view settings specified", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
     }
@@ -246,7 +246,7 @@ describe("view settings — defaults", () => {
   })
 
   it("combines multiple view settings", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       view: {

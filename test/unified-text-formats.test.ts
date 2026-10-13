@@ -142,22 +142,107 @@ describe("write() covers what the library can write", () => {
   ]
 
   it("the text formats each produce their own shape", async () => {
-    expect(dec(await write({ sheets, format: "csv" }))).toContain("name,qty")
-    expect(dec(await write({ sheets, format: "tsv" }))).toContain("name\tqty")
-    expect(dec(await write({ sheets, format: "json" }))).toContain('"name"')
     expect(
-      dec(await write({ sheets, format: "ndjson" }))
+      dec(
+        await write(
+          {
+            sheets,
+          },
+          {
+            format: "csv",
+          },
+        ),
+      ),
+    ).toContain("name,qty")
+    expect(
+      dec(
+        await write(
+          {
+            sheets,
+          },
+          {
+            format: "tsv",
+          },
+        ),
+      ),
+    ).toContain("name\tqty")
+    expect(
+      dec(
+        await write(
+          {
+            sheets,
+          },
+          {
+            format: "json",
+          },
+        ),
+      ),
+    ).toContain('"name"')
+    expect(
+      dec(
+        await write(
+          {
+            sheets,
+          },
+          {
+            format: "ndjson",
+          },
+        ),
+      )
         .trim()
         .split("\n"),
     ).toHaveLength(1)
-    expect(dec(await write({ sheets, format: "xml" }))).toContain("<name>")
-    expect(dec(await write({ sheets, format: "html" }))).toContain("<table")
-    expect(dec(await write({ sheets, format: "markdown" }))).toContain("| name")
+    expect(
+      dec(
+        await write(
+          {
+            sheets,
+          },
+          {
+            format: "xml",
+          },
+        ),
+      ),
+    ).toContain("<name>")
+    expect(
+      dec(
+        await write(
+          {
+            sheets,
+          },
+          {
+            format: "html",
+          },
+        ),
+      ),
+    ).toContain("<table")
+    expect(
+      dec(
+        await write(
+          {
+            sheets,
+          },
+          {
+            format: "markdown",
+          },
+        ),
+      ),
+    ).toContain("| name")
   })
 
   it("returns bytes for every format, so the caller does not branch", async () => {
     for (const format of ["xlsx", "ods", "csv", "json", "html"] as const) {
-      expect(await write({ sheets, format }), format).toBeInstanceOf(Uint8Array)
+      expect(
+        await write(
+          {
+            sheets,
+          },
+          {
+            format,
+          },
+        ),
+        format,
+      ).toBeInstanceOf(Uint8Array)
     }
   })
 
@@ -169,7 +254,16 @@ describe("write() covers what the library can write", () => {
 
   it("round-trips through the text formats it can read back", async () => {
     for (const format of ["csv", "json", "ndjson", "xml"] as const) {
-      const wb = await read(await write({ sheets, format }))
+      const wb = await read(
+        await write(
+          {
+            sheets,
+          },
+          {
+            format,
+          },
+        ),
+      )
 
       expect(wb.sheets[0]!.rows[0], format).toEqual(["name", "qty"])
       expect(String(wb.sheets[0]!.rows[1]![0]), format).toBe("Widget")
@@ -177,7 +271,16 @@ describe("write() covers what the library can write", () => {
   })
 
   it("says so rather than crashing on a workbook with no sheets", async () => {
-    await expect(write({ sheets: [], format: "csv" })).rejects.toThrow(UnsupportedFormatError)
+    await expect(
+      write(
+        {
+          sheets: [],
+        },
+        {
+          format: "csv",
+        },
+      ),
+    ).rejects.toThrow(UnsupportedFormatError)
   })
 })
 
@@ -192,7 +295,16 @@ describe("the header-row convention is the same in both directions", () => {
         ],
       },
     ]
-    const csv = dec(await write({ sheets, format: "csv" }))
+    const csv = dec(
+      await write(
+        {
+          sheets,
+        },
+        {
+          format: "csv",
+        },
+      ),
+    )
 
     expect(parseCsv(csv)[0]).toEqual(["a", "b"])
   })
@@ -208,7 +320,18 @@ describe("the header-row convention is the same in both directions", () => {
       },
     ]
 
-    expect(dec(await write({ sheets, format: "json" }))).toContain("column2")
+    expect(
+      dec(
+        await write(
+          {
+            sheets,
+          },
+          {
+            format: "json",
+          },
+        ),
+      ),
+    ).toContain("column2")
   })
 })
 
@@ -230,11 +353,15 @@ describe("text-format options reach their writer", () => {
   }
 
   it("csv: delimiter and bom", async () => {
-    const bytes = (await write({
-      sheets: [sheet],
-      format: "csv",
-      csv: { delimiter: ";", bom: true },
-    })) as Uint8Array
+    const bytes = (await write(
+      {
+        sheets: [sheet],
+      },
+      {
+        format: "csv",
+        csv: { delimiter: ";", bom: true },
+      },
+    )) as Uint8Array
 
     expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xef, 0xbb, 0xbf])
     expect(dec(bytes)).toContain("Şehir;Ürün")
@@ -242,32 +369,44 @@ describe("text-format options reach their writer", () => {
 
   it("csv: escapeFormulae", async () => {
     const out = dec(
-      (await write({
-        sheets: [{ name: "S", rows: [["=1+1"]] }],
-        format: "csv",
-        csv: { escapeFormulae: true },
-      })) as Uint8Array,
+      (await write(
+        {
+          sheets: [{ name: "S", rows: [["=1+1"]] }],
+        },
+        {
+          format: "csv",
+          csv: { escapeFormulae: true },
+        },
+      )) as Uint8Array,
     )
     expect(out).toContain("'=1+1")
   })
 
   it("tsv: bom, with the tab still the delimiter", async () => {
-    const bytes = (await write({
-      sheets: [sheet],
-      format: "tsv",
-      tsv: { bom: true },
-    })) as Uint8Array
+    const bytes = (await write(
+      {
+        sheets: [sheet],
+      },
+      {
+        format: "tsv",
+        tsv: { bom: true },
+      },
+    )) as Uint8Array
     expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xef, 0xbb, 0xbf])
     expect(dec(bytes)).toContain("Şehir\tÜrün")
   })
 
   it("json: pretty and indent", async () => {
     const out = dec(
-      (await write({
-        sheets: [sheet],
-        format: "json",
-        json: { pretty: true, indent: "    " },
-      })) as Uint8Array,
+      (await write(
+        {
+          sheets: [sheet],
+        },
+        {
+          format: "json",
+          json: { pretty: true, indent: "    " },
+        },
+      )) as Uint8Array,
     )
     expect(out).toContain("\n    ")
   })
@@ -276,19 +415,23 @@ describe("text-format options reach their writer", () => {
     // ASCII headers: `writeXml` rejects a non-ASCII element name, which
     // XML 1.0 §2.3 allows. Tracked separately.
     const out = dec(
-      (await write({
-        sheets: [
-          {
-            name: "S",
-            rows: [
-              ["city", "qty"],
-              ["Izmir", 3],
-            ],
-          },
-        ],
-        format: "xml",
-        xml: { rootTag: "cities", rowTag: "city_row" },
-      })) as Uint8Array,
+      (await write(
+        {
+          sheets: [
+            {
+              name: "S",
+              rows: [
+                ["city", "qty"],
+                ["Izmir", 3],
+              ],
+            },
+          ],
+        },
+        {
+          format: "xml",
+          xml: { rootTag: "cities", rowTag: "city_row" },
+        },
+      )) as Uint8Array,
     )
     expect(out).toContain("<cities>")
     expect(out).toContain("<city_row>")
@@ -296,11 +439,15 @@ describe("text-format options reach their writer", () => {
 
   it("html: caption and header row", async () => {
     const out = dec(
-      (await write({
-        sheets: [sheet],
-        format: "html",
-        html: { caption: "Şehirler", hasHeaderRow: true },
-      })) as Uint8Array,
+      (await write(
+        {
+          sheets: [sheet],
+        },
+        {
+          format: "html",
+          html: { caption: "Şehirler", hasHeaderRow: true },
+        },
+      )) as Uint8Array,
     )
     expect(out).toContain("<caption>Şehirler</caption>")
     expect(out).toContain("<thead>")
@@ -308,17 +455,30 @@ describe("text-format options reach their writer", () => {
 
   it("markdown: alignment", async () => {
     const out = dec(
-      (await write({
-        sheets: [sheet],
-        format: "markdown",
-        markdown: { alignment: ["right", "right"] },
-      })) as Uint8Array,
+      (await write(
+        {
+          sheets: [sheet],
+        },
+        {
+          format: "markdown",
+          markdown: { alignment: ["right", "right"] },
+        },
+      )) as Uint8Array,
     )
     expect(out).toContain("--:")
   })
 
   it("leaves the defaults alone when no bag is passed", async () => {
-    const out = dec((await write({ sheets: [sheet], format: "csv" })) as Uint8Array)
+    const out = dec(
+      (await write(
+        {
+          sheets: [sheet],
+        },
+        {
+          format: "csv",
+        },
+      )) as Uint8Array,
+    )
     expect(out.startsWith("Şehir,Ürün")).toBe(true)
   })
 })

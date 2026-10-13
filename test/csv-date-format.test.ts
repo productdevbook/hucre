@@ -77,7 +77,7 @@ describe("CSV dateFormat", () => {
 
     const incremental = new CsvStreamWriter({ dateFormat: format })
     incremental.addRow([AT])
-    expect(incremental.finish()).toBe(expected)
+    expect(incremental.finishText()).toBe(expected)
 
     expect(await drain(writeCsvStream([[AT]], { dateFormat: format }))).toBe(expected)
   })

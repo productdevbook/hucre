@@ -782,12 +782,12 @@ describe("ODS Reader", () => {
 
     const workbook = await readOds(written)
     // Row 0: ["A1", null x 8, "J1"] -> trailing nulls trimmed, "J1" keeps col 9
-    // Row 1: all null -> [], an interior empty row keeps its position (#394)
+    // Row 1: all null -> a row of nulls at the sheet's width; it keeps its position (#394)
     // Row 2: ["A3"] -> ["A3"], still at index 2
     expect(workbook.sheets[0].rows.length).toBe(3)
     expect(workbook.sheets[0].rows[0][0]).toBe("A1")
     expect(workbook.sheets[0].rows[0][9]).toBe("J1")
-    expect(workbook.sheets[0].rows[1]).toEqual([])
+    expect(workbook.sheets[0].rows[1]).toEqual(Array.from({ length: 10 }, () => null))
     expect(workbook.sheets[0].rows[2][0]).toBe("A3")
   })
 

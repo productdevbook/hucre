@@ -3,6 +3,7 @@
 // into tabular { data, headers }.
 
 import type { CellValue, Sheet, Workbook } from "../_types"
+import { assertGridSize } from "../_grid"
 import { ParseError } from "../errors"
 import { collectHeaders, flattenValue, type FlattenOptions } from "./flatten"
 
@@ -20,9 +21,17 @@ export interface JsonReadOptions extends FlattenOptions {
   /** Transform header values. */
   transformHeader?: (header: string, index: number) => string
   /** Transform each cell value. */
-  transformValue?: (value: CellValue, header: string, rowIndex: number) => CellValue
+  transformValue?: (
+    value: CellValue,
+    header: string,
+    rowIndex: number,
+    colIndex: number,
+  ) => CellValue
   /** Maximum number of rows to return. */
   maxRows?: number
+  /** Maximum cells in the normalized table. Default: 20,000,000.
+   * `jsonToWorkbook` also counts its header row. */
+  maxTotalCells?: number
 }
 
 export interface JsonReadResult<T extends Record<string, CellValue> = Record<string, CellValue>> {
@@ -160,6 +169,7 @@ function looksLikeSheetMap(entries: [string, unknown][]): boolean {
 function rowsToResult<T extends Record<string, CellValue>>(
   rows: unknown[],
   options?: JsonReadOptions,
+  headerRows = 0,
 ): JsonReadResult<T> {
   const flatOpts: FlattenOptions = {
     flatten: options?.flatten,
@@ -185,6 +195,9 @@ function rowsToResult<T extends Record<string, CellValue>>(
   }
 
   let headers = collectHeaders(flat)
+  // The key union turns sparse records into a dense table. A different
+  // key per input row creates N² properties before a workbook is built.
+  assertGridSize(flat.length + headerRows, headers.length, options?.maxTotalCells)
   if (options?.transformHeader) {
     headers = headers.map((h, i) => options.transformHeader!(h, i))
   }
@@ -199,11 +212,12 @@ function rowsToResult<T extends Record<string, CellValue>>(
   for (let r = 0; r < flat.length; r++) {
     const src = flat[r]!
     const obj: Record<string, CellValue> = {}
-    for (const origKey of originalHeaders) {
+    for (let c = 0; c < originalHeaders.length; c++) {
+      const origKey = originalHeaders[c]!
       const outKey = headerMap ? headerMap.get(origKey)! : origKey
       let val = src[origKey] ?? null
       if (options?.transformValue) {
-        val = options.transformValue(val, outKey, r)
+        val = options.transformValue(val, outKey, r, c)
       }
       obj[outKey] = val
     }
@@ -274,7 +288,7 @@ export function jsonToWorkbook(
 }
 
 function rowsToSheet(name: string, rows: unknown[], options?: JsonToWorkbookOptions): Sheet {
-  const { data, headers } = rowsToResult(rows, options)
+  const { data, headers } = rowsToResult(rows, options, 1)
   const grid: CellValue[][] = [headers]
   for (const row of data) {
     grid.push(headers.map((h) => row[h] ?? null))

@@ -3,12 +3,12 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip"
 import { ZipReader } from "../src/zip/reader"
-import type { PageSetup, WriteOptions } from "../src/_types"
+import type { PageSetup, WorkbookInput } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
 async function roundTrip(pageSetup: PageSetup): Promise<PageSetup | undefined> {
-  const options: WriteOptions = { sheets: [{ name: "S", rows: [["a"]], pageSetup }] }
+  const options: WorkbookInput = { sheets: [{ name: "S", rows: [["a"]], pageSetup }] }
   const workbook = await readXlsx(await writeXlsx(options))
   return workbook.sheets[0].pageSetup
 }

@@ -1,3 +1,4 @@
+import { getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { OdsStreamWriter } from "../src/ods/incremental-writer"
 import { writeOdsStream } from "../src/ods/stream-writer"
@@ -82,10 +83,10 @@ describe("the thing writeOdsStream cannot do", () => {
   it("carries per-cell styles", async () => {
     const sheet = (await readOds(await styled(), { readStyles: true })).sheets[0]!
 
-    expect(sheet.cells?.get("0,0")?.style?.font?.bold).toBe(true)
-    expect(sheet.cells?.get("0,1")?.style?.numFmt).toBe("#,##0.00")
+    expect(getCell(sheet.cells, 0, 0)?.style?.font?.bold).toBe(true)
+    expect(getCell(sheet.cells, 0, 1)?.style?.numFmt).toBe("#,##0.00")
 
-    const fill = sheet.cells?.get("0,2")?.style?.fill
+    const fill = getCell(sheet.cells, 0, 2)?.style?.fill
     expect(fill?.type === "pattern" ? fill.fgColor?.rgb : undefined).toBe("FFFF00")
   })
 
@@ -97,7 +98,7 @@ describe("the thing writeOdsStream cannot do", () => {
     const sheet = (await readOds(streamed, { readStyles: true })).sheets[0]!
 
     expect(sheet.rows[0]![0]).toBe("bold")
-    expect(sheet.cells?.get("0,0")?.style?.font?.bold).toBeUndefined()
+    expect(getCell(sheet.cells, 0, 0)?.style?.font?.bold).toBeUndefined()
   })
 
   it("and column widths, which it also cannot", async () => {
@@ -147,11 +148,11 @@ describe("the shared vocabulary", () => {
     expect(() => w.addObject({ a: 1 })).toThrow(/columns/)
   })
 
-  it("toStream hands back the finished document", async () => {
+  it("finish hands back the finished document", async () => {
     const w = new OdsStreamWriter({ name: "S" })
     w.addRow(["a", 1])
 
-    const wb = await readOds(await drain(w.toStream()))
+    const wb = await readOds(await w.finish())
     expect(wb.sheets[0]!.rows[0]).toEqual(["a", 1])
   })
 
@@ -172,8 +173,10 @@ describe("details that are easy to get wrong", () => {
     })
     w.addRow([{ value: "x", style: { font: { bold: true } } }])
 
-    const style = (await readOds(await w.finish(), { readStyles: true })).sheets[0]!.cells?.get(
-      "0,0",
+    const style = getCell(
+      (await readOds(await w.finish(), { readStyles: true })).sheets[0]!.cells,
+      0,
+      0,
     )?.style
 
     expect(style?.font?.bold).toBe(true)
@@ -184,8 +187,10 @@ describe("details that are easy to get wrong", () => {
     const w = new OdsStreamWriter({ name: "S", columns: [{ style: { font: { italic: true } } }] })
     w.addRow(["x"])
 
-    const style = (await readOds(await w.finish(), { readStyles: true })).sheets[0]!.cells?.get(
-      "0,0",
+    const style = getCell(
+      (await readOds(await w.finish(), { readStyles: true })).sheets[0]!.cells,
+      0,
+      0,
     )?.style
 
     expect(style?.font?.italic).toBe(true)

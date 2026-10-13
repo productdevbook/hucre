@@ -1,3 +1,4 @@
+import { createCellStore, getCell, setCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
@@ -23,9 +24,9 @@ describe("Excel 2024 checkbox cells (#157)", () => {
         {
           name: "Sheet1",
           rows: [["Done?"], [true], [false]],
-          cells: new Map([
-            ["1,0", { value: true, type: "boolean", checkbox: true }],
-            ["2,0", { value: false, type: "boolean", checkbox: true }],
+          cells: createCellStore([
+            [1, 0, { value: true, type: "boolean", checkbox: true }],
+            [2, 0, { value: false, type: "boolean", checkbox: true }],
           ]),
         },
       ],
@@ -47,7 +48,7 @@ describe("Excel 2024 checkbox cells (#157)", () => {
         {
           name: "S",
           rows: [[true]],
-          cells: new Map([["0,0", { value: true, type: "boolean", checkbox: true }]]),
+          cells: createCellStore([[0, 0, { value: true, type: "boolean", checkbox: true }]]),
         },
       ],
     })
@@ -67,7 +68,7 @@ describe("Excel 2024 checkbox cells (#157)", () => {
         {
           name: "S",
           rows: [[true]],
-          cells: new Map([["0,0", { value: true, type: "boolean", checkbox: true }]]),
+          cells: createCellStore([[0, 0, { value: true, type: "boolean", checkbox: true }]]),
         },
       ],
     })
@@ -99,9 +100,9 @@ describe("Excel 2024 checkbox cells (#157)", () => {
         {
           name: "S",
           rows: [[true], [false]],
-          cells: new Map([
-            ["0,0", { value: true, type: "boolean", checkbox: true }],
-            ["1,0", { value: false, type: "boolean", checkbox: true }],
+          cells: createCellStore([
+            [0, 0, { value: true, type: "boolean", checkbox: true }],
+            [1, 0, { value: false, type: "boolean", checkbox: true }],
           ]),
         },
       ],
@@ -112,8 +113,8 @@ describe("Excel 2024 checkbox cells (#157)", () => {
     expect(sheet.rows[0]![0]).toBe(true)
     expect(sheet.rows[1]![0]).toBe(false)
 
-    expect(sheet.cells?.get("0,0")?.checkbox).toBe(true)
-    expect(sheet.cells?.get("1,0")?.checkbox).toBe(true)
+    expect(getCell(sheet.cells, 0, 0)?.checkbox).toBe(true)
+    expect(getCell(sheet.cells, 1, 0)?.checkbox).toBe(true)
   })
 
   it("preserves checkbox alongside an explicit cell style", async () => {
@@ -122,9 +123,10 @@ describe("Excel 2024 checkbox cells (#157)", () => {
         {
           name: "Styled",
           rows: [[true]],
-          cells: new Map([
+          cells: createCellStore([
             [
-              "0,0",
+              0,
+              0,
               {
                 value: true,
                 type: "boolean",
@@ -138,7 +140,7 @@ describe("Excel 2024 checkbox cells (#157)", () => {
     })
 
     const wb = await readXlsx(buf, { readStyles: true })
-    const cell = wb.sheets[0]!.cells?.get("0,0")
+    const cell = getCell(wb.sheets[0]!.cells, 0, 0)
     expect(cell?.checkbox).toBe(true)
     expect(cell?.style?.font?.bold).toBe(true)
   })
@@ -146,9 +148,9 @@ describe("Excel 2024 checkbox cells (#157)", () => {
   it("multiple checkbox cells share a single xf complement entry", async () => {
     // XlsxWriter emits exactly one <bag type="XFComplements"> with one
     // <bagId>2</bagId> regardless of how many checkbox cells there are.
-    const cells = new Map<string, { value: boolean; type: "boolean"; checkbox: true }>()
+    const cells = createCellStore<{ value: boolean; type: "boolean"; checkbox: true }>()
     for (let r = 0; r < 8; r++) {
-      cells.set(`${r},0`, { value: r % 2 === 0, type: "boolean", checkbox: true })
+      setCell(cells, r, 0, { value: r % 2 === 0, type: "boolean", checkbox: true })
     }
 
     const buf = await writeXlsx({

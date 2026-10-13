@@ -12,12 +12,7 @@ export type {
 export { writeJson, writeNdjson, workbookToJson } from "./json/writer"
 export type { JsonWriteOptions, WorkbookToJsonOptions } from "./json/writer"
 
-export {
-  NdjsonStreamWriter,
-  streamNdjsonRows,
-  readNdjsonStream,
-  writeNdjsonStream,
-} from "./json/stream"
+export { NdjsonStreamWriter, streamNdjsonRows, writeNdjsonStream } from "./json/stream"
 export type {
   NdjsonStreamReadOptions,
   NdjsonStreamWriterOptions,
@@ -32,3 +27,13 @@ export type { UnflattenedRow } from "./json/unflatten"
 
 // ── Shared types used by this entry point's signatures ──────────────
 export type { CellValue, Sheet, Workbook } from "./_types"
+
+// A cell may hold an error value; every writer takes one, and the spreadsheet readers produce them.
+export { cellError, isCellError } from "./cell-error"
+export type { CellError, CellErrorCode } from "./cell-error"
+
+// Every stream*Rows reader yields this one shape.
+export type { StreamRow } from "./_types"
+
+// What a writer takes where a cell goes: a value, or a cell object.
+export type { CellInput } from "./_types"

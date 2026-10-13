@@ -1,3 +1,4 @@
+import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { ZipWriter } from "../src/zip/writer"
 import { streamXlsxRows } from "../src/xlsx/stream-reader"
@@ -105,7 +106,7 @@ describe("cell types", () => {
         `<c r="G1"><v>7</v></c>` +
         `</row>`,
     )
-    expect(rows[0]).toEqual(["line1\nline2", true, true, false, "#REF!", 12.5, 7])
+    expect(rows[0]).toEqual(["line1\nline2", true, true, false, cellError("#REF!"), 12.5, 7])
   })
 
   it("returns null for an out-of-range shared string index", async () => {

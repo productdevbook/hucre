@@ -139,7 +139,10 @@ function unquoteSheet(name: string): string {
 function shiftMatch(match: A1RangeMatch, shift: RefShift): string {
   // A reference into another sheet is not affected by this sheet's rows
   // moving. An unqualified one is local by definition.
-  if (match.sheet1 !== undefined && unquoteSheet(match.sheet1) !== shift.sheetName) {
+  if (
+    match.sheet1 !== undefined &&
+    unquoteSheet(match.sheet1).toLowerCase() !== shift.sheetName?.toLowerCase()
+  ) {
     return rebuild(match)
   }
 
@@ -198,14 +201,21 @@ function rebuild(match: A1RangeMatch): string {
 }
 
 /**
- * Rewrite a bare A1 range — `"A1:D10"`, the shape `DataValidation.range`,
+ * Rewrite A1 areas — `"A1:D10"` or `"A1:A5 C1:C5"`, the shape `DataValidation.range`,
  * `ConditionalRule.range`, `AutoFilter.range` and `TableDefinition.range`
  * all use.
  *
- * Returns `undefined` when the whole range was deleted, so the caller can
+ * Returns `undefined` when every area was deleted, so the caller can
  * drop the thing that owned it rather than keep a `#REF!` range.
  */
 export function shiftRangeRef(range: string, shift: RefShift): string | undefined {
-  const shifted = shiftFormula(range, shift)
-  return shifted.includes(REF_ERROR) ? undefined : shifted
+  if (shift.delta === 0) return range
+  const shifted = replaceA1Ranges(range, (match) => {
+    const moved = shiftMatch(match, shift)
+    // Drop only the deleted area, retaining the other areas of sqref.
+    // Looking for #REF! in the whole string also mistakes that text in
+    // a quoted sheet name for a broken coordinate.
+    return moved === REF_ERROR ? "" : moved
+  }).trim()
+  return shifted && shifted !== REF_ERROR ? shifted : undefined
 }

@@ -76,17 +76,6 @@ describe("hasHeaderRow on the exporters", () => {
     expect(toMarkdown(sheetOf(rows), { hasHeaderRow: false })).toContain("| 1 ")
   })
 
-  it("still accepts the deprecated headerRow spelling", () => {
-    // Renamed rather than removed, so existing calls keep working for
-    // one major.
-    expect(toHtml(sheetOf(rows), { headerRow: true })).toContain("<thead>")
-    expect(toMarkdown(sheetOf(rows), { headerRow: false })).toContain("| 1 ")
-  })
-
-  it("prefers the new spelling when both are given", () => {
-    expect(toHtml(sheetOf(rows), { hasHeaderRow: true, headerRow: false })).toContain("<thead>")
-  })
-
   it("keeps its own default when neither is given", () => {
     // HTML defaults to false, Markdown to true — unchanged.
     expect(toHtml(sheetOf(rows))).not.toContain("<thead>")

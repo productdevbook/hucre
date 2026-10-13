@@ -4,7 +4,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
 import { createSharedStrings, writeWorksheetXml } from "../src/xlsx/worksheet-writer"
-import type { WriteSheet } from "../src/_types"
+import type { SheetInput } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -12,7 +12,7 @@ function findChild(el: { children: Array<unknown> }, localName: string): any {
   return el.children.find((c: any) => typeof c !== "string" && (c.local || c.tag) === localName)
 }
 
-function writeXml(sheet: WriteSheet): string {
+function writeXml(sheet: SheetInput): string {
   const styles = createStylesCollector()
   const ss = createSharedStrings()
   const result = writeWorksheetXml(sheet, styles, ss)
@@ -27,7 +27,7 @@ function parseSheet(xml: string) {
 
 describe("split panes — writing", () => {
   it("writes pane with state='split' for split pane", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       splitPane: { xSplit: 6000, ySplit: 3000 },
@@ -47,7 +47,7 @@ describe("split panes — writing", () => {
   })
 
   it("writes split pane with xSplit only", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       splitPane: { xSplit: 4500 },
@@ -67,7 +67,7 @@ describe("split panes — writing", () => {
   })
 
   it("writes split pane with ySplit only", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       splitPane: { ySplit: 2000 },
@@ -87,7 +87,7 @@ describe("split panes — writing", () => {
   })
 
   it("writes topLeftCell as A1 for split pane", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       splitPane: { xSplit: 5000, ySplit: 3000 },
@@ -107,7 +107,7 @@ describe("split panes — writing", () => {
 
 describe("split panes — freeze pane regression", () => {
   it("writes pane with state='frozen' for freeze pane", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       freezePane: { rows: 1, columns: 2 },
@@ -127,7 +127,7 @@ describe("split panes — freeze pane regression", () => {
   })
 
   it("freeze pane takes precedence over split pane", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       freezePane: { rows: 1 },

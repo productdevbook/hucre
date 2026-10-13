@@ -6,9 +6,18 @@
 // the whole process, so a second measurement in the same run inherits the
 // first one's peak. See bench/README.md.
 
-import { writeXlsx, writeXlsxStream, XlsxStreamWriter } from "../dist/index.mjs"
+const { writeXlsx, writeXlsxStream, XlsxStreamWriter } = await import(
+  process.env.HUCRE_BENCH_ENTRY ?? "../dist/index.mjs"
+)
 
-const SCENARIOS = ["writeXlsx", "writeXlsxStream", "XlsxStreamWriter"]
+const SCENARIOS = [
+  "writeXlsx",
+  "writeXlsxAutoWidth",
+  "writeXlsxData",
+  "writeXlsxDataLinks",
+  "writeXlsxStream",
+  "XlsxStreamWriter",
+]
 
 const scenario = process.argv[2] ?? "writeXlsxStream"
 const rowCount = Number(process.argv[3] ?? 100000)
@@ -46,12 +55,41 @@ async function run() {
   let started
   let bytes
 
-  if (scenario === "writeXlsx") {
+  if (scenario === "writeXlsxData" || scenario === "writeXlsxDataLinks") {
+    const columns = Array.from({ length: COLS }, (_, c) => ({
+      key: `c${c}`,
+      header: `Column ${c}`,
+      numFmt: c % 3 === 1 ? "0.00" : undefined,
+      style: { font: { bold: true } },
+    }))
+    const data = Array.from({ length: rowCount }, (_, i) => {
+      const values = makeRow(i)
+      if (scenario === "writeXlsxDataLinks") {
+        values[0] = { text: `text ${i}-0`, hyperlink: `https://example.com/items/${i}` }
+      }
+      return Object.fromEntries(values.map((value, c) => [`c${c}`, value]))
+    })
+    started = nowMs()
+    bytes = (await writeXlsx({ sheets: [{ name: "S", columns, data }] })).length
+  } else if (scenario === "writeXlsx" || scenario === "writeXlsxAutoWidth") {
     // The whole model is built first, which is the cost being measured —
     // so it is built before the clock starts.
     const rows = Array.from({ length: rowCount }, (_, i) => makeRow(i))
     started = nowMs()
-    bytes = (await writeXlsx({ sheets: [{ name: "S", rows }] })).length
+    bytes = (
+      await writeXlsx({
+        sheets: [
+          {
+            name: "S",
+            rows,
+            columns:
+              scenario === "writeXlsxAutoWidth"
+                ? Array.from({ length: COLS }, () => ({ autoWidth: true }))
+                : undefined,
+          },
+        ],
+      })
+    ).length
   } else if (scenario === "writeXlsxStream") {
     function* rows() {
       for (let i = 0; i < rowCount; i++) yield makeRow(i)

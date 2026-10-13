@@ -1,3 +1,4 @@
+import { patchXml as patch } from "./support/xlsx"
 import { describe, expect, it } from "vitest"
 import { readXlsx } from "../src/xlsx/reader"
 import { readOds } from "../src/ods/reader"
@@ -17,23 +18,6 @@ import { ParseError } from "../src/errors"
 // The defaults do not change. What changes is that a caller who knows
 // their input can say so, and can now name the number when they do.
 // ═══════════════════════════════════════════════════════════════════════
-
-/** Rebuild an archive with one part rewritten. */
-async function patch(
-  bytes: Uint8Array,
-  path: string,
-  edit: (xml: string) => string,
-): Promise<Uint8Array> {
-  const all = await new ZipReader(bytes).extractAll()
-  const zw = new ZipWriter()
-  for (const [name, data] of all) {
-    zw.add(
-      name,
-      name === path ? new TextEncoder().encode(edit(new TextDecoder().decode(data))) : data,
-    )
-  }
-  return zw.build()
-}
 
 /**
  * An XLSX holding two corner cells at `A1` and `<lastCol><lastRow>` — a

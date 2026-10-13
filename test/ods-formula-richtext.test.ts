@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 // Regression tests for #405 — the ODS writer emitted cross-sheet formulas
 // ODF cannot parse, and dropped rich-text cells entirely.
 //
@@ -11,13 +12,12 @@ import { describe, it, expect } from "vitest"
 import { writeOds } from "../src/ods/writer"
 import { readOds } from "../src/ods/reader"
 import { ZipReader } from "../src/zip/reader"
-import { ZipWriter } from "../src/zip/writer"
+import { odsFromContent } from "./support/ods"
 import { parseXml } from "../src/xml/parser"
-import type { Cell, WriteSheet } from "../src/_types"
+import type { Cell, SheetInput } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-const encoder = new TextEncoder()
 const decoder = new TextDecoder("utf-8")
 
 async function extractFile(data: Uint8Array, path: string): Promise<string> {
@@ -35,7 +35,7 @@ function findChildren(el: { children: Array<unknown> }, localName: string): any[
 
 /** Write one sheet whose A1 carries `formula`, and return A1's attributes. */
 async function writeFormulaCell(formula: string): Promise<Record<string, string>> {
-  const cells = new Map<string, Partial<Cell>>([["0,0", { value: 0, formula }]])
+  const cells = createCellStore<Partial<Cell>>([[0, 0, { value: 0, formula }]])
   const data = await writeOds({ sheets: [{ name: "Sheet1", rows: [[0]], cells }] })
   const doc = parseXml(await extractFile(data, "content.xml"))
   const table = findChild(findChild(findChild(doc, "body"), "spreadsheet"), "table")
@@ -43,39 +43,19 @@ async function writeFormulaCell(formula: string): Promise<Record<string, string>
   return findChild(row, "table-cell").attrs
 }
 
-/** The namespaces a real content.xml declares, for the hand-written fixtures. */
-const NS = [
-  `xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"`,
-  `xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"`,
-  `xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"`,
-  `xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"`,
-  `xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0"`,
-  `xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"`,
-  `xmlns:xlink="http://www.w3.org/1999/xlink"`,
-].join(" ")
-
-/** A minimal .ods holding one cell with the given `table:formula`. */
-async function odsWithFormula(formula: string): Promise<Uint8Array> {
-  const content =
-    `<?xml version="1.0" encoding="UTF-8"?>` +
-    `<office:document-content ${NS} office:version="1.3"><office:body><office:spreadsheet>` +
+/** Raw OpenFormula input independent of hucre's writer. */
+function odsWithFormula(formula: string): Promise<Uint8Array> {
+  return odsFromContent(
     `<table:table table:name="Sheet1"><table:table-row>` +
-    `<table:table-cell table:formula="${formula.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;")}" ` +
-    `office:value-type="float" office:value="3"><text:p>3</text:p></table:table-cell>` +
-    `</table:table-row></table:table>` +
-    `</office:spreadsheet></office:body></office:document-content>`
-
-  const zip = new ZipWriter()
-  zip.add("mimetype", encoder.encode("application/vnd.oasis.opendocument.spreadsheet"), {
-    compress: false,
-  })
-  zip.add("content.xml", encoder.encode(content))
-  return await zip.build()
+      `<table:table-cell table:formula="${formula.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;")}" ` +
+      `office:value-type="float" office:value="3"><text:p>3</text:p></table:table-cell>` +
+      `</table:table-row></table:table>`,
+  )
 }
 
 async function readFormula(odsFormula: string): Promise<string | undefined> {
   const wb = await readOds(await odsWithFormula(odsFormula))
-  return wb.sheets[0]!.cells?.get("0,0")?.formula
+  return getCell(wb.sheets[0]!.cells, 0, 0)?.formula
 }
 
 // ── #405.1: cross-sheet formula references ──────────────────────────
@@ -156,13 +136,13 @@ describe("ODS #405 — reading the cross-sheet forms LibreOffice writes", () => 
   })
 
   it("round-trips a cross-sheet formula through write → read", async () => {
-    const cells = new Map<string, Partial<Cell>>([["0,0", { value: 6, formula: "Sheet2!A1+1" }]])
-    const sheets: WriteSheet[] = [
+    const cells = createCellStore<Partial<Cell>>([[0, 0, { value: 6, formula: "Sheet2!A1+1" }]])
+    const sheets: SheetInput[] = [
       { name: "Sheet1", rows: [[6]], cells },
       { name: "Sheet2", rows: [[5]] },
     ]
     const wb = await readOds(await writeOds({ sheets }))
-    expect(wb.sheets[0]!.cells!.get("0,0")!.formula).toBe("Sheet2!A1+1")
+    expect(getCell(wb.sheets[0]!.cells!, 0, 0)!.formula).toBe("Sheet2!A1+1")
   })
 })
 
@@ -175,7 +155,7 @@ describe("ODS #405 — rich-text cells keep their text", () => {
   ]
 
   async function writeRichText(): Promise<Uint8Array> {
-    const cells = new Map<string, Partial<Cell>>([["0,0", { value: null, richText: runs }]])
+    const cells = createCellStore<Partial<Cell>>([[0, 0, { value: null, richText: runs }]])
     return await writeOds({ sheets: [{ name: "Sheet1", rows: [[null]], cells }] })
   }
 
@@ -216,10 +196,10 @@ describe("ODS #405 — rich-text cells keep their text", () => {
 describe("ODS #405 — hyperlinks on non-string cells", () => {
   it("keeps the link and the typed value on numbers, dates and booleans", async () => {
     const date = new Date(Date.UTC(2020, 0, 2))
-    const cells = new Map<string, Partial<Cell>>([
-      ["0,0", { value: 42, hyperlink: { target: "https://example.com/num" } }],
-      ["0,1", { value: date, hyperlink: { target: "https://example.com/date" } }],
-      ["0,2", { value: true, hyperlink: { target: "https://example.com/bool" } }],
+    const cells = createCellStore<Partial<Cell>>([
+      [0, 0, { value: 42, hyperlink: { target: "https://example.com/num" } }],
+      [0, 1, { value: date, hyperlink: { target: "https://example.com/date" } }],
+      [0, 2, { value: true, hyperlink: { target: "https://example.com/bool" } }],
     ])
     const data = await writeOds({
       sheets: [{ name: "Sheet1", rows: [[null, null, null]], cells }],
@@ -227,9 +207,9 @@ describe("ODS #405 — hyperlinks on non-string cells", () => {
 
     const wb = await readOds(data)
     const sheet = wb.sheets[0]!
-    expect(sheet.cells!.get("0,0")!.hyperlink!.target).toBe("https://example.com/num")
-    expect(sheet.cells!.get("0,1")!.hyperlink!.target).toBe("https://example.com/date")
-    expect(sheet.cells!.get("0,2")!.hyperlink!.target).toBe("https://example.com/bool")
+    expect(getCell(sheet.cells!, 0, 0)!.hyperlink!.target).toBe("https://example.com/num")
+    expect(getCell(sheet.cells!, 0, 1)!.hyperlink!.target).toBe("https://example.com/date")
+    expect(getCell(sheet.cells!, 0, 2)!.hyperlink!.target).toBe("https://example.com/bool")
 
     // The value must survive as its own type, not degrade to text.
     expect(sheet.rows[0]![0]).toBe(42)
@@ -242,21 +222,21 @@ describe("ODS #405 — hyperlinks on non-string cells", () => {
   })
 
   it("writes Hyperlink.display as the anchor text", async () => {
-    const cells = new Map<string, Partial<Cell>>([
-      ["0,0", { value: 42, hyperlink: { target: "https://example.com", display: "Click me" } }],
+    const cells = createCellStore<Partial<Cell>>([
+      [0, 0, { value: 42, hyperlink: { target: "https://example.com", display: "Click me" } }],
     ])
     const data = await writeOds({ sheets: [{ name: "Sheet1", rows: [[null]], cells }] })
 
     expect(await extractFile(data, "content.xml")).toContain(">Click me</text:a>")
     const wb = await readOds(data)
-    expect(wb.sheets[0]!.cells!.get("0,0")!.hyperlink!.display).toBe("Click me")
+    expect(getCell(wb.sheets[0]!.cells!, 0, 0)!.hyperlink!.display).toBe("Click me")
     expect(wb.sheets[0]!.rows[0]![0]).toBe(42)
   })
 })
 
 describe("ODS #405 — multi-section number formats", () => {
   async function styleXml(numFmt: string): Promise<any[]> {
-    const cells = new Map<string, Partial<Cell>>([["0,0", { value: -1234.5, style: { numFmt } }]])
+    const cells = createCellStore<Partial<Cell>>([[0, 0, { value: -1234.5, style: { numFmt } }]])
     const data = await writeOds({ sheets: [{ name: "Sheet1", rows: [[-1234.5]], cells }] })
     const doc = parseXml(await extractFile(data, "content.xml"))
     return findChildren(findChild(doc, "automatic-styles"), "number-style")
@@ -285,10 +265,10 @@ describe("ODS #405 — multi-section number formats", () => {
 
   it("round-trips all three sections", async () => {
     const numFmt = "#,##0.00;-#,##0.00;0.00"
-    const cells = new Map<string, Partial<Cell>>([["0,0", { value: 1, style: { numFmt } }]])
+    const cells = createCellStore<Partial<Cell>>([[0, 0, { value: 1, style: { numFmt } }]])
     const data = await writeOds({ sheets: [{ name: "Sheet1", rows: [[1]], cells }] })
     const wb = await readOds(data, { readStyles: true })
-    expect(wb.sheets[0]!.cells!.get("0,0")!.style!.numFmt).toBe(numFmt)
+    expect(getCell(wb.sheets[0]!.cells!, 0, 0)!.style!.numFmt).toBe(numFmt)
   })
 
   it("leaves a single-section format as one unmapped style", async () => {

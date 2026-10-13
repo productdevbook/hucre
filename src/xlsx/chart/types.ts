@@ -13,7 +13,7 @@
 
 /**
  * Chart kinds supported by {@link writeXlsx} when authoring charts via
- * {@link WriteSheet.charts}. Covers the most common chart families —
+ * {@link SheetInput.charts}. Covers the most common chart families —
  * bar/column, line, pie, doughnut, scatter, and area.
  *
  * Distinct from the read-side {@link ChartKind} (which mirrors the

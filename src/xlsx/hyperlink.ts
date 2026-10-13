@@ -22,7 +22,7 @@ export function unwrapCellValue(v: CellValue | HyperlinkValue): CellValue {
 }
 
 /**
- * Build a rich {@link HyperlinkValue} for inline use in a {@link WriteSheet.data}
+ * Build a rich {@link HyperlinkValue} for inline use in a {@link SheetInput.data}
  * row object. The returned object can also be written by hand — this helper is
  * purely ergonomic sugar.
  *

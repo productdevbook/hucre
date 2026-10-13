@@ -54,18 +54,22 @@ describe("R1C1 notation", () => {
 
 describe("inline string mode", () => {
   it("writes and reads back correctly with inline strings", async () => {
-    const xlsx = await writeXlsx({
-      sheets: [
-        {
-          name: "Test",
-          rows: [
-            ["Hello", "World"],
-            ["Foo", "Bar"],
-          ],
-        },
-      ],
-      stringMode: "inline",
-    })
+    const xlsx = await writeXlsx(
+      {
+        sheets: [
+          {
+            name: "Test",
+            rows: [
+              ["Hello", "World"],
+              ["Foo", "Bar"],
+            ],
+          },
+        ],
+      },
+      {
+        stringMode: "inline",
+      },
+    )
 
     const wb = await readXlsx(xlsx)
     expect(wb.sheets[0]!.rows[0]).toEqual(["Hello", "World"])
@@ -73,15 +77,19 @@ describe("inline string mode", () => {
   })
 
   it("produces valid XLSX without shared strings part", async () => {
-    const xlsx = await writeXlsx({
-      sheets: [
-        {
-          name: "Test",
-          rows: [["Only", "Inline"]],
-        },
-      ],
-      stringMode: "inline",
-    })
+    const xlsx = await writeXlsx(
+      {
+        sheets: [
+          {
+            name: "Test",
+            rows: [["Only", "Inline"]],
+          },
+        ],
+      },
+      {
+        stringMode: "inline",
+      },
+    )
 
     // Read should still work
     const wb = await readXlsx(xlsx)
@@ -150,15 +158,19 @@ describe("VBA/macro injection", () => {
     // Create a minimal fake vbaProject.bin (just some bytes)
     const fakeVba = new Uint8Array([0x00, 0x01, 0x02, 0x03, 0x04])
 
-    const xlsx = await writeXlsx({
-      sheets: [
-        {
-          name: "Sheet1",
-          rows: [["Hello"]],
-        },
-      ],
-      vbaProject: fakeVba,
-    })
+    const xlsx = await writeXlsx(
+      {
+        sheets: [
+          {
+            name: "Sheet1",
+            rows: [["Hello"]],
+          },
+        ],
+      },
+      {
+        vbaProject: fakeVba,
+      },
+    )
 
     // The output should be a valid ZIP containing xl/vbaProject.bin
     // We can verify by checking the ZIP contains the marker bytes

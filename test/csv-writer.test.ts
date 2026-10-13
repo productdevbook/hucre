@@ -254,7 +254,7 @@ describe("writeCsvObjects", () => {
         { name: "Alice", age: 30 },
         { name: "Bob", age: 25 },
       ],
-      { headers: false },
+      { writeHeader: false },
     )
     expect(result).toBe("Alice,30\r\nBob,25")
   })

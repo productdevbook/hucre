@@ -1,3 +1,4 @@
+import { createCellStore, setCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import type { Cell, CellValue, SchemaFieldType, Sheet, SheetTextBox, Workbook } from "../src/_types"
 import { audit } from "../src/a11y"
@@ -137,12 +138,15 @@ describe("selectSheet", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("a11y.audit — sheet emptiness", () => {
-  // A sheet can carry all of its content in the per-cell override Map with
+  // A sheet can carry all of its content in the per-cell metadata with
   // an empty `rows` array (that is what the streaming writers accept), and
   // it is not an empty sheet.
-  it("does not call a sheet empty when its content lives in the cells Map", () => {
+  it("does not call a sheet empty when its content lives in the cell store", () => {
     const wb = workbook(
-      sheet({ rows: [], cells: new Map([["0,0", { value: "Header", type: "string" } as Cell]]) }),
+      sheet({
+        rows: [],
+        cells: createCellStore([[0, 0, { value: "Header", type: "string" } as Cell]]),
+      }),
     )
 
     const codes = audit(wb, { skipContrast: true }).map((i) => i.code)
@@ -158,7 +162,7 @@ describe("a11y.audit — sheet emptiness", () => {
           [null, null],
           ["", ""],
         ],
-        cells: new Map([["0,0", { value: "x", type: "string" } as Cell]]),
+        cells: createCellStore([[0, 0, { value: "x", type: "string" } as Cell]]),
         a11y: { headerRow: 0 },
       }),
     )
@@ -213,8 +217,8 @@ describe("a11y.audit — text boxes", () => {
 
 describe("a11y.audit — contrast sampling", () => {
   function lowContrastSheet(count: number): Sheet {
-    const cells = new Map<string, Cell>()
-    for (let i = 0; i < count; i++) cells.set(`${i},0`, styled("text", "FFCCCCCC", "FFFFFFFF"))
+    const cells = createCellStore<Cell>()
+    for (let i = 0; i < count; i++) setCell(cells, i, 0, styled("text", "FFCCCCCC", "FFFFFFFF"))
     return sheet({ rows: [["text"]], a11y: { headerRow: 0 }, cells })
   }
 
@@ -229,9 +233,9 @@ describe("a11y.audit — contrast sampling", () => {
   })
 
   it("ignores cells with no user-visible text", () => {
-    const cells = new Map<string, Cell>([
-      ["0,0", styled("", "FFCCCCCC", "FFFFFFFF")],
-      ["1,0", styled(null, "FFCCCCCC", "FFFFFFFF")],
+    const cells = createCellStore<Cell>([
+      [0, 0, styled("", "FFCCCCCC", "FFFFFFFF")],
+      [1, 0, styled(null, "FFCCCCCC", "FFFFFFFF")],
     ])
     const wb = workbook(sheet({ rows: [[""]], a11y: { headerRow: 0 }, cells }))
 
@@ -241,10 +245,11 @@ describe("a11y.audit — contrast sampling", () => {
   // Gradient fills have no single background colour to measure against, and
   // an unfilled cell inherits the (unknown) theme background.
   it("skips cells without a resolvable pattern background", () => {
-    const cells = new Map<string, Cell>([
-      ["0,0", { value: "x", type: "string", style: { font: { color: { rgb: "FFCCCCCC" } } } }],
+    const cells = createCellStore<Cell>([
+      [0, 0, { value: "x", type: "string", style: { font: { color: { rgb: "FFCCCCCC" } } } }],
       [
-        "1,0",
+        1,
+        0,
         {
           value: "y",
           type: "string",
@@ -263,10 +268,10 @@ describe("a11y.audit — contrast sampling", () => {
   // Theme-driven fonts have no `rgb`, and indexed/named colours are not
   // hex — neither can be measured, so the check backs off silently.
   it("skips cells whose font or fill colour cannot be resolved to a hex triple", () => {
-    const cells = new Map<string, Cell>([
-      ["0,0", styled("no font colour", undefined, "FFFFFFFF")],
-      ["1,0", styled("no fill colour", "FFCCCCCC", undefined)],
-      ["2,0", styled("not hex", "theme:accent1", "FFFFFFFF")],
+    const cells = createCellStore<Cell>([
+      [0, 0, styled("no font colour", undefined, "FFFFFFFF")],
+      [1, 0, styled("no fill colour", "FFCCCCCC", undefined)],
+      [2, 0, styled("not hex", "theme:accent1", "FFFFFFFF")],
     ])
     const wb = workbook(sheet({ rows: [["x"]], a11y: { headerRow: 0 }, cells }))
 
@@ -276,7 +281,7 @@ describe("a11y.audit — contrast sampling", () => {
   // ODS and hand-authored XLSX write plain 6-digit RRGGBB where Excel
   // writes 8-digit AARRGGBB; both have to measure the same.
   it("accepts 6-digit RRGGBB as well as 8-digit AARRGGBB", () => {
-    const cells = new Map<string, Cell>([["0,0", styled("text", "CCCCCC", "FFFFFF")]])
+    const cells = createCellStore<Cell>([[0, 0, styled("text", "CCCCCC", "FFFFFF")]])
     const wb = workbook(sheet({ rows: [["text"]], a11y: { headerRow: 0 }, cells }))
 
     const issue = audit(wb).find((i) => i.code === "low-contrast")

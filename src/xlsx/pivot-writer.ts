@@ -14,6 +14,7 @@
 // OOXML reference: ECMA-376 Part 1, §18.10 (PivotTables) and §18.11
 // (PivotCache).
 
+import { InvalidArgumentError } from "../errors"
 import type { CellValue, PivotDataFieldFunction, WritePivotTable } from "../_types"
 import { xmlDocument, xmlElement, xmlSelfClose } from "../xml/writer"
 
@@ -113,7 +114,7 @@ export function resolvePivotSource(
   sourceRows: ReadonlyArray<ReadonlyArray<CellValue>>,
 ): ResolvedPivotSource {
   if (sourceRows.length < 2) {
-    throw new Error(
+    throw new InvalidArgumentError(
       `Pivot "${pivot.name}" source sheet "${sourceSheetName}" needs at least a header row plus one data row (got ${sourceRows.length}).`,
     )
   }
@@ -144,7 +145,7 @@ export function resolvePivotSource(
   for (const v of pivot.values) namedFields.push(v.field)
   for (const name of namedFields) {
     if (!headerSet.has(name)) {
-      throw new Error(
+      throw new InvalidArgumentError(
         `Pivot "${pivot.name}" references field "${name}" which is not in the source header (have: ${fieldNames.join(", ")}).`,
       )
     }
@@ -657,7 +658,9 @@ function computeLocation(
 function parseCellRefStrict(cell: string): { col: number; row: number } {
   const m = /^([A-Z]+)(\d+)$/i.exec(cell.trim())
   if (!m) {
-    throw new Error(`Invalid pivot targetCell "${cell}" — expected an A1-style reference`)
+    throw new InvalidArgumentError(
+      `Invalid pivot targetCell "${cell}" — expected an A1-style reference`,
+    )
   }
   const colLetters = m[1].toUpperCase()
   let col = 0
@@ -680,7 +683,7 @@ function encodeCellRef(row: number, col: number): string {
 /** Auto-fit a `<worksheetSource ref>` to the source sheet's row count. */
 function autoRange(colCount: number, rowCount: number): string {
   if (colCount <= 0 || rowCount <= 0) {
-    throw new Error("Pivot source range must contain at least one column and row")
+    throw new InvalidArgumentError("Pivot source range must contain at least one column and row")
   }
   const start = encodeCellRef(0, 0)
   const end = encodeCellRef(rowCount - 1, colCount - 1)

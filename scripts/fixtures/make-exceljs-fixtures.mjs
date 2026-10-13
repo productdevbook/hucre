@@ -40,7 +40,7 @@ const ExcelJS = require("exceljs")
 const outDir = fileURLToPath(new URL("../../test/fixtures/third-party", import.meta.url))
 mkdirSync(outDir, { recursive: true })
 
-/** Written to disk and asserted against in test/third-party-fixtures.test.ts. */
+/** Written to disk and asserted against in test/integration/third-party-fixtures.test.ts. */
 const FIXTURES = []
 
 function fixture(name, build) {

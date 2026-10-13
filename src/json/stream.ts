@@ -1,7 +1,9 @@
 // ── NDJSON Streaming ─────────────────────────────────────────────────
 // CF Workers / Deno / Node 18+ compatible: uses WHATWG ReadableStream only.
 
-import type { CellValue, SpreadsheetStreamWriter } from "../_types"
+import { toCellValue } from "../_inline-cells"
+import { isCellError } from "../cell-error"
+import type { CellValue, SpreadsheetStreamWriter, ReadInput, StreamRow, CellInput } from "../_types"
 import { InvalidArgumentError, ParseError } from "../errors"
 import { flattenValue, reviveDates, type FlattenOptions } from "./flatten"
 import { unflattenRow } from "./unflatten"
@@ -12,6 +14,11 @@ const TEXT_DECODER = new TextDecoder("utf-8")
 /**
  * Constructor options for {@link NdjsonStreamWriter}.
  */
+/** An error is written as its token, as the buffered JSON writers do. */
+function errorReplacer(_key: string, value: unknown): unknown {
+  return isCellError(value) ? value.error : value
+}
+
 export interface NdjsonStreamWriterOptions {
   // `Date` values always serialize as ISO strings. There used to be an
   // `isoDates` option and it never did anything: JSON.stringify calls
@@ -62,11 +69,13 @@ export class NdjsonStreamWriter implements SpreadsheetStreamWriter {
   /**
    * Append one row from an object — one NDJSON line per call.
    */
-  addObject(row: Record<string, CellValue>): void {
+  addObject(item: Record<string, CellInput>): void {
     if (this.done) {
-      throw new Error("Cannot write to NdjsonStreamWriter after finish()/end()")
+      throw new InvalidArgumentError("Cannot write to NdjsonStreamWriter after finish()")
     }
-    this.buffer.push(JSON.stringify(this.unflatten ? unflattenRow(row) : row) + "\n")
+    const row: Record<string, CellValue> = {}
+    for (const key of Object.keys(item)) row[key] = toCellValue(item[key]!)
+    this.buffer.push(JSON.stringify(this.unflatten ? unflattenRow(row) : row, errorReplacer) + "\n")
   }
 
   /**
@@ -77,7 +86,7 @@ export class NdjsonStreamWriter implements SpreadsheetStreamWriter {
    * `XlsxStreamWriter.addObject`, which needs `columns[].key` to map the
    * other direction.
    */
-  addRow(values: CellValue[]): void {
+  addRow(values: CellInput[]): void {
     if (!this.columns) {
       throw new InvalidArgumentError(
         "addRow requires `columns` — NDJSON rows are objects, so positional values need key names. Pass `new NdjsonStreamWriter({ columns: [...] })` or use addObject().",
@@ -85,7 +94,7 @@ export class NdjsonStreamWriter implements SpreadsheetStreamWriter {
     }
     const row: Record<string, CellValue> = {}
     for (let i = 0; i < this.columns.length; i++) {
-      row[this.columns[i]!] = values[i] ?? null
+      row[this.columns[i]!] = toCellValue(values[i] ?? null)
     }
     this.addObject(row)
   }
@@ -98,28 +107,14 @@ export class NdjsonStreamWriter implements SpreadsheetStreamWriter {
    * already drained through `toStream()` has nothing left to return here
    * — pick one drain or the other.
    */
-  finish(): string {
+  finish(): Promise<Uint8Array> {
+    return Promise.resolve(TEXT_ENCODER.encode(this.finishText()))
+  }
+
+  /** {@link finish}, as a string. */
+  finishText(): string {
     this.done = true
     return this.toString()
-  }
-
-  /**
-   * @deprecated Renamed to {@link addObject} so all three stream writers
-   * share `addRow` / `addObject` / `finish`. Same behaviour; this alias
-   * will be removed in a future major.
-   */
-  write(row: Record<string, CellValue>): void {
-    this.addObject(row)
-  }
-
-  /**
-   * Mark the writer finished. Subsequent writes throw.
-   *
-   * @deprecated Use {@link finish}, which does the same and returns the
-   * buffered output. This alias will be removed in a future major.
-   */
-  end(): void {
-    this.done = true
   }
 
   /** Drain the buffered output as a single string. */
@@ -171,13 +166,31 @@ export interface NdjsonStreamReadOptions extends FlattenOptions {
   flattenRows?: boolean
 }
 
+function toByteStream(input: ReadInput | string): ReadableStream<Uint8Array> {
+  if (input instanceof ReadableStream) return input
+  const bytes =
+    typeof input === "string"
+      ? TEXT_ENCODER.encode(input)
+      : input instanceof Uint8Array
+        ? input
+        : new Uint8Array(input)
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes)
+      controller.close()
+    },
+  })
+}
+
 export async function* streamNdjsonRows<
   T extends Record<string, CellValue> = Record<string, CellValue>,
 >(
-  stream: ReadableStream<Uint8Array>,
+  input: ReadInput | string,
   options?: NdjsonStreamReadOptions,
-): AsyncGenerator<T, void, undefined> {
-  const reader = stream.getReader()
+): AsyncGenerator<StreamRow<T>, void, undefined> {
+  // A stream is consumed as it arrives; anything already in memory is
+  // wrapped so one code path reads both. `index` is the 0-based line.
+  const reader = toByteStream(input).getReader()
   let buffer = ""
   let lineNumber = 0
 
@@ -215,7 +228,7 @@ export async function* streamNdjsonRows<
         if (line.trim() === "") continue
         const parsed = tryParseLine(line, lineNumber, options?.onError)
         if (parsed === SKIP) continue
-        yield emit(parsed)
+        yield { index: lineNumber - 1, sheet: 0, values: emit(parsed) }
       }
       if (done) {
         // Flush trailing partial line (no newline)
@@ -224,7 +237,7 @@ export async function* streamNdjsonRows<
         if (trailing !== "") {
           lineNumber++
           const parsed = tryParseLine(trailing, lineNumber, options?.onError)
-          if (parsed !== SKIP) yield emit(parsed)
+          if (parsed !== SKIP) yield { index: lineNumber - 1, sheet: 0, values: emit(parsed) }
         }
         break
       }
@@ -255,13 +268,6 @@ function tryParseLine(
     )
   }
 }
-
-/**
- * @deprecated Renamed to {@link streamNdjsonRows} so every streaming
- * reader in the library reads `stream*Rows`. This alias will be removed
- * in a future major.
- */
-export const readNdjsonStream: typeof streamNdjsonRows = streamNdjsonRows
 
 // ── True Streaming NDJSON Writer ─────────────────────────────────────
 
@@ -346,7 +352,7 @@ async function* ndjsonStreamChunks(
       object = row
     }
 
-    const line = `${JSON.stringify(unflatten ? unflattenRow(object) : object)}\n`
+    const line = `${JSON.stringify(unflatten ? unflattenRow(object) : object, errorReplacer)}\n`
     pending.push(line)
     pendingBytes += line.length
 

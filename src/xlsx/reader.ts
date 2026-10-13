@@ -1,3 +1,4 @@
+import { createCellStore, getCell, setCell } from "../cell-store"
 // ── XLSX Reader ──────────────────────────────────────────────────────
 // Reads Office Open XML (.xlsx) spreadsheet files.
 
@@ -5,7 +6,7 @@ import type {
   Sheet,
   SheetKind,
   Workbook,
-  ReadOptions,
+  XlsxReadOptions,
   ReadInput,
   SheetImage,
   SheetTextBox,
@@ -44,7 +45,7 @@ import type { ParsedStyles } from "./styles"
 import type { SharedString } from "./shared-strings"
 import type { Relationship } from "./relationships"
 import { parseComments } from "./comments-reader"
-import { parseCellRef } from "./worksheet"
+import { parseCellRef, validateCellPosition } from "./worksheet"
 import { parseCoreProperties, parseAppProperties, parseCustomProperties } from "./doc-props-reader"
 import { parseThemeColors } from "./theme"
 
@@ -138,7 +139,7 @@ async function readWorksheet(
  * true streaming requires random access. Use {@link streamXlsxRows} when
  * you need row-level streaming with low per-row memory.
  */
-export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise<Workbook> {
+export async function readXlsx(input: ReadInput, options?: XlsxReadOptions): Promise<Workbook> {
   let data = await readInputToUint8Array(input, options?.maxInputBytes)
 
   // Password-protected workbooks arrive as an OLE2/CFB envelope. With a
@@ -512,18 +513,24 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
           // Attach comments to cell objects
           if (commentsMap.size > 0) {
             if (!sheet.cells) {
-              sheet.cells = new Map()
+              sheet.cells = createCellStore()
             }
             for (const [cellRefStr, comment] of commentsMap) {
               const pos = parseCellRef(cellRefStr)
-              const key = `${pos.row},${pos.col}`
-              let cell = sheet.cells.get(key)
+              if (
+                !validateCellPosition(cellRefStr, pos, {
+                  sheetName: sheet.name,
+                  onWarning: options?.onWarning,
+                })
+              )
+                continue
+              let cell = getCell(sheet.cells, pos.row, pos.col)
               if (!cell) {
                 cell = {
                   value: (sheet.rows[pos.row] && sheet.rows[pos.row][pos.col]) ?? null,
                   type: "string",
                 }
-                sheet.cells.set(key, cell)
+                setCell(sheet.cells, pos.row, pos.col, cell)
               }
               cell.comment = comment
             }
@@ -714,7 +721,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
 
   // The workbook's default font is fonts[0] in styles.xml — the entry
   // every xf inherits from unless it names another. Surfacing it closes
-  // the WriteOptions.defaultFont round trip.
+  // the WorkbookInput.defaultFont round trip.
   const baseFont = parsedStyles?.fonts[0]
   if (baseFont && Object.keys(baseFont).length > 0) {
     workbook.defaultFont = baseFont
@@ -1569,7 +1576,7 @@ interface SheetInfo {
 
 function parseWorkbookXml(
   xml: string,
-  options?: ReadOptions,
+  options?: XlsxReadOptions,
 ): {
   sheets: SheetInfo[]
   dateSystem: "1900" | "1904"
@@ -1735,7 +1742,7 @@ function parseWorkbookXml(
 }
 
 /** Filter sheet infos based on user-specified sheets option */
-function filterSheets(allSheets: SheetInfo[], filter?: ReadOptions["sheets"]): SheetInfo[] {
+function filterSheets(allSheets: SheetInfo[], filter?: XlsxReadOptions["sheets"]): SheetInfo[] {
   if (filter === undefined) return allSheets
 
   if (typeof filter === "function") {

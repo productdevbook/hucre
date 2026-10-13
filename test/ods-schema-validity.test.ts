@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeOds } from "../src/ods/writer"
 import { readOds } from "../src/ods/reader"
@@ -41,7 +42,7 @@ describe("a cell style writes its children in the order ODF requires", () => {
         {
           name: "S",
           rows: [["x"]],
-          cells: new Map([["0,0", { value: "x", style: STYLE }]]),
+          cells: createCellStore([[0, 0, { value: "x", style: STYLE }]]),
         },
       ],
     })
@@ -58,10 +59,14 @@ describe("a cell style writes its children in the order ODF requires", () => {
   it("and the style still reads back whole", async () => {
     const bytes = await writeOds({
       sheets: [
-        { name: "S", rows: [["x"]], cells: new Map([["0,0", { value: "x", style: STYLE }]]) },
+        {
+          name: "S",
+          rows: [["x"]],
+          cells: createCellStore([[0, 0, { value: "x", style: STYLE }]]),
+        },
       ],
     })
-    const cell = (await readOds(bytes, { readStyles: true })).sheets[0]!.cells?.get("0,0")
+    const cell = getCell((await readOds(bytes, { readStyles: true })).sheets[0]!.cells, 0, 0)
 
     expect(cell?.style?.font?.bold).toBe(true)
     expect(cell?.style?.fill?.type).toBe("pattern")
@@ -81,7 +86,7 @@ describe("the document declares the version it actually uses", () => {
         {
           name: "S",
           rows: [[1]],
-          cells: new Map([["0,0", { value: 1, style: { numFmt: "#.##" } }]]),
+          cells: createCellStore([[0, 0, { value: 1, style: { numFmt: "#.##" } }]]),
         },
       ],
     })

@@ -802,12 +802,12 @@ describe("parseCsv — skipLines", () => {
 })
 
 describe("parseCsv — transformValue", () => {
-  // With `header: true` the callback receives the header cell's text as
+  // With `hasHeaderRow: true` the callback receives the header cell's text as
   // the column name so a caller can switch on the column.
   it("passes the header text as the column name", () => {
     const seen: string[] = []
     parseCsv("name,age\nAda,36", {
-      header: true,
+      hasHeaderRow: true,
       transformValue: (v, header) => {
         seen.push(header)
         return v
@@ -832,7 +832,7 @@ describe("parseCsv — transformValue", () => {
   it("falls back to the column index past the end of the header row", () => {
     const seen: string[] = []
     parseCsv("name\nAda,36", {
-      header: true,
+      hasHeaderRow: true,
       transformValue: (v, header) => {
         seen.push(header)
         return v
@@ -844,7 +844,7 @@ describe("parseCsv — transformValue", () => {
 
 describe("parseCsvObjects", () => {
   // The options argument is optional even though the type suggests a
-  // `header: true` flag — the first row is always the header here.
+  // `hasHeaderRow: true` flag — the first row is always the header here.
   it("works with no options at all", () => {
     expect(parseCsvObjects("name,age\nAda,36")).toEqual({
       headers: ["name", "age"],

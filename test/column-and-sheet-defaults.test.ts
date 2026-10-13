@@ -1,3 +1,4 @@
+import { getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
@@ -90,7 +91,7 @@ describe("a column format reaches the file", () => {
       sheets: [{ name: "S", rows: [[1]], columns: [{ style: CURRENCY }] }],
     })
 
-    const cell = (await readXlsx(bytes, { readStyles: true })).sheets[0]!.cells!.get("0,0")!
+    const cell = getCell((await readXlsx(bytes, { readStyles: true })).sheets[0]!.cells!, 0, 0)!
 
     expect(cell.style!.numFmt).toBe('"$"#,##0.00')
   })

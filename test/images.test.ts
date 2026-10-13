@@ -1,3 +1,4 @@
+import { createCellStore, setCell } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { ZipReader } from "../src/zip/reader"
 import { parseXml } from "../src/xml/parser"
@@ -5,7 +6,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { writeDrawing } from "../src/xlsx/drawing-writer"
 import { writeContentTypes } from "../src/xlsx/content-types-writer"
-import type { WriteSheet, SheetImage } from "../src/_types"
+import type { SheetInput, SheetImage } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -196,7 +197,7 @@ describe("writeDrawing", () => {
 describe("XLSX image writing", () => {
   it("writes a single PNG image to the ZIP", async () => {
     const imageData = fakePng(128)
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Hello"]],
       images: [
@@ -222,7 +223,7 @@ describe("XLSX image writing", () => {
   })
 
   it("includes drawing reference in worksheet XML", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Hello"]],
       images: [makeImage("png", { row: 0, col: 0 }, { row: 5, col: 3 })],
@@ -237,7 +238,7 @@ describe("XLSX image writing", () => {
   })
 
   it("includes drawing relationship in sheet rels", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Hello"]],
       images: [makeImage("png", { row: 0, col: 0 })],
@@ -254,7 +255,7 @@ describe("XLSX image writing", () => {
   })
 
   it("writes multiple images on one sheet", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Data"]],
       images: [
@@ -285,12 +286,12 @@ describe("XLSX image writing", () => {
   })
 
   it("writes images on different sheets", async () => {
-    const sheet1: WriteSheet = {
+    const sheet1: SheetInput = {
       name: "Sheet1",
       rows: [["First"]],
       images: [makeImage("png", { row: 0, col: 0 })],
     }
-    const sheet2: WriteSheet = {
+    const sheet2: SheetInput = {
       name: "Sheet2",
       rows: [["Second"]],
       images: [makeImage("jpeg", { row: 1, col: 1 })],
@@ -312,12 +313,12 @@ describe("XLSX image writing", () => {
   })
 
   it("does not create drawing parts for sheets without images", async () => {
-    const sheet1: WriteSheet = {
+    const sheet1: SheetInput = {
       name: "WithImages",
       rows: [["Has image"]],
       images: [makeImage("png", { row: 0, col: 0 })],
     }
-    const sheet2: WriteSheet = {
+    const sheet2: SheetInput = {
       name: "NoImages",
       rows: [["No image"]],
     }
@@ -335,7 +336,7 @@ describe("XLSX image writing", () => {
   })
 
   it("empty images array does not create drawing parts", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Data"]],
       images: [],
@@ -352,7 +353,7 @@ describe("XLSX image writing", () => {
 
 describe("content types with images", () => {
   it("includes image extension defaults and drawing overrides", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Data"]],
       images: [makeImage("png", { row: 0, col: 0 }), makeImage("jpeg", { row: 5, col: 0 })],
@@ -373,7 +374,7 @@ describe("content types with images", () => {
   })
 
   it("includes gif extension default", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Data"]],
       images: [makeImage("gif", { row: 0, col: 0 })],
@@ -387,7 +388,7 @@ describe("content types with images", () => {
   })
 
   it("does not include image extensions when no images", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Data"]],
     }
@@ -431,7 +432,7 @@ describe("content types with images", () => {
 
 describe("image anchor positions", () => {
   it("correctly encodes from/to cell positions in drawing XML", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Data"]],
       images: [makeImage("png", { row: 3, col: 2 }, { row: 10, col: 7 })],
@@ -457,7 +458,7 @@ describe("image anchor positions", () => {
   })
 
   it("preserves pixel dimensions as EMU in spPr", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Data"]],
       images: [
@@ -478,7 +479,7 @@ describe("image anchor positions", () => {
 
 describe("image type handling", () => {
   it("handles JPEG images correctly", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Data"]],
       images: [makeImage("jpeg", { row: 0, col: 0 })],
@@ -491,7 +492,7 @@ describe("image type handling", () => {
   })
 
   it("handles GIF images correctly", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Data"]],
       images: [makeImage("gif", { row: 0, col: 0 })],
@@ -504,7 +505,7 @@ describe("image type handling", () => {
   })
 
   it("handles mixed image types on one sheet", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Data"]],
       images: [
@@ -533,7 +534,7 @@ describe("image type handling", () => {
 describe("image round-trip", () => {
   it("reads back a single image written to XLSX", async () => {
     const imageData = fakePng(128)
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Hello"]],
       images: [
@@ -565,7 +566,7 @@ describe("image round-trip", () => {
     const pngData = fakePng(100)
     const jpegData = fakeJpeg(100)
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Data"]],
       images: [
@@ -604,7 +605,7 @@ describe("image round-trip", () => {
     const pngData = fakePng(80)
     const jpegData = fakeJpeg(80)
 
-    const sheet1: WriteSheet = {
+    const sheet1: SheetInput = {
       name: "Sheet1",
       rows: [["First"]],
       images: [
@@ -615,7 +616,7 @@ describe("image round-trip", () => {
         },
       ],
     }
-    const sheet2: WriteSheet = {
+    const sheet2: SheetInput = {
       name: "Sheet2",
       rows: [["Second"]],
       images: [
@@ -642,12 +643,12 @@ describe("image round-trip", () => {
   })
 
   it("sheet without images has no images array after read", async () => {
-    const sheet1: WriteSheet = {
+    const sheet1: SheetInput = {
       name: "WithImages",
       rows: [["Has image"]],
       images: [makeImage("png", { row: 0, col: 0 }, { row: 5, col: 3 })],
     }
-    const sheet2: WriteSheet = {
+    const sheet2: SheetInput = {
       name: "NoImages",
       rows: [["No image"]],
     }
@@ -661,7 +662,7 @@ describe("image round-trip", () => {
 
   it("reads back GIF images", async () => {
     const gifData = fakeGif(96)
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Data"]],
       images: [
@@ -686,13 +687,13 @@ describe("image round-trip", () => {
 
 describe("image edge cases", () => {
   it("coexists with hyperlinks in sheet rels", async () => {
-    const cells = new Map<string, Partial<import("../src/_types").Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<import("../src/_types").Cell>>()
+    setCell(cells, 0, 0, {
       value: "Link",
       hyperlink: { target: "https://example.com" },
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Link"]],
       cells,
@@ -716,7 +717,7 @@ describe("image edge cases", () => {
   })
 
   it("handles images alongside other sheet features (merges, data validations)", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Merged", null, null],

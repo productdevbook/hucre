@@ -1,6 +1,8 @@
 // ── JSON Writer ──────────────────────────────────────────────────────
 
+import { isCellError } from "../cell-error"
 import type { CellValue, Workbook } from "../_types"
+import { rowsToObjects, selectSheet, type RowsToObjectsOptions } from "../_objects"
 import { unflattenRow } from "./unflatten"
 
 /**
@@ -13,6 +15,11 @@ import { unflattenRow } from "./unflatten"
  * before v1 rather than frozen — and there is no honest alternative
  * behaviour to give it, since JSON cannot carry a Date at all.
  */
+/** JSON carries values; an error is written as its token, as CSV does. */
+function errorReplacer(_key: string, value: unknown): unknown {
+  return isCellError(value) ? value.error : value
+}
+
 export interface JsonWriteOptions {
   /** Pretty-print with 2-space indent. Default: false. */
   pretty?: boolean
@@ -53,7 +60,7 @@ function prepare(
 export function writeJson(data: Record<string, CellValue>[], options?: JsonWriteOptions): string {
   const pretty = options?.pretty ?? false
   const indent = options?.indent ?? "  "
-  return JSON.stringify(prepare(data, options), undefined, pretty ? indent : undefined)
+  return JSON.stringify(prepare(data, options), errorReplacer, pretty ? indent : undefined)
 }
 
 /**
@@ -67,7 +74,7 @@ export function writeNdjson(
   if (data.length === 0) return ""
   return (
     prepare(data, options)
-      .map((row) => JSON.stringify(row))
+      .map((row) => JSON.stringify(row, errorReplacer))
       .join("\n") + "\n"
   )
 }
@@ -78,11 +85,9 @@ export function writeNdjson(
  * Use `sheet` to pick a specific sheet by index or name, and `shape` to
  * decide whether the output shape may depend on how many sheets there are.
  */
-export interface WorkbookToJsonOptions extends JsonWriteOptions {
+export interface WorkbookToJsonOptions extends JsonWriteOptions, RowsToObjectsOptions {
   /** Sheet to emit. If omitted, all sheets are emitted. */
   sheet?: number | string
-  /** 0-based header row index. Default: 0. */
-  headerRow?: number
   /**
    * Output shape when no `sheet` is picked. Default: `"auto"`.
    *
@@ -99,25 +104,15 @@ export interface WorkbookToJsonOptions extends JsonWriteOptions {
 }
 
 export function workbookToJson(wb: Workbook, options?: WorkbookToJsonOptions): string {
-  const headerRow = options?.headerRow ?? 0
+  const projection = { ...options, skipEmptyRows: options?.skipEmptyRows ?? false }
 
   if (options?.sheet !== undefined) {
-    const sheet =
-      typeof options.sheet === "number"
-        ? wb.sheets[options.sheet]
-        : wb.sheets.find((s) => s.name === options.sheet)
-    if (!sheet) {
-      throw new Error(
-        typeof options.sheet === "number"
-          ? `Sheet index ${options.sheet} out of range`
-          : `Sheet "${options.sheet}" not found`,
-      )
-    }
-    return writeJson(sheetToRowObjects(sheet.rows, headerRow), options)
+    const sheet = selectSheet(wb, options.sheet)
+    return writeJson(rowsToObjects(sheet, projection).data, options)
   }
 
   if ((options?.shape ?? "auto") === "auto" && wb.sheets.length === 1) {
-    return writeJson(sheetToRowObjects(wb.sheets[0]!.rows, headerRow), options)
+    return writeJson(rowsToObjects(wb.sheets[0]!, projection).data, options)
   }
 
   // Null-prototype for the same reason flatten.ts uses one: a sheet may
@@ -125,28 +120,11 @@ export function workbookToJson(wb: Workbook, options?: WorkbookToJsonOptions): s
   // prototype setter and the sheet vanishes from the output entirely.
   const all: Record<string, unknown[]> = Object.create(null)
   for (const sheet of wb.sheets) {
-    const rows = sheetToRowObjects(sheet.rows, headerRow)
+    const rows = rowsToObjects(sheet, projection).data
     all[sheet.name] = options?.unflatten ? rows.map(unflattenRow) : rows
   }
 
   const pretty = options?.pretty ?? false
   const indent = options?.indent ?? "  "
-  return JSON.stringify(all, undefined, pretty ? indent : undefined)
-}
-
-function sheetToRowObjects(rows: CellValue[][], headerRowIdx: number): Record<string, CellValue>[] {
-  if (rows.length <= headerRowIdx) return []
-  const headerRow = rows[headerRowIdx]!
-  const headers = headerRow.map((h) => (h === null || h === undefined ? "" : String(h).trim()))
-
-  const result: Record<string, CellValue>[] = []
-  for (let i = headerRowIdx + 1; i < rows.length; i++) {
-    const row = rows[i]!
-    const obj: Record<string, CellValue> = {}
-    for (let j = 0; j < headers.length; j++) {
-      obj[headers[j]!] = j < row.length ? (row[j] ?? null) : null
-    }
-    result.push(obj)
-  }
-  return result
+  return JSON.stringify(all, errorReplacer, pretty ? indent : undefined)
 }

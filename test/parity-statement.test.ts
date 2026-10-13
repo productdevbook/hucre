@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { fieldsOf } from "./_reflect"
 import { readFileSync } from "node:fs"
-import type { Sheet, WriteOptions, WriteSheet, Workbook } from "../src/_types"
+import type { Sheet, WorkbookInput, SheetInput, Workbook } from "../src/_types"
 
 // ═══════════════════════════════════════════════════════════════════════
 // #412 — docs/PARITY.md is the v1 statement of what hucre reads versus
@@ -19,7 +19,11 @@ import type { Sheet, WriteOptions, WriteSheet, Workbook } from "../src/_types"
 const parity = (): string => readFileSync(new URL("../docs/PARITY.md", import.meta.url), "utf-8")
 const readme = (): string => readFileSync(new URL("../README.md", import.meta.url), "utf-8")
 
-const writeFields = new Set([...fieldsOf("WriteOptions"), ...fieldsOf("WriteSheet")])
+const writeFields = new Set([
+  ...fieldsOf("WritableWorkbook"),
+  ...fieldsOf("WritableSheet"),
+  ...fieldsOf("XlsxWriteOptions"),
+])
 const readFields = new Set([...fieldsOf("Workbook"), ...fieldsOf("Sheet")])
 
 const readOnly = [...readFields].filter((f) => !writeFields.has(f)).sort()
@@ -89,7 +93,7 @@ describe("the formats with no writer at all", () => {
 })
 
 // Referenced so the type imports are load-bearing: if `Sheet`,
-// `Workbook`, `WriteSheet` or `WriteOptions` is renamed, this file stops
+// `Workbook`, `SheetInput` or `WorkbookInput` is renamed, this file stops
 // compiling rather than quietly deriving empty lists from a regex that
 // no longer matches anything.
-export type _Pinned = [Sheet, Workbook, WriteSheet, WriteOptions]
+export type _Pinned = [Sheet, Workbook, SheetInput, WorkbookInput]

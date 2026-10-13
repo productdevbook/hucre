@@ -24,18 +24,11 @@
 // The scanner's failure mode is loud: a mis-cut span is not well-formed
 // XML and the parse throws, rather than quietly yielding a wrong row.
 
-import type { CellValue } from "../_types"
+import { readInputToUint8Array } from "../_input"
+import type { CellValue, ReadInput, StreamRow } from "../_types"
 import { ParseError } from "../errors"
 import { collectRows, elementToFlat, splitTag } from "./data-reader"
 import type { XmlReadOptions } from "./data-reader"
-
-/** One row, as `readXml` would have flattened it. */
-export interface XmlStreamRow<T = Record<string, CellValue>> {
-  /** 0-based position among the rows yielded. */
-  index: number
-  /** The flattened record. */
-  values: T
-}
 
 export interface XmlStreamReadOptions extends Pick<
   XmlReadOptions,
@@ -74,10 +67,13 @@ export interface XmlStreamReadOptions extends Pick<
  * shape more than the memory.
  */
 export async function* streamXmlRows<T = Record<string, CellValue>>(
-  input: string | Uint8Array,
+  input: ReadInput | string,
   options?: XmlStreamReadOptions,
-): AsyncGenerator<XmlStreamRow<T>, void, undefined> {
-  const xml = typeof input === "string" ? input : new TextDecoder("utf-8").decode(input)
+): AsyncGenerator<StreamRow<T>, void, undefined> {
+  const xml =
+    typeof input === "string"
+      ? input
+      : new TextDecoder("utf-8").decode(await readInputToUint8Array(input))
   if (xml.trim() === "") return
 
   const stripNs = options?.stripNamespaces ?? false
@@ -108,7 +104,7 @@ export async function* streamXmlRows<T = Record<string, CellValue>>(
 
     const values: Record<string, CellValue> = {}
     elementToFlat(element, flatOpts, "", values)
-    yield { index, values: values as T }
+    yield { index, sheet: 0, values: values as T }
     index++
   }
 }

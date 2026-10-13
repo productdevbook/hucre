@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { shiftFormula } from "../src/_refs"
 import { insertColumns, insertRows } from "../src/sheet-ops"
@@ -79,23 +80,23 @@ describe("through the operations a caller runs", () => {
     const sheet: Sheet = {
       name: "S",
       rows: [["a"]],
-      cells: new Map([["0,0", { value: 1, type: "formula", formula: `${LAST_COL}1` }]]),
+      cells: createCellStore([[0, 0, { value: 1, type: "formula", formula: `${LAST_COL}1` }]]),
     }
 
     expect(() => insertColumns(sheet, 0, 1)).not.toThrow()
-    expect(sheet.cells!.get("0,1")?.formula).toBe("#REF!")
+    expect(getCell(sheet.cells!, 0, 1)?.formula).toBe("#REF!")
   })
 
   it("insertRows leaves a valid reference behind, not an impossible one", () => {
     const sheet: Sheet = {
       name: "S",
       rows: [["a"]],
-      cells: new Map([["0,0", { value: 1, type: "formula", formula: `A${LAST_ROW}` }]]),
+      cells: createCellStore([[0, 0, { value: 1, type: "formula", formula: `A${LAST_ROW}` }]]),
     }
 
     insertRows(sheet, 0, 1)
 
-    expect(sheet.cells!.get("1,0")?.formula).toBe("#REF!")
+    expect(getCell(sheet.cells!, 1, 0)?.formula).toBe("#REF!")
   })
 })
 

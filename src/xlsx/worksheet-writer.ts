@@ -1,14 +1,16 @@
+import { cellEntries } from "../cell-store"
 // ── Worksheet XML Writer ─────────────────────────────────────────────
 // Generates xl/worksheets/sheetN.xml for an XLSX package.
 
+import { isCellError } from "../cell-error"
 import { toRanges } from "../cell-utils"
 import type {
   AutoFilter,
   RowDef,
-  WriteSheet,
+  SheetInput,
+  Cell,
   CellValue,
   CellStyle,
-  ColumnDef,
   ConditionalRule,
   DataValidation,
   SheetProtection,
@@ -18,21 +20,20 @@ import type {
   PaperSize,
   PaperSizeName,
   RichTextRun,
-  FontStyle,
-  Color,
+  ColumnDef,
+  FreezePane,
   Sparkline,
   Hyperlink,
-  HyperlinkValue,
 } from "../_types"
-import type { StylesCollector } from "./styles-writer"
+import { serializeFontProps, serializeColor, type StylesCollector } from "./styles-writer"
 import { dateToSerial } from "../_date"
-import { isHyperlinkValue } from "./hyperlink"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape, xmlTextElement } from "../xml/writer"
-import { calculateColumnWidth } from "./auto-width"
+import { createColumnWidthCollector } from "./auto-width"
 import { DYNAMIC_ARRAY_CM } from "./metadata"
 import { hashSheetPassword } from "./password"
-import { validateColumnIndex } from "../_validate"
-import { toCellValue } from "../_inline-cells"
+import { validateColumnIndex, validateRowSize } from "../_validate"
+import { mergeDefined, resolveCellInput } from "../_inline-cells"
+import { normalizeSheetInput, columnCellStyle } from "../_sheet-input"
 
 // ── Hyperlink Relationship ────────────────────────────────────────
 
@@ -111,26 +112,22 @@ export function colToLetter(col: number): string {
 export function rowAttributes(
   rowIndex: number,
   rowDef?: RowDef,
-): Record<string, string | number | boolean> {
-  const attrs: Record<string, string | number | boolean> = { r: rowIndex + 1 }
-  if (rowDef?.height !== undefined) {
-    attrs["ht"] = rowDef.height
-    attrs["customHeight"] = 1
+): Record<string, string | number | boolean | undefined> {
+  return {
+    r: rowIndex + 1,
+    ht: rowDef?.height,
+    customHeight: rowDef?.height === undefined ? undefined : 1,
+    hidden: rowDef?.hidden ? 1 : undefined,
+    outlineLevel: rowDef?.outlineLevel || undefined,
+    collapsed: rowDef?.collapsed ? 1 : undefined,
   }
-  if (rowDef?.hidden) attrs["hidden"] = 1
-  if (rowDef?.outlineLevel) attrs["outlineLevel"] = rowDef.outlineLevel
-  if (rowDef?.collapsed) attrs["collapsed"] = 1
-  return attrs
 }
 
 /** True when a row definition asks for anything at all. */
 export function hasRowAttributes(rowDef?: RowDef): boolean {
-  return (
-    rowDef !== undefined &&
-    (rowDef.height !== undefined ||
-      Boolean(rowDef.hidden) ||
-      Boolean(rowDef.outlineLevel) ||
-      Boolean(rowDef.collapsed))
+  return Boolean(
+    rowDef &&
+    (rowDef.height !== undefined || rowDef.hidden || rowDef.outlineLevel || rowDef.collapsed),
   )
 }
 
@@ -209,30 +206,8 @@ export function writeSharedStringsXml(sharedStrings: SharedStringsCollector): st
  * Exported because the streaming writers build these too — see
  * {@link serializeCell}.
  */
-export interface ResolvedCell {
+export interface ResolvedCell extends Omit<Partial<Cell>, "value"> {
   value: CellValue
-  style?: CellStyle
-  checkbox?: boolean
-  formula?: string
-  formulaResult?: CellValue
-  formulaType?: "shared" | "array"
-  formulaSharedIndex?: number
-  formulaRef?: string
-  formulaDynamic?: boolean
-  richText?: RichTextRun[]
-  hyperlink?: Hyperlink
-}
-
-// ── Rich data-row values ───────────────────────────────────────────
-
-/** Convert a {@link HyperlinkValue} to the internal {@link Hyperlink} shape. */
-function toHyperlink(hv: HyperlinkValue): Hyperlink {
-  const internal = hv.hyperlink.startsWith("#")
-  const h: Hyperlink = internal
-    ? { target: "", location: hv.hyperlink.slice(1), display: hv.text }
-    : { target: hv.hyperlink, display: hv.text }
-  if (hv.tooltip !== undefined) h.tooltip = hv.tooltip
-  return h
 }
 
 // ── Default date format ────────────────────────────────────────────
@@ -261,34 +236,11 @@ const BARE_DATE_STYLE: CellStyle = Object.freeze({ numFmt: DEFAULT_DATE_FORMAT }
  */
 const DATE_STYLE_CACHE = /* @__PURE__ */ new WeakMap<CellStyle, CellStyle>()
 
-/**
- * Known Excel error value strings.
- *
- * The first eight are the ST_CellType `e` values ECMA-376 enumerates.
- * `#SPILL!` and `#CALC!` are the two errors dynamic arrays introduced —
- * they are not in the standard's list, but Excel stores them the same
- * way (`t="e"` with the literal text in `<v>`), and without them a
- * `#SPILL!` read out of a real workbook came back as a *shared string*
- * on the way in again, losing its error type entirely (#423).
- */
-const EXCEL_ERRORS = new Set([
-  "#VALUE!",
-  "#REF!",
-  "#N/A",
-  "#NAME?",
-  "#NULL!",
-  "#DIV/0!",
-  "#NUM!",
-  "#GETTING_DATA",
-  "#SPILL!",
-  "#CALC!",
-])
-
 // ── Worksheet Writer ───────────────────────────────────────────────
 
 /** Generate xl/worksheets/sheetN.xml along with any hyperlink relationships */
 export function writeWorksheetXml(
-  sheet: WriteSheet,
+  sheet: SheetInput,
   styles: StylesCollector,
   sharedStrings: SharedStringsCollector,
   dateSystem?: "1900" | "1904",
@@ -317,7 +269,7 @@ export function writeWorksheetXml(
   {
     const sheetPrChildren: string[] = []
     if (sheet.view?.tabColor) {
-      sheetPrChildren.push(xmlSelfClose("tabColor", serializeColorAttrs(sheet.view.tabColor)))
+      sheetPrChildren.push(serializeColor("tabColor", sheet.view.tabColor))
     }
     if (sheet.outlineProperties) {
       const outlineAttrs: Record<string, string | number | boolean> = {}
@@ -352,32 +304,7 @@ export function writeWorksheetXml(
   const sheetViewParts: string[] = []
 
   if (sheet.freezePane) {
-    const fp = sheet.freezePane
-    const topLeftCell = cellRef(fp.rows ?? 0, fp.columns ?? 0)
-    const paneAttrs: Record<string, string | number> = {}
-
-    if (fp.columns && fp.columns > 0) {
-      paneAttrs["xSplit"] = fp.columns
-    }
-    if (fp.rows && fp.rows > 0) {
-      paneAttrs["ySplit"] = fp.rows
-    }
-    paneAttrs["topLeftCell"] = topLeftCell
-    paneAttrs["state"] = "frozen"
-
-    // Determine active pane
-    const hasXSplit = fp.columns && fp.columns > 0
-    const hasYSplit = fp.rows && fp.rows > 0
-
-    if (hasXSplit && hasYSplit) {
-      paneAttrs["activePane"] = "bottomRight"
-    } else if (hasXSplit) {
-      paneAttrs["activePane"] = "topRight"
-    } else {
-      paneAttrs["activePane"] = "bottomLeft"
-    }
-
-    sheetViewParts.push(xmlSelfClose("pane", paneAttrs))
+    sheetViewParts.push(serializeFrozenPane(sheet.freezePane))
   } else if (sheet.splitPane) {
     const sp = sheet.splitPane
     const paneAttrs: Record<string, string | number> = {}
@@ -436,74 +363,15 @@ export function writeWorksheetXml(
   if (sheet.defaultColWidth !== undefined) formatPrAttrs["defaultColWidth"] = sheet.defaultColWidth
   parts.push(xmlSelfClose("sheetFormatPr", formatPrAttrs))
 
-  // ── Columns ──
-  if (sheet.columns && sheet.columns.length > 0) {
-    const colElements: string[] = []
-    for (let i = 0; i < sheet.columns.length; i++) {
-      const col = sheet.columns[i]
-
-      // Calculate auto-width if requested and no explicit width is set
-      let effectiveWidth = col.width
-      if (col.autoWidth && effectiveWidth === undefined) {
-        const columnValues: CellValue[] = []
-        for (const row of resolvedRows) {
-          if (row && i < row.length && row[i]) {
-            columnValues.push(row[i]!.value)
-          }
-        }
-        effectiveWidth = calculateColumnWidth(columnValues, {
-          font: col.style?.font,
-          numFmt: col.numFmt ?? col.style?.numFmt,
-        })
-      }
-
-      // A column format has to land on `<col style="N">` as well as on the
-      // cells. Stamping the cells alone made it look right for the rows
-      // hucre wrote and nowhere else: in Excel a column format applies to
-      // every cell in the column including ones nobody has typed in yet,
-      // so a "currency" column stopped being one the moment the user
-      // added a row. It also meant the format vanished on read, since the
-      // reader has only `<col>` to look at. See #439 §W.
-      const columnStyle: CellStyle | undefined =
-        col.numFmt && !col.style?.numFmt
-          ? { ...col.style, numFmt: col.numFmt }
-          : (col.style ?? undefined)
-      const columnStyleId = columnStyle ? styles.addStyle(columnStyle) : 0
-
-      if (
-        effectiveWidth !== undefined ||
-        col.hidden ||
-        col.outlineLevel ||
-        col.collapsed ||
-        columnStyleId !== 0
-      ) {
-        const colAttrs: Record<string, string | number | boolean> = {
-          min: i + 1,
-          max: i + 1,
-        }
-        if (effectiveWidth !== undefined) {
-          colAttrs["width"] = effectiveWidth
-          colAttrs["customWidth"] = true
-        }
-        if (columnStyleId !== 0) {
-          colAttrs["style"] = columnStyleId
-        }
-        if (col.hidden) {
-          colAttrs["hidden"] = true
-        }
-        if (col.outlineLevel) {
-          colAttrs["outlineLevel"] = col.outlineLevel
-        }
-        if (col.collapsed) {
-          colAttrs["collapsed"] = true
-        }
-        colElements.push(xmlSelfClose("col", colAttrs))
-      }
-    }
-    if (colElements.length > 0) {
-      parts.push(xmlElement("cols", undefined, colElements))
-    }
+  const columnWidths = createColumnWidthCollector(sheet.columns)
+  if (columnWidths.widths.size) {
+    for (const row of resolvedRows)
+      row.forEach((cell, col) => {
+        if (cell) columnWidths.add(col, cell)
+      })
   }
+  const columnsXml = serializeColumns(sheet.columns, styles, columnWidths.widths)
+  if (columnsXml) parts.push(columnsXml)
 
   // ── Sheet Data ──
   const rowElements: string[] = []
@@ -683,7 +551,7 @@ export function writeWorksheetXml(
   let commentsRId: string | null = null
   let hasComments = false
   if (sheet.cells) {
-    for (const [, cell] of sheet.cells) {
+    for (const [, , cell] of cellEntries(sheet.cells)) {
       if (cell.comment) {
         hasComments = true
         break
@@ -758,83 +626,69 @@ export function writeWorksheetXml(
   }
 }
 
-// ── Row Resolution ─────────────────────────────────────────────────
-
-/**
- * The default cell style a column contributes to every cell beneath it.
- * `numFmt` is folded into the style object, but an explicit
- * `style.numFmt` wins — it is the more specific of the two spellings.
- */
-function columnCellStyle(col: ColumnDef | undefined): CellStyle | undefined {
-  if (!col) return undefined
-  if (col.numFmt && !col.style?.numFmt) return { ...col.style, numFmt: col.numFmt }
-  return col.style
+/** One frozen-pane contract for buffered and streamed XLSX layout. */
+export function serializeFrozenPane(fp: FreezePane): string {
+  const rows = fp.rows ?? 0
+  const columns = fp.columns ?? 0
+  validateRowSize(rows, columns + 1)
+  return xmlSelfClose("pane", {
+    xSplit: columns || undefined,
+    ySplit: rows || undefined,
+    topLeftCell: cellRef(rows, columns),
+    state: "frozen",
+    activePane: columns && rows ? "bottomRight" : columns ? "topRight" : "bottomLeft",
+  })
 }
 
-function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
-  const resolved: Array<Array<ResolvedCell | null>> = []
-
-  if (sheet.data && sheet.columns) {
-    // Object-based data with column keys
-    const keys = sheet.columns.map((col) => col.key)
-
-    // Add header row if columns have headers
-    const hasHeaders = sheet.columns.some((col) => col.header)
-    if (hasHeaders) {
-      const headerRow: Array<ResolvedCell | null> = []
-      for (let c = 0; c < sheet.columns.length; c++) {
-        const col = sheet.columns[c]
-        headerRow.push({
-          value: col.header ?? col.key ?? null,
-          style: col.style,
-        })
-      }
-      resolved.push(headerRow)
-    }
-
-    for (const obj of sheet.data) {
-      const row: Array<ResolvedCell | null> = []
-      for (let c = 0; c < keys.length; c++) {
-        const key = keys[c]
-        const raw = key !== undefined ? (obj[key] ?? null) : null
-        const cell: ResolvedCell = {
-          value: isHyperlinkValue(raw) ? raw.text : raw,
-          style: columnCellStyle(sheet.columns[c]),
-        }
-        if (isHyperlinkValue(raw)) cell.hyperlink = toHyperlink(raw)
-        row.push(cell)
-      }
-      resolved.push(row)
-    }
-  } else if (sheet.rows) {
-    // Array-based rows. `columns` means the same thing here as on the
-    // `data[]` path: its style and numFmt are the column's default
-    // formatting. They used to apply only to `data[]`, so the same
-    // `columns` array meant two different things depending on which row
-    // source you picked (#407). Unlike `data[]` there is no header row to
-    // exempt — hucre cannot tell which of the caller's rows is one.
-    for (const row of sheet.rows) {
-      const resolvedRow: Array<ResolvedCell | null> = []
-      for (let c = 0; c < row.length; c++) {
-        // `writeXlsx` lifts an inline cell object into `cells` before this
-        // runs, so the entry is a value by then. Reading it through
-        // `toCellValue` keeps `resolveRows` correct for a caller that
-        // reached it another way, rather than emitting `[object Object]`.
-        const value = toCellValue(row[c]!)
-        const style = sheet.columns ? columnCellStyle(sheet.columns[c]) : undefined
-        resolvedRow.push(style ? { value, style } : { value })
-      }
-      resolved.push(resolvedRow)
-    }
+/** Shared column XML: defaults also apply to cells the user adds later. */
+export function serializeColumns(
+  columns: readonly ColumnDef[] | undefined,
+  styles: StylesCollector,
+  widths?: ReadonlyMap<number, number>,
+): string {
+  const elements: string[] = []
+  for (const [i, col] of (columns ?? []).entries()) {
+    const width = col.width ?? widths?.get(i)
+    const style = columnCellStyle(col)
+    const styleId = style ? styles.addStyle(style) : 0
+    if (width === undefined && !col.hidden && !col.outlineLevel && !col.collapsed && !styleId)
+      continue
+    // xmlSelfClose omits undefined attributes, keeping the column schema
+    // in one place for populated and empty columns alike.
+    elements.push(
+      xmlSelfClose("col", {
+        min: i + 1,
+        max: i + 1,
+        width,
+        customWidth: width === undefined ? undefined : true,
+        style: styleId || undefined,
+        hidden: col.hidden || undefined,
+        outlineLevel: col.outlineLevel || undefined,
+        collapsed: col.collapsed || undefined,
+      }),
+    )
   }
+  return elements.length ? xmlElement("cols", undefined, elements) : ""
+}
+
+// ── Row Resolution ─────────────────────────────────────────────────
+
+/** Shared worksheet/pivot resolution after the authoring boundary. */
+export function resolveRows(sheet: SheetInput): Array<Array<ResolvedCell | null>> {
+  // Standalone hyperlink collection also accepts unnormalized authoring data.
+  if (sheet.data !== undefined) sheet = normalizeSheetInput(sheet)
+  const columnStyles = sheet.columns?.map(columnCellStyle)
+  const resolved: Array<Array<ResolvedCell | null>> = (sheet.rows ?? []).map((row) =>
+    row.map((raw, col) => {
+      const cell = resolveCellInput(raw)
+      cell.style ??= columnStyles?.[col]
+      return cell
+    }),
+  )
 
   // Apply cell overrides
   if (sheet.cells) {
-    for (const [key, cellOverride] of sheet.cells) {
-      const [rowStr, colStr] = key.split(",")
-      const r = parseInt(rowStr, 10)
-      const c = parseInt(colStr, 10)
-
+    for (const [r, c, cellOverride] of cellEntries(sheet.cells)) {
       // Ensure row exists
       while (resolved.length <= r) {
         resolved.push([])
@@ -845,19 +699,11 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
       }
 
       const existing = row[c]
-      row[c] = {
-        value: cellOverride.value ?? existing?.value ?? null,
-        style: cellOverride.style ?? existing?.style,
-        checkbox: cellOverride.checkbox ?? existing?.checkbox,
-        formula: cellOverride.formula ?? existing?.formula,
-        formulaResult: cellOverride.formulaResult ?? existing?.formulaResult,
-        formulaType: cellOverride.formulaType ?? existing?.formulaType,
-        formulaSharedIndex: cellOverride.formulaSharedIndex ?? existing?.formulaSharedIndex,
-        formulaRef: cellOverride.formulaRef ?? existing?.formulaRef,
-        formulaDynamic: cellOverride.formulaDynamic ?? existing?.formulaDynamic,
-        richText: cellOverride.richText ?? existing?.richText,
-        hyperlink: cellOverride.hyperlink ?? existing?.hyperlink,
-      }
+      // Share the same partial-cell overlay as inline lifting. `??` used
+      // to discard explicit null values and resurrect the dense value.
+      // Resolve after the overlay: a Date cache must also select the
+      // default date format instead of inheriting the old scalar's type.
+      row[c] = resolveCellInput(mergeDefined(existing ?? { value: null }, cellOverride))
     }
   }
 
@@ -1012,6 +858,9 @@ export function serializeCell(
       if (typeof formulaResult === "string") {
         cellAttrs["t"] = "str"
         children.push(xmlElement("v", undefined, xmlEscape(formulaResult)))
+      } else if (isCellError(formulaResult)) {
+        cellAttrs["t"] = "e"
+        children.push(xmlElement("v", undefined, xmlEscape(formulaResult.error)))
       } else if (typeof formulaResult === "boolean") {
         cellAttrs["t"] = "b"
         children.push(xmlElement("v", undefined, formulaResult ? "1" : "0"))
@@ -1025,7 +874,9 @@ export function serializeCell(
           children.push(xmlElement("v", undefined, String(formulaResult)))
         }
       } else if (formulaResult instanceof Date) {
-        children.push(xmlElement("v", undefined, String(dateToSerial(formulaResult, is1904))))
+        children.push(
+          xmlElement("v", undefined, String(dateToSerial(formulaResult, is1904 ? "1904" : "1900"))),
+        )
       }
     }
 
@@ -1040,9 +891,8 @@ export function serializeCell(
     return null
   }
 
-  // Error value (e.g. #VALUE!, #REF!, #N/A, #NAME?, #NULL!, #DIV/0!, #NUM!)
-  if (typeof value === "string" && EXCEL_ERRORS.has(value)) {
-    return simpleCell(ref, styleIdx, "e", value)
+  if (isCellError(value)) {
+    return simpleCell(ref, styleIdx, "e", value.error)
   }
 
   // String value
@@ -1079,7 +929,7 @@ export function serializeCell(
 
   // Date value
   if (value instanceof Date) {
-    return simpleCell(ref, styleIdx, "", String(dateToSerial(value, is1904)))
+    return simpleCell(ref, styleIdx, "", String(dateToSerial(value, is1904 ? "1904" : "1900")))
   }
 
   return null
@@ -1222,59 +1072,54 @@ function serializeDataValidations(validations: DataValidation[]): string {
  * the `<hyperlinks>` XML section plus external relationship entries.
  */
 export function collectHyperlinks(
-  sheet: WriteSheet,
+  sheet: SheetInput,
   preResolved?: Array<Array<ResolvedCell | null>>,
 ): {
   xml: string
   relationships: HyperlinkRelationship[]
 } {
   // Resolve the full grid so links from both inline `data` values and the
-  // `cells` override map are collected from a single source, in row-major order.
+  // `cells` overrides are collected from a single source, in row-major order.
   // `writeWorksheetXml` has already paid for that grid, so it hands it over
   // rather than making us rebuild every cell of the sheet a second time.
   const resolved = preResolved ?? resolveRows(sheet)
 
-  const hyperlinkElements: string[] = []
-  const relationships: HyperlinkRelationship[] = []
-  let rIdCounter = 1
-
+  const collector = createHyperlinkCollector()
   for (let r = 0; r < resolved.length; r++) {
     const row = resolved[r]
     for (let c = 0; c < row.length; c++) {
       const hl = row[c]?.hyperlink
-      if (!hl) continue
-
-      const ref = cellRef(r, c)
-      const attrs: Record<string, string> = { ref }
-
-      if (hl.location) {
-        // Internal hyperlink — uses location attribute directly, no relationship needed
-        attrs["location"] = hl.location
-      } else if (hl.target) {
-        // External hyperlink — needs a relationship entry
-        const rId = `rId${rIdCounter++}`
-        attrs["r:id"] = rId
-        relationships.push({ id: rId, target: hl.target })
-      }
-
-      if (hl.tooltip) {
-        attrs["tooltip"] = hl.tooltip
-      }
-      if (hl.display) {
-        attrs["display"] = hl.display
-      }
-
-      hyperlinkElements.push(xmlSelfClose("hyperlink", attrs))
+      if (hl) collector.add(r, c, hl)
     }
   }
+  return { xml: collector.toXml(), relationships: collector.relationships }
+}
 
-  if (hyperlinkElements.length === 0) {
-    return { xml: "", relationships: [] }
-  }
-
+/** Collect sheet-tail links without retaining or re-resolving row values. */
+export function createHyperlinkCollector(): {
+  relationships: HyperlinkRelationship[]
+  add(row: number, col: number, link: Hyperlink): void
+  toXml(): string
+} {
+  const elements: string[] = []
+  const relationships: HyperlinkRelationship[] = []
   return {
-    xml: xmlElement("hyperlinks", undefined, hyperlinkElements),
     relationships,
+    add(row: number, col: number, link: Hyperlink): void {
+      const attrs: Record<string, string> = { ref: cellRef(row, col) }
+      if (link.location) attrs.location = link.location
+      else if (link.target) {
+        const id = `rId${relationships.length + 1}`
+        attrs["r:id"] = id
+        relationships.push({ id, target: link.target })
+      }
+      if (link.tooltip) attrs.tooltip = link.tooltip
+      if (link.display) attrs.display = link.display
+      elements.push(xmlSelfClose("hyperlink", attrs))
+    },
+    toXml(): string {
+      return elements.length ? xmlElement("hyperlinks", undefined, elements) : ""
+    },
   }
 }
 
@@ -1503,40 +1348,16 @@ function serializeHeaderFooter(hf: HeaderFooter): string {
   return xmlElement("headerFooter", Object.keys(attrs).length > 0 ? attrs : undefined, children)
 }
 
-// ── Color Attribute Serialization ──────────────────────────────────────
-
-/** Serialize a Color object into XML attributes for a color element */
-function serializeColorAttrs(color: Color): Record<string, string | number> {
-  const attrs: Record<string, string | number> = {}
-  if (color.rgb !== undefined) {
-    // XLSX expects ARGB format (8 chars), add "FF" alpha prefix if only 6 chars
-    const rgb = color.rgb
-    attrs["rgb"] = rgb.length === 6 ? `FF${rgb}` : rgb
-  }
-  if (color.theme !== undefined) {
-    attrs["theme"] = color.theme
-  }
-  if (color.tint !== undefined) {
-    attrs["tint"] = color.tint
-  }
-  if (color.indexed !== undefined) {
-    attrs["indexed"] = color.indexed
-  }
-  return attrs
-}
-
 // ── Rich Text Serialization ──────────────────────────────────────────
 
 /** Serialize an array of RichTextRun into XML elements for an <is> (inline string) block */
-function serializeRichTextRuns(runs: RichTextRun[]): string[] {
-  const elements: string[] = []
-
-  for (const run of runs) {
+export function serializeRichTextRuns(runs: RichTextRun[]): string[] {
+  return runs.map((run) => {
     const runChildren: string[] = []
 
     // Run properties (<rPr>)
     if (run.font) {
-      const rPrParts = serializeFontProps(run.font)
+      const rPrParts = serializeFontProps(run.font, "rFont")
       if (rPrParts.length > 0) {
         runChildren.push(xmlElement("rPr", undefined, rPrParts))
       }
@@ -1545,55 +1366,8 @@ function serializeRichTextRuns(runs: RichTextRun[]): string[] {
     // Run text (<t>), with xml:space="preserve" when the run needs it.
     runChildren.push(xmlTextElement(run.text))
 
-    elements.push(xmlElement("r", undefined, runChildren))
-  }
-
-  return elements
-}
-
-/** Serialize FontStyle into individual XML elements for <rPr> */
-function serializeFontProps(font: FontStyle): string[] {
-  const parts: string[] = []
-
-  if (font.bold) {
-    parts.push(xmlSelfClose("b"))
-  }
-  if (font.italic) {
-    parts.push(xmlSelfClose("i"))
-  }
-  if (font.underline) {
-    if (font.underline === true || font.underline === "single") {
-      parts.push(xmlSelfClose("u"))
-    } else {
-      parts.push(xmlSelfClose("u", { val: font.underline }))
-    }
-  }
-  if (font.strikethrough) {
-    parts.push(xmlSelfClose("strike"))
-  }
-  if (font.vertAlign) {
-    parts.push(xmlSelfClose("vertAlign", { val: font.vertAlign }))
-  }
-  if (font.size !== undefined) {
-    parts.push(xmlSelfClose("sz", { val: font.size }))
-  }
-  if (font.color) {
-    parts.push(xmlSelfClose("color", serializeColorAttrs(font.color)))
-  }
-  if (font.name) {
-    parts.push(xmlSelfClose("rFont", { val: font.name }))
-  }
-  if (font.family !== undefined) {
-    parts.push(xmlSelfClose("family", { val: font.family }))
-  }
-  if (font.charset !== undefined) {
-    parts.push(xmlSelfClose("charset", { val: font.charset }))
-  }
-  if (font.scheme) {
-    parts.push(xmlSelfClose("scheme", { val: font.scheme }))
-  }
-
-  return parts
+    return xmlElement("r", undefined, runChildren)
+  })
 }
 
 // ── Auto Filter Serialization ────────────────────────────────────
@@ -1700,7 +1474,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
       csChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
     }
     for (const color of rule.colorScale.colors) {
-      csChildren.push(xmlSelfClose("color", { rgb: color }))
+      csChildren.push(serializeColor("color", color))
     }
     children.push(xmlElement("colorScale", undefined, csChildren))
   }
@@ -1713,7 +1487,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
       if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
       dbChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
     }
-    dbChildren.push(xmlSelfClose("color", { rgb: rule.dataBar.color }))
+    dbChildren.push(serializeColor("color", rule.dataBar.color))
     children.push(xmlElement("dataBar", undefined, dbChildren))
   }
 
@@ -1777,10 +1551,7 @@ function serializeSparklines(sparklines: Sparkline[]): string {
 
     const groupChildren: string[] = []
 
-    // Color series
-    const color = sp.color ?? "376092"
-    const colorRgb = color.length === 6 ? `FF${color}` : color
-    groupChildren.push(xmlSelfClose("x14:colorSeries", { rgb: colorRgb }))
+    groupChildren.push(serializeColor("x14:colorSeries", sp.color ?? { rgb: "376092" }))
 
     // Sparkline element
     const sparklineEl = xmlElement("x14:sparkline", undefined, [

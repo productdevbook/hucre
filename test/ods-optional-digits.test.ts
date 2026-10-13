@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeOds } from "../src/ods/writer"
 import { readOds } from "../src/ods/reader"
@@ -29,7 +30,7 @@ async function bytesFor(numFmt: string): Promise<Uint8Array> {
       {
         name: "S",
         rows: [[1234.5]],
-        cells: new Map([["0,0", { value: 1234.5, style: { numFmt } as CellStyle }]]),
+        cells: createCellStore([[0, 0, { value: 1234.5, style: { numFmt } as CellStyle }]]),
       },
     ],
   })
@@ -37,7 +38,7 @@ async function bytesFor(numFmt: string): Promise<Uint8Array> {
 
 async function roundTrip(numFmt: string): Promise<string | undefined> {
   const wb = await readOds(await bytesFor(numFmt), { readStyles: true })
-  return wb.sheets[0]!.cells?.get("0,0")?.style?.numFmt
+  return getCell(wb.sheets[0]!.cells, 0, 0)?.style?.numFmt
 }
 
 describe("an optional decimal stays optional", () => {

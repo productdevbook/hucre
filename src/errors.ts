@@ -11,21 +11,6 @@ export class HucreError extends Error {
   }
 }
 
-/**
- * @deprecated Renamed to {@link HucreError} — the package is `hucre`, not
- * `defter`. This alias is the same class object, so every existing
- * `instanceof DefterError` check keeps working. It will be removed in a
- * future major version.
- */
-export const DefterError: typeof HucreError = HucreError
-
-/**
- * @deprecated Renamed to {@link HucreError}. Type-side alias kept so
- * `catch (e: unknown) { e as DefterError }` and any annotation of the base
- * class still compiles.
- */
-export type DefterError = HucreError
-
 export class ParseError extends HucreError {
   override name = "ParseError"
 

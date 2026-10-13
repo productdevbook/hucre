@@ -6,7 +6,7 @@ import { writeDrawing } from "../src/xlsx/drawing-writer"
 import { writeContentTypes } from "../src/xlsx/content-types-writer"
 import { parseCsv } from "../src/csv/reader"
 import { fetchCsv } from "../src/csv/fetch"
-import type { WriteSheet, SheetImage } from "../src/_types"
+import type { SheetInput, SheetImage } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -87,7 +87,7 @@ describe("SVG image support", () => {
 
   it("should write SVG image in full XLSX roundtrip", async () => {
     const svgData = fakeImage(128)
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["hello"]],
       images: [
@@ -144,7 +144,7 @@ describe("WebP image support", () => {
 
   it("should write WebP image in full XLSX roundtrip", async () => {
     const webpData = fakeImage(96)
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["test"]],
       images: [
@@ -173,7 +173,7 @@ describe("WebP image support", () => {
 describe("Background image (watermark)", () => {
   it("should write background image to xl/media/ with picture element", async () => {
     const bgData = fakeImage(256)
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["watermark test"]],
       backgroundImage: bgData,
@@ -201,7 +201,7 @@ describe("Background image (watermark)", () => {
 
   it("should read back background image via roundtrip", async () => {
     const bgData = fakeImage(128)
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["bg test"]],
       backgroundImage: bgData,
@@ -218,7 +218,7 @@ describe("Background image (watermark)", () => {
   it("should handle background image alongside regular images", async () => {
     const bgData = fakeImage(64)
     const imgData = fakeImage(96)
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["both"]],
       images: [
@@ -249,7 +249,7 @@ describe("Background image (watermark)", () => {
   })
 
   it("should not produce picture element when no background image", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["no bg"]],
     }
