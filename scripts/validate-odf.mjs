@@ -36,10 +36,11 @@
 // under its ID/IDREF checking, which is a property of the schema rather
 // than of any document.
 
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs"
+import { mkdtempSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { tmpdir } from "node:os"
-import { join, dirname } from "node:path"
+import { join } from "node:path"
+import { validateOdfParts } from "./odf-validation.mjs"
 
 const args = new Map()
 for (let i = 2; i < process.argv.length; i += 2) {
@@ -193,37 +194,22 @@ function validate(file, rng) {
 }
 
 const work = mkdtempSync(join(tmpdir(), "hucre-odf-val-"))
-let failures = 0
+const { failures, skipped } = await validateOdfParts({
+  documents: await documents(),
+  parts: PARTS,
+  schema,
+  manifestSchema,
+  work,
+  extract,
+  validate,
+  log: console.log,
+})
 
-for (const [label, bytes] of await documents()) {
-  console.log(`\n${label}  (${bytes.length} bytes)`)
-
-  const checks = [...PARTS.map((p) => [p, schema])]
-  if (manifestSchema) checks.push(["META-INF/manifest.xml", manifestSchema])
-
-  for (const [part, rng] of checks) {
-    let xml
-    try {
-      xml = await extract(bytes, part)
-    } catch {
-      console.log(`  ${part.padEnd(24)} (absent)`)
-      continue
-    }
-
-    const file = join(work, part.replace(/\//g, "_"))
-    mkdirSync(dirname(file), { recursive: true })
-    writeFileSync(file, xml)
-
-    const errors = validate(file, rng)
-    if (errors) {
-      failures++
-      console.log(`  ${part.padEnd(24)} INVALID`)
-      for (const line of errors.split("\n").slice(0, 4)) console.log(`    ${line}`)
-    } else {
-      console.log(`  ${part.padEnd(24)} valid`)
-    }
-  }
-}
-
-console.log(failures === 0 ? "\nAll parts valid." : `\n${failures} invalid part(s).`)
+const summary =
+  failures > 0
+    ? `\n${failures} invalid or unreadable part(s).`
+    : skipped > 0
+      ? `\nAll checked parts valid; ${skipped} manifest check(s) skipped (no manifest schema supplied).`
+      : "\nAll parts valid."
+console.log(summary)
 process.exit(failures === 0 ? 0 : 1)
