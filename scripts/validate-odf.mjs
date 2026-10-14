@@ -36,11 +36,11 @@
 // under its ID/IDREF checking, which is a property of the schema rather
 // than of any document.
 
-import { mkdtempSync, writeFileSync } from "node:fs"
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
-import { validateOdfParts } from "./odf-validation.mjs"
+import { join, dirname, resolve } from "node:path"
+import { pathToFileURL } from "node:url"
 
 const args = new Map()
 for (let i = 2; i < process.argv.length; i += 2) {
@@ -49,7 +49,13 @@ for (let i = 2; i < process.argv.length; i += 2) {
 const schema = args.get("schema")
 const manifestSchema = args.get("manifest-schema")
 const jing = args.get("jing")
-const dist = args.get("dist") ?? new URL("../dist/index.mjs", import.meta.url).href
+// A URL rather than the path as typed: `extract` resolves the ZIP reader
+// relative to it, so `--dist` points at one bundle instead of the bundle
+// for the library and whatever happens to sit in ../dist for the reader.
+const distArg = args.get("dist")
+const dist = distArg
+  ? pathToFileURL(resolve(distArg)).href
+  : new URL("../dist/index.mjs", import.meta.url).href
 
 if (!schema || !jing) {
   console.error("usage: node scripts/validate-odf.mjs --schema <odf.rng> --jing <jing.jar>")
@@ -169,9 +175,7 @@ const PARTS = ["content.xml", "styles.xml", "meta.xml", "settings.xml"]
 
 /** Pull one entry out of an ODS with hucre's own ZIP reader. */
 async function extract(bytes, path) {
-  const { ZipReader } = await import(new URL("../dist/zip/reader.mjs", import.meta.url).href).catch(
-    () => ({}),
-  )
+  const { ZipReader } = await import(new URL("zip/reader.mjs", dist).href).catch(() => ({}))
   if (ZipReader) return new TextDecoder().decode(await new ZipReader(bytes).extract(path))
   // The bundle does not export it; read the workbook back through the
   // public API is not enough, so fall back to `unzip -p`.
@@ -194,22 +198,58 @@ function validate(file, rng) {
 }
 
 const work = mkdtempSync(join(tmpdir(), "hucre-odf-val-"))
-const { failures, skipped } = await validateOdfParts({
-  documents: await documents(),
-  parts: PARTS,
-  schema,
-  manifestSchema,
-  work,
-  extract,
-  validate,
-  log: console.log,
-})
+let failures = 0
+let skipped = 0
 
-const summary =
+for (const [label, bytes] of await documents()) {
+  console.log(`\n${label}  (${bytes.length} bytes)`)
+
+  const checks = PARTS.map((p) => [p, schema])
+  if (manifestSchema) {
+    checks.push(["META-INF/manifest.xml", manifestSchema])
+  } else {
+    // A check that did not run is not a check that passed. Saying so is
+    // the difference between "valid" and "nobody looked" (#566).
+    skipped++
+    console.log(`  ${"META-INF/manifest.xml".padEnd(24)} SKIPPED (no manifest schema supplied)`)
+  }
+
+  for (const [part, rng] of checks) {
+    let xml
+    try {
+      xml = await extract(bytes, part)
+    } catch {
+      // Every part in PARTS is written by all three ODS writers, so one
+      // that will not come out of the package is a defect rather than an
+      // absence — and a package that cannot be opened at all lands every
+      // part here. Counting these as checks that passed is what let the
+      // script print "All parts valid." for a document it never read
+      // (#566).
+      failures++
+      console.log(`  ${part.padEnd(24)} MISSING/UNREADABLE`)
+      continue
+    }
+
+    const file = join(work, part.replace(/\//g, "_"))
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, xml)
+
+    const errors = validate(file, rng)
+    if (errors) {
+      failures++
+      console.log(`  ${part.padEnd(24)} INVALID`)
+      for (const line of errors.split("\n").slice(0, 4)) console.log(`    ${line}`)
+    } else {
+      console.log(`  ${part.padEnd(24)} valid`)
+    }
+  }
+}
+
+console.log(
   failures > 0
     ? `\n${failures} invalid or unreadable part(s).`
     : skipped > 0
       ? `\nAll checked parts valid; ${skipped} manifest check(s) skipped (no manifest schema supplied).`
-      : "\nAll parts valid."
-console.log(summary)
+      : "\nAll parts valid.",
+)
 process.exit(failures === 0 ? 0 : 1)

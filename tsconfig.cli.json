@@ -22,6 +22,7 @@
     "test/cli.test.ts",
     "test/threaded-comments-write.test.ts",
     "test/ods-fidelity.test.ts",
+    "test/odf-validation.test.ts",
     "test/parity-statement.test.ts",
     "test/real-files.test.ts",
     "test/ods-third-party.test.ts",
