@@ -148,16 +148,21 @@ describe("row definitions", () => {
     expect(s.rowDefs).toBeUndefined()
   })
 
-  it("drops row flags on a row that carries no row number", () => {
-    // Row properties are keyed by row index; with no `r` there is
-    // nothing to key them to, so the flags are dropped even though the
-    // row's cells are still read.
+  it("keys row flags on a row with no row number to its position", () => {
+    // `r` is optional on `<row>` (§18.3.1.73). The row's cells were
+    // already numbered from its position; its flags used to be read from
+    // `r` alone and dropped without it. See #601.
     const s = data(
       `<row hidden="1" collapsed="1" outlineLevel="2" ht="40" customHeight="1">` +
         `<c><v>1</v></c></row>`,
     )
     expect(s.rows).toEqual([[1]])
-    expect(s.rowDefs).toBeUndefined()
+    expect(s.rowDefs?.get(0)).toEqual({
+      height: 40,
+      hidden: true,
+      outlineLevel: 2,
+      collapsed: true,
+    })
   })
 
   it("stops parsing rows once maxRows is reached", () => {

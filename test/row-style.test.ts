@@ -289,3 +289,64 @@ describe("a row format survives a read", () => {
     expect(rowDefs.get(1)!.style!.numFmt).toBe("0.00")
   })
 })
+
+describe("a row format with no data to sit in", () => {
+  // The writer's row loop stopped at the last row of data, so a row
+  // definition past it — a formatted row below a table, or a sheet with
+  // only `rowDefs` — had no `<row>` and its format was lost.
+  it("writes a formatted row below the data", async () => {
+    const xml = await sheetXml({
+      name: "S",
+      rows: [["a"], ["b"]],
+      rowDefs: new Map<number, RowDef>([[9, { style: TOTAL }]]),
+    })
+
+    expect(xml).toMatch(/<row r="10" s="\d+" customFormat="1"\/>/)
+  })
+
+  it("writes a sheet that has only row definitions", async () => {
+    const xml = await sheetXml({
+      name: "S",
+      rowDefs: new Map<number, RowDef>([
+        [4, { height: 30 }],
+        [2, { style: TOTAL }],
+      ]),
+    })
+
+    // In row order, whatever order the map was built in.
+    expect(xml).toMatch(
+      /<row r="3" s="\d+" customFormat="1"\/><row r="5" ht="30" customHeight="1"\/>/,
+    )
+  })
+
+  it("still writes nothing for a definition that says nothing", async () => {
+    const xml = await sheetXml({ name: "S", rows: [["a"]], rowDefs: new Map([[5, {}]]) })
+
+    expect(xml).not.toContain('<row r="6"')
+  })
+})
+
+describe("a row with no r attribute", () => {
+  // `r` is optional on `<row>`; the reader numbered the cells from the
+  // row's position but read the row's own attributes from `r`, which is
+  // NaN without it, so the format and height were dropped.
+  it("keeps its format and height", async () => {
+    const bytes = await writeXlsx({
+      sheets: [
+        {
+          name: "S",
+          rows: [["a"], ["b"]],
+          rowDefs: new Map<number, RowDef>([[1, { height: 20, style: TOTAL }]]),
+        },
+      ],
+    })
+    const patched = await rewrite(bytes, "xl/worksheets/sheet1.xml", (xml) =>
+      xml.replace(/<row r="\d+"/g, "<row"),
+    )
+
+    const def = (await readXlsx(patched, { readStyles: true })).sheets[0]!.rowDefs!.get(1)
+
+    expect(def?.height).toBe(20)
+    expect(def?.style?.numFmt).toBe("0.00")
+  })
+})

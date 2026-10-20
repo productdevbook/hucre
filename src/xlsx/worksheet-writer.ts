@@ -570,6 +570,20 @@ export function writeWorksheetXml(
     }
   }
 
+  // A row definition past the last row of data — a formatted row below a
+  // table, or a sheet with only `rowDefs` — has no cells to carry it, and
+  // the loop above stops at the data. It still needs its `<row>`, or its
+  // format, height or hidden flag never reaches the file. Only the
+  // definitions are visited, so a far-away row costs nothing in between.
+  if (sheet.rowDefs) {
+    const trailing = [...sheet.rowDefs.keys()]
+      .filter((r) => r >= rowCount && hasRowAttributes(sheet.rowDefs!.get(r)))
+      .sort((a, b) => a - b)
+    for (const r of trailing) {
+      rowElements.push(xmlSelfClose("row", rowAttributes(r, sheet.rowDefs.get(r), styles)))
+    }
+  }
+
   parts.push(xmlElement("sheetData", undefined, rowElements.length > 0 ? rowElements : ""))
 
   // ── SheetProtection (OOXML: after sheetData, before autoFilter) ──

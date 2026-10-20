@@ -513,12 +513,16 @@ function worksheetParser(
             // lacking an `r` attribute get sequential columns within this row.
             currentRowNum = Number(attrs["r"]) || currentRowNum + 1
             implicitCol = 0
+            // `r` is optional on `<row>` (§18.3.1.73): the attributes below
+            // take the row number worked out above, as the cells do. They
+            // used to read `attrs["r"]` again, which is NaN without it, so
+            // a height, hidden flag, outline level or format was dropped.
             // Parse row-level attributes: ht, customHeight, hidden
             if (
               attrs["ht"] &&
               (attrs["customHeight"] === "1" || attrs["customHeight"] === "true")
             ) {
-              const rowNum = Number(attrs["r"]) - 1 // 0-based
+              const rowNum = currentRowNum - 1 // 0-based
               const height = Number(attrs["ht"])
               if (!Number.isNaN(rowNum) && !Number.isNaN(height)) {
                 const existing = rowDefs.get(rowNum) ?? {}
@@ -527,7 +531,7 @@ function worksheetParser(
               }
             }
             if (attrs["hidden"] === "1" || attrs["hidden"] === "true") {
-              const rowNum = Number(attrs["r"]) - 1
+              const rowNum = currentRowNum - 1
               if (!Number.isNaN(rowNum)) {
                 const existing = rowDefs.get(rowNum) ?? {}
                 existing.hidden = true
@@ -535,7 +539,7 @@ function worksheetParser(
               }
             }
             if (attrs["outlineLevel"]) {
-              const rowNum = Number(attrs["r"]) - 1
+              const rowNum = currentRowNum - 1
               const level = Number(attrs["outlineLevel"])
               if (!Number.isNaN(rowNum) && !Number.isNaN(level) && level > 0) {
                 const existing = rowDefs.get(rowNum) ?? {}
@@ -544,7 +548,7 @@ function worksheetParser(
               }
             }
             if (attrs["collapsed"] === "1" || attrs["collapsed"] === "true") {
-              const rowNum = Number(attrs["r"]) - 1
+              const rowNum = currentRowNum - 1
               if (!Number.isNaN(rowNum)) {
                 const existing = rowDefs.get(rowNum) ?? {}
                 existing.collapsed = true
@@ -562,7 +566,7 @@ function worksheetParser(
               attrs["s"] !== undefined &&
               (attrs["customFormat"] === "1" || attrs["customFormat"] === "true")
             ) {
-              const rowNum = Number(attrs["r"]) - 1
+              const rowNum = currentRowNum - 1
               const styleIndex = Number(attrs["s"])
               if (!Number.isNaN(rowNum) && styleIndex >= 0) {
                 const rowStyle = resolveStyle(ctx.styles, styleIndex)
