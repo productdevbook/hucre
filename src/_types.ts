@@ -474,8 +474,15 @@ export type PaperSizeName =
 export interface PageSetup {
   paperSize?: PaperSize
   orientation?: "portrait" | "landscape"
+  /**
+   * Scale the sheet to fit `fitToWidth` × `fitToHeight` pages instead of
+   * printing at `scale`. The writer turns this on when either count is
+   * set; pass `false` to keep the counts out of the file.
+   */
   fitToPage?: boolean
+  /** Pages wide to fit the sheet to. `0` means as many as needed. Implies `fitToPage`. */
   fitToWidth?: number
+  /** Pages tall to fit the sheet to. `0` means as many as needed. Implies `fitToPage`. */
   fitToHeight?: number
   scale?: number
   margins?: PageMargins

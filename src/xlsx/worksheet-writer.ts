@@ -332,8 +332,9 @@ export function writeWorksheetXml(
     // `<pageSetup fitToWidth>` alone does nothing in Excel — the scaling
     // mode is switched by this flag, and the fit counts are read only
     // once it is on. It also carries `fitToPage: true` on its own, which
-    // previously emitted no XML whatsoever. See #407.
-    if (sheet.pageSetup?.fitToPage) {
+    // previously emitted no XML whatsoever. See #407. Either count also
+    // implies the flag; see `isFitToPage` (#596).
+    if (sheet.pageSetup && isFitToPage(sheet.pageSetup)) {
       sheetPrChildren.push(xmlSelfClose("pageSetUpPr", { fitToPage: 1 }))
     }
     if (sheetPrChildren.length > 0) {
@@ -1398,6 +1399,17 @@ function serializePrintOptions(ps: PageSetup | undefined): string {
 
 // ── Page Setup Serialization ─────────────────────────────────────────
 
+/**
+ * Whether the sheet prints in fit-to-page mode. The page counts do nothing
+ * without the mode, so writing them without it would be a field that looks
+ * set and prints at 100% — the counts imply the mode unless the caller
+ * says otherwise. The reader already treats either count as turning it on.
+ * See #596.
+ */
+function isFitToPage(ps: PageSetup): boolean {
+  return ps.fitToPage ?? (ps.fitToWidth !== undefined || ps.fitToHeight !== undefined)
+}
+
 function serializePageSetup(ps: PageSetup): string {
   const attrs: Record<string, string | number> = {}
 
@@ -1416,7 +1428,7 @@ function serializePageSetup(ps: PageSetup): string {
     attrs["scale"] = ps.scale
   }
 
-  if (ps.fitToPage) {
+  if (isFitToPage(ps)) {
     if (ps.fitToWidth !== undefined) {
       attrs["fitToWidth"] = ps.fitToWidth
     }
