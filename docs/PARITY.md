@@ -405,6 +405,20 @@ cell.style = mine
 The same holds for a conditional rule's `style`, which is the workbook's
 `<dxf>` record shared by every rule pointing at it.
 
+### A cell font comes back whole
+
+A cell's `<font>` is complete in itself and does not layer on the
+workbook's default. So a cell font that names no face or size, such as
+`{ bold: true }`, is written with the `name` and `size` of `defaultFont`
+(Calibri 11 when there is none) and reads back with them:
+`{ bold: true, size: 10, name: "Arial" }`. When the face is inherited,
+the default's `family`, `charset` and `scheme` come with it. Colour and
+the other parts do not. See #594.
+
+A conditional rule's `style` is a differential format, where a part left
+out means "keep the cell's own", so it is written and read back exactly
+as given.
+
 ### Read and round-trip only — no authoring API
 
 These are parsed into the model and preserved through `openXlsx` →

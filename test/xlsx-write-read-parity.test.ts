@@ -88,12 +88,16 @@ const SHEET_FIELDS: { [K in keyof Required<WriteSheet>]: Entry<WriteSheet[K]> } 
     // `header` is data, not column metadata: it is written into row 0 on
     // the `data[]` path and read back as a cell there. `<cols>` carries
     // width and outline level, and that is what comes back.
+    //
+    // The bold font names no face or size, so it is written with the
+    // workbook's — the `defaultFont` probe below makes that Georgia 13 —
+    // and reads back with them (#594).
     expected: {
       cols: [
         { width: 18, outlineLevel: 1 },
         { width: 12, outlineLevel: undefined },
       ],
-      bodyStyle: { numFmt: "0.000", font: { bold: true } },
+      bodyStyle: { numFmt: "0.000", font: { bold: true, size: 13, name: "Georgia" } },
     },
   },
 

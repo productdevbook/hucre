@@ -1666,6 +1666,16 @@ export interface WriteOptions {
   sheets: WriteSheet[]
   properties?: WorkbookProperties
   namedRanges?: NamedRange[]
+  /**
+   * Default font for the workbook, written as `fonts[0]`. Default:
+   * Calibri 11.
+   *
+   * A cell's font does not layer on it in the file, so a cell font that
+   * leaves out `name` or `size` is written with this font's. A name taken
+   * from here brings its `family`, `charset` and `scheme` along; colour and
+   * the other parts are not inherited. Conditional formatting styles are
+   * written as given. See #594.
+   */
   defaultFont?: FontStyle
   dateSystem?: "1900" | "1904"
   /** Active sheet index (0-based). Default: 0 */
