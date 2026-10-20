@@ -230,7 +230,11 @@ function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbo
     return isBuiltinDateFormatId(id)
   })
 
-  const isDate = (ixfe: number): boolean => dateXf[ixfe] === true
+  // Under `dates: "serial"` no format counts as a date, so every number
+  // reads as the serial the file holds — a Date rounds to the
+  // millisecond and puts serial 60 on the same day as 59. See #600.
+  const isDate =
+    options?.dates === "serial" ? () => false : (ixfe: number): boolean => dateXf[ixfe] === true
 
   // ── Sheet substreams ──
   const sheets: Sheet[] = []

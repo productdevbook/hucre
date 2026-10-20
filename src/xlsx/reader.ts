@@ -452,6 +452,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
       styles: parsedStyles,
       readStyles,
       dateSystem,
+      dates: options?.dates,
       worksheetRels,
       maxRows: options?.maxRows,
       range: options?.range,

@@ -53,6 +53,8 @@
     "test/xlsx-stream-parity.test.ts",
     "test/indexed-color-palette.test.ts",
     "test/ods-column-default-style.test.ts",
-    "test/builder-coverage.test.ts"
+    "test/builder-coverage.test.ts",
+    // Reads the .xls and .xlsb fixtures off disk.
+    "test/read-dates-serial.test.ts"
   ]
 }

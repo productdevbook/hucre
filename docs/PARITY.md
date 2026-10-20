@@ -504,6 +504,14 @@ the same as serial 59 — and writing that back produces 59. A workbook
 containing serial 60 shifts by one day on rewrite. Excel produces it only
 for files inherited from Lotus.
 
+Reading with `dates: "serial"` avoids it, along with the millisecond
+rounding of every conversion: a date-formatted cell then comes back as the
+number the file holds, typed `"number"`, and the format stays on its
+style. A `t="d"` ISO cell is converted to a serial too, so the whole
+workbook reads one way. Through `openXlsx` → `saveXlsx` the date format
+comes back only with `readStyles: true` — the serial is written as a plain
+number, and without the read style it has no format to carry. See #600.
+
 **A `Date` you build with local components is converted as an instant.**
 `dateToSerial(new Date(2024, 0, 15))` in UTC+3 is 45305.875, not 45306,
 because local midnight is 21:00 the previous day in UTC. hucre reads UTC
@@ -693,14 +701,15 @@ _wrong_.
 | `sheets`               |    yes     |    yes    |     —      |     —     |
 | `readStyles`           |    yes     |    yes    |    n/a     |    n/a    |
 | `dateSystem`           |    yes     |    n/a    |    yes     |    yes    |
+| `dates`                |    yes     |    n/a    |    yes     |    yes    |
 | `password`             |    yes     |     —     |    yes     |     —     |
 | `maxRows`              |    yes     |    yes    |     —      |     —     |
 | `range`                |    yes     |    yes    |     —      |     —     |
 
 `n/a` means the option cannot apply: ODS stores ISO date strings, so
-there is no 1900/1904 system to pick, neither legacy reader surfaces
-styles at all, `.xls` is a CFB container rather than a ZIP, and ODS
-encryption is not implemented (#156). A `—` is a gap, not a decision.
+there is no 1900/1904 system to pick and no serial to return, neither
+legacy reader surfaces styles at all, `.xls` is a CFB container rather
+than a ZIP, and ODS encryption is not implemented (#156). A `—` is a gap, not a decision.
 
 ### Resource limits
 

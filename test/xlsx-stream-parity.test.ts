@@ -51,7 +51,12 @@ function corpus(): string[] {
 }
 
 describe("the two XLSX readers agree, on files hucre did not write", () => {
-  it("row for row, across the whole corpus", async () => {
+  // `dates: "serial"` too: each reader has its own date branch, which is
+  // how #496 reached one of them and not the other. See #600.
+  it.each([
+    ["by default", undefined],
+    ['with dates: "serial"', { dates: "serial" }],
+  ] as const)("row for row, across the whole corpus, %s", async (_label, options) => {
     const diffs: string[] = []
 
     for (const path of corpus()) {
@@ -59,7 +64,7 @@ describe("the two XLSX readers agree, on files hucre did not write", () => {
 
       let sheets
       try {
-        sheets = (await readXlsx(bytes)).sheets
+        sheets = (await readXlsx(bytes, options)).sheets
       } catch {
         // Over a documented limit — `excel-sparse.xlsx` is the one, and
         // `test/sparse-read.test.ts` owns that case.
@@ -71,7 +76,7 @@ describe("the two XLSX readers agree, on files hucre did not write", () => {
       if (!first) continue
 
       const seen = new Set<number>()
-      for await (const row of streamXlsxRows(bytes)) {
+      for await (const row of streamXlsxRows(bytes, options)) {
         const want = first.rows[row.index]
         const streamed = JSON.stringify(trim(row.values ?? []))
         const buffered = JSON.stringify(trim(want ?? []))

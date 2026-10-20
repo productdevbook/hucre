@@ -1513,6 +1513,7 @@ export type SheetFilter = (info: SheetFilterInfo, index: number) => boolean
  * | ------------ | ---- | --- | ---- | --- |
  * | `sheets`     | yes  | yes | no   | no  |
  * | `dateSystem` | yes  | no  | yes  | yes |
+ * | `dates`      | yes  | no  | yes  | yes |
  * | `readStyles` | yes  | yes | no   | no  |
  * | `password`   | yes  | no  | yes  | no  |
  * | `maxRows`    | yes  | no  | no   | no  |
@@ -1538,6 +1539,34 @@ export interface ReadOptions {
   sheets?: Array<number | string> | SheetFilter
   /** Date system override. Default: auto-detect from file */
   dateSystem?: "1900" | "1904" | "auto"
+  /**
+   * How a date-formatted number is returned. Default: `"date"`.
+   *
+   * - `"date"` — a JS `Date`, with `type: "date"`.
+   * - `"serial"` — the number the file holds, with `type: "number"`.
+   *
+   * A `Date` cannot always be turned back into what the cell held. The
+   * conversion rounds to the millisecond, so 45306.123456789 comes back
+   * through `dateToSerial` as 45306.123456794; serial 60, the Lotus
+   * phantom 29 February 1900, reads as the same `Date` as 59; and a
+   * time-only format yields a `Date` on the epoch day when the cell holds
+   * a fraction of a day. `"serial"` is for callers who want the number —
+   * to compare, do arithmetic, or format it themselves. See #600.
+   *
+   * The number format is still on the style (with `readStyles`), so
+   * `isDateFormat(cell.style.numFmt)` says which numbers were dates. A
+   * stored serial is returned as is, so it counts from the workbook's
+   * own epoch, 1900 or 1904 (`readXlsx` reports which in
+   * `Workbook.dateSystem`).
+   *
+   * A `t="d"` XLSX cell, which stores ISO text rather than a serial, is
+   * converted with `dateToSerial` against that same epoch (or the
+   * {@link dateSystem} override), so every date in a workbook reads the
+   * same way whichever form the producer wrote. ODS stores dates only as
+   * ISO text, so the option does not apply there and it always returns a
+   * `Date`.
+   */
+  dates?: "date" | "serial"
   /**
    * Whether to read styles. Default: false (faster without).
    *

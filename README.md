@@ -138,6 +138,7 @@ const wb = await readXlsx(uint8Array, {
   sheets: [0, "Products"], // Filter sheets by index or name
   readStyles: true, // Parse cell styles
   dateSystem: "auto", // Auto-detect 1900/1904
+  dates: "date", // Or "serial" to keep date-formatted numbers as numbers
 })
 
 for (const sheet of wb.sheets) {
@@ -1963,6 +1964,18 @@ instant to map to, so `serialToDate(60)` and `serialToDate(59)` both give
 28 February 1900 and `dateToSerial` sends that back as 59. A workbook
 that actually contains serial 60 therefore shifts by a day on rewrite.
 Excel produces it only for files inherited from Lotus.
+
+When you need the number the cell holds — serial 60 intact, no
+millisecond rounding, a time as a fraction of a day — read with
+`dates: "serial"`. The cell is then typed `"number"`, and its format is
+still on the style for `isDateFormat`:
+
+```ts
+const wb = await readXlsx(bytes, { dates: "serial", readStyles: true })
+const cell = wb.sheets[0].cells?.get("0,0")
+cell?.value // 45306.123456789, not a Date
+isDateFormat(cell?.style?.numFmt ?? "") // true
+```
 
 ## Platform Support
 
