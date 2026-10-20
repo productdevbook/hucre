@@ -1505,13 +1505,19 @@ function serializeHeaderFooter(hf: HeaderFooter): string {
 
 // ── Color Attribute Serialization ──────────────────────────────────────
 
+/**
+ * XLSX expects ARGB (8 hex digits); a 6-digit RGB gets an opaque "FF"
+ * alpha prefix. Anything else is passed through as given.
+ */
+function toArgb(rgb: string): string {
+  return rgb.length === 6 ? `FF${rgb}` : rgb
+}
+
 /** Serialize a Color object into XML attributes for a color element */
 function serializeColorAttrs(color: Color): Record<string, string | number> {
   const attrs: Record<string, string | number> = {}
   if (color.rgb !== undefined) {
-    // XLSX expects ARGB format (8 chars), add "FF" alpha prefix if only 6 chars
-    const rgb = color.rgb
-    attrs["rgb"] = rgb.length === 6 ? `FF${rgb}` : rgb
+    attrs["rgb"] = toArgb(color.rgb)
   }
   if (color.theme !== undefined) {
     attrs["theme"] = color.theme
@@ -1699,8 +1705,11 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
       if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
       csChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
     }
+    // Colour scale and data bar colours used to be written as given, so a
+    // 6-digit value — which every other colour field accepts — went out as
+    // an invalid `rgb` (CT_Color/@rgb is four bytes). See #595.
     for (const color of rule.colorScale.colors) {
-      csChildren.push(xmlSelfClose("color", { rgb: color }))
+      csChildren.push(xmlSelfClose("color", { rgb: toArgb(color) }))
     }
     children.push(xmlElement("colorScale", undefined, csChildren))
   }
@@ -1713,7 +1722,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
       if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
       dbChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
     }
-    dbChildren.push(xmlSelfClose("color", { rgb: rule.dataBar.color }))
+    dbChildren.push(xmlSelfClose("color", { rgb: toArgb(rule.dataBar.color) }))
     children.push(xmlElement("dataBar", undefined, dbChildren))
   }
 
@@ -1779,8 +1788,7 @@ function serializeSparklines(sparklines: Sparkline[]): string {
 
     // Color series
     const color = sp.color ?? "376092"
-    const colorRgb = color.length === 6 ? `FF${color}` : color
-    groupChildren.push(xmlSelfClose("x14:colorSeries", { rgb: colorRgb }))
+    groupChildren.push(xmlSelfClose("x14:colorSeries", { rgb: toArgb(color) }))
 
     // Sparkline element
     const sparklineEl = xmlElement("x14:sparkline", undefined, [

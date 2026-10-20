@@ -398,7 +398,73 @@ describe("conditional formatting rule bodies", () => {
 
     expect(xml).toContain('<cfvo type="num" val="0"/>')
     expect(xml).toContain('<cfvo type="num" val="100"/>')
-    expect(xml).toContain('<color rgb="638EC6"/>')
+    expect(xml).toContain('<color rgb="FF638EC6"/>')
+  })
+
+  // CT_Color/@rgb is ST_UnsignedIntHex: four bytes, eight hex digits. A
+  // 6-digit colour is what every other colour field accepts, so it gets the
+  // same FF alpha prefix here instead of going out as an invalid value (#595).
+  it("prefixes 6-digit colour scale and data bar colours with FF", async () => {
+    const rules: ConditionalRule[] = [
+      {
+        type: "colorScale",
+        range: "A1:A3",
+        priority: 1,
+        colorScale: { cfvo: [{ type: "min" }, { type: "max" }], colors: ["638EC6", "F8696B"] },
+      },
+      {
+        type: "dataBar",
+        range: "A1:A3",
+        priority: 2,
+        dataBar: { cfvo: [{ type: "min" }, { type: "max" }], color: "5A8AC6" },
+      },
+    ]
+    const xml = await sheetXml({ name: "S", rows: [[1], [2], [3]], conditionalRules: rules })
+
+    expect(xml).toContain('<color rgb="FF638EC6"/><color rgb="FFF8696B"/>')
+    expect(xml).toContain('<color rgb="FF5A8AC6"/>')
+    expect(xml).not.toMatch(/rgb="[0-9A-F]{6}"/)
+  })
+
+  it("passes 8-digit colour scale and data bar colours through untouched", async () => {
+    const rules: ConditionalRule[] = [
+      {
+        type: "colorScale",
+        range: "A1:A3",
+        priority: 1,
+        colorScale: { cfvo: [{ type: "min" }, { type: "max" }], colors: ["80638EC6", "FFF8696B"] },
+      },
+      {
+        type: "dataBar",
+        range: "A1:A3",
+        priority: 2,
+        dataBar: { cfvo: [{ type: "min" }, { type: "max" }], color: "805A8AC6" },
+      },
+    ]
+    const xml = await sheetXml({ name: "S", rows: [[1], [2], [3]], conditionalRules: rules })
+
+    expect(xml).toContain('<color rgb="80638EC6"/><color rgb="FFF8696B"/>')
+    expect(xml).toContain('<color rgb="805A8AC6"/>')
+    expect(xml).not.toContain("FF80")
+  })
+
+  it("prefixes 6-digit colour scale colours in the streaming writer too", async () => {
+    const buf = await drain(
+      writeXlsxStream([[1], [2], [3]], {
+        name: "S",
+        conditionalRules: [
+          {
+            type: "colorScale",
+            range: "A1:A3",
+            priority: 1,
+            colorScale: { cfvo: [{ type: "min" }, { type: "max" }], colors: ["638EC6", "F8696B"] },
+          },
+        ],
+      }),
+    )
+    const xml = await part(buf, "xl/worksheets/sheet1.xml")
+
+    expect(xml).toContain('<color rgb="FF638EC6"/><color rgb="FFF8696B"/>')
   })
 
   it("honours reverse and showValue:false on an icon set", async () => {

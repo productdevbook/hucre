@@ -347,7 +347,12 @@ export interface ConditionalRule {
       type: "min" | "max" | "num" | "percent" | "percentile"
       value?: string
     }>
-    colors: string[] // hex ARGB colors like "FF63BE7B"
+    /**
+     * Hex colours, one per cfvo: ARGB like `"FF63BE7B"`, or 6-digit RGB like
+     * `"63BE7B"`, which is written with an `FF` alpha prefix and so reads
+     * back as `"FF63BE7B"`.
+     */
+    colors: string[]
   }
   /** Data bar configuration */
   dataBar?: {
@@ -355,6 +360,11 @@ export interface ConditionalRule {
       type: "min" | "max" | "num" | "percent" | "percentile"
       value?: string
     }>
+    /**
+     * Bar colour: ARGB like `"FF638EC6"`, or 6-digit RGB like `"638EC6"`,
+     * which is written with an `FF` alpha prefix and so reads back as
+     * `"FF638EC6"`.
+     */
     color: string
   }
   /** Icon set configuration */
