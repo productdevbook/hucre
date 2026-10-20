@@ -5,7 +5,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { writeTable } from "../src/xlsx/table-writer"
 import { writeContentTypes } from "../src/xlsx/content-types-writer"
-import type { WriteSheet, TableDefinition } from "../src/_types"
+import type { CellValue, WriteSheet, TableDefinition } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -541,6 +541,134 @@ describe("XLSX table writing", () => {
 
     const wsXml = await extractXml(xlsx, "xl/worksheets/sheet1.xml")
     expect(wsXml).not.toContain("tableParts")
+  })
+})
+
+// ── Total row cells ──────────────────────────────────────────────────
+// Excel writes a total row twice: in the table part and as ordinary cells,
+// and it reads the cells. The expected formulas below are what Excel for
+// Mac 16 wrote for the same tables. See #604.
+
+describe("table total row cells", () => {
+  const rows: CellValue[][] = [
+    ["Name", "Qty"],
+    ["a", 1],
+    ["b", 2],
+    ["c", 3],
+  ]
+
+  async function totalRow(table: TableDefinition, sheetRows: CellValue[][] = rows) {
+    const xlsx = await writeXlsx({ sheets: [{ name: "Sheet1", rows: sheetRows, tables: [table] }] })
+    return (await readXlsx(xlsx)).sheets[0]!
+  }
+
+  it("writes the label and a SUBTOTAL for a built-in function", async () => {
+    const sheet = await totalRow({
+      name: "Table1",
+      range: "A1:B5",
+      showTotalRow: true,
+      columns: [
+        { name: "Name", totalLabel: "Total" },
+        { name: "Qty", totalFunction: "sum" },
+      ],
+    })
+
+    expect(sheet.rows[4]?.[0]).toBe("Total")
+    expect(sheet.cells?.get("4,1")?.formula).toBe("SUBTOTAL(109,Table1[Qty])")
+  })
+
+  it("writes a custom total formula into its cell", async () => {
+    // A custom totalsRowFormula with no matching cell makes Excel repair
+    // the file and drop the total row.
+    const sheet = await totalRow({
+      name: "Table1",
+      range: "A1:B5",
+      showTotalRow: true,
+      columns: [
+        { name: "Name", totalLabel: "Total" },
+        { name: "Qty", totalFunction: "custom", totalFormula: "SUM(Table1[Qty])*2" },
+      ],
+    })
+
+    expect(sheet.rows[4]?.[0]).toBe("Total")
+    expect(sheet.cells?.get("4,1")?.formula).toBe("SUM(Table1[Qty])*2")
+  })
+
+  it("uses each function's SUBTOTAL number, the displayName and escaped column names", async () => {
+    const names = ["Unit Price", "a[b]", "x#y", "it's", "Min", "Max", "Avg", "Count", "Var"]
+    const fns = ["sum", "sum", "countNums", "stdDev", "min", "max", "average", "count", "var"]
+    // Placed at C3 so the total row is found from the range, not assumed at A1.
+    const pad = [null, null]
+    const sheet = await totalRow(
+      {
+        name: "OddTbl",
+        displayName: "Odd_Tbl",
+        range: "C3:K5",
+        showTotalRow: true,
+        columns: names.map((name, i) => ({ name, totalFunction: fns[i] })),
+      },
+      [[], [], [...pad, ...names], [...pad, 1, 2, 3, 4, 5, 6, 7, 8, 9]],
+    )
+
+    const formulas = names.map((_, i) => sheet.cells?.get(`4,${i + 2}`)?.formula)
+    expect(formulas).toEqual([
+      "SUBTOTAL(109,Odd_Tbl[Unit Price])",
+      "SUBTOTAL(109,Odd_Tbl[a'[b']])",
+      "SUBTOTAL(102,Odd_Tbl[x'#y])",
+      "SUBTOTAL(107,Odd_Tbl[it''s])",
+      "SUBTOTAL(105,Odd_Tbl[Min])",
+      "SUBTOTAL(104,Odd_Tbl[Max])",
+      "SUBTOTAL(101,Odd_Tbl[Avg])",
+      "SUBTOTAL(103,Odd_Tbl[Count])",
+      "SUBTOTAL(110,Odd_Tbl[Var])",
+    ])
+  })
+
+  it("puts the total row below the data when the range is computed", async () => {
+    const sheet = await totalRow({
+      name: "Table1",
+      showTotalRow: true,
+      columns: [
+        { name: "Name", totalLabel: "Total" },
+        { name: "Qty", totalFunction: "count" },
+      ],
+    })
+
+    expect(sheet.tables?.[0]?.range).toBe("A1:B5")
+    expect(sheet.rows[4]?.[0]).toBe("Total")
+    expect(sheet.cells?.get("4,1")?.formula).toBe("SUBTOTAL(103,Table1[Qty])")
+  })
+
+  it("leaves a total-row cell the caller already filled", async () => {
+    const sheet = await totalRow(
+      {
+        name: "Table1",
+        range: "A1:B5",
+        showTotalRow: true,
+        columns: [
+          { name: "Name", totalLabel: "Total" },
+          { name: "Qty", totalFunction: "sum" },
+        ],
+      },
+      [...rows, ["Grand total", 6]],
+    )
+
+    expect(sheet.rows[4]).toEqual(["Grand total", 6])
+    expect(sheet.cells?.get("4,1")?.formula).toBeUndefined()
+  })
+
+  it("writes nothing for a column with no total, or without showTotalRow", async () => {
+    const columns = [{ name: "Name" }, { name: "Qty", totalFunction: "sum" }]
+    const withTotals = await totalRow({
+      name: "Table1",
+      range: "A1:B5",
+      showTotalRow: true,
+      columns,
+    })
+    expect(withTotals.rows[4]?.[0] ?? null).toBeNull()
+
+    const withoutTotals = await totalRow({ name: "Table1", range: "A1:B4", columns })
+    expect(withoutTotals.rows).toHaveLength(4)
   })
 })
 

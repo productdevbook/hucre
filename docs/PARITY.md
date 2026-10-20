@@ -453,6 +453,19 @@ pre-computed value cells; Excel computes them on open.
 the workbook-level caches, and has no write counterpart because
 `WritePivotTable` builds its own cache from the source range.
 
+### A table's total row comes back as cells
+
+A table with `showTotalRow: true` is written with its total row filled
+in: the `totalLabel` as a string, a built-in `totalFunction` as
+`SUBTOTAL(109,Table1[Qty])` and the like, a custom one as its
+`totalFormula`. Read back, those are ordinary cells in `rows` and
+`cells`, on a row the caller may not have written. A total-row cell the
+caller did fill is kept as it is.
+
+The table part describes the total row, but Excel reads it from the
+cells. Without them a built-in total showed an empty row, and a custom
+total made Excel repair the file and drop the row. Fixed in #604.
+
 ### Write-only, by design
 
 | field                                                     | why                                                                                                                                                                        |

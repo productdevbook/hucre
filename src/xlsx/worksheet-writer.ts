@@ -33,6 +33,8 @@ import { DYNAMIC_ARRAY_CM } from "./metadata"
 import { hashSheetPassword } from "./password"
 import { validateColumnIndex } from "../_validate"
 import { toCellValue } from "../_inline-cells"
+import { computeTableRange } from "./derived-ranges"
+import { totalRowCells } from "./table-writer"
 
 // ── Hyperlink Relationship ────────────────────────────────────────
 
@@ -857,6 +859,29 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
         formulaDynamic: cellOverride.formulaDynamic ?? existing?.formulaDynamic,
         richText: cellOverride.richText ?? existing?.richText,
         hyperlink: cellOverride.hyperlink ?? existing?.hyperlink,
+      }
+    }
+  }
+
+  // Table total rows. The table part only describes them; Excel reads the
+  // label and the SUBTOTAL from cells. A cell the caller already filled is
+  // theirs: a workbook read back from Excel carries these cells with their
+  // cached results, and rewriting them would only lose those. See #604.
+  if (sheet.tables) {
+    for (const table of sheet.tables) {
+      const range = table.range ?? computeTableRange(table, sheet)
+      for (const total of totalRowCells(table, range)) {
+        while (resolved.length <= total.row) resolved.push([])
+        const row = resolved[total.row]!
+        while (row.length <= total.col) row.push(null)
+        const existing = row[total.col]
+        if (
+          existing &&
+          (existing.value != null || existing.formula !== undefined || existing.richText)
+        ) {
+          continue
+        }
+        row[total.col] = { ...existing, value: total.value ?? null, formula: total.formula }
       }
     }
   }
