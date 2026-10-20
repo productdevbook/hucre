@@ -215,6 +215,7 @@ export interface ResolvedCell {
   checkbox?: boolean
   formula?: string
   formulaResult?: CellValue
+  formulaResultType?: "error"
   formulaType?: "shared" | "array"
   formulaSharedIndex?: number
   formulaRef?: string
@@ -851,6 +852,7 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
         checkbox: cellOverride.checkbox ?? existing?.checkbox,
         formula: cellOverride.formula ?? existing?.formula,
         formulaResult: cellOverride.formulaResult ?? existing?.formulaResult,
+        formulaResultType: cellOverride.formulaResultType ?? existing?.formulaResultType,
         formulaType: cellOverride.formulaType ?? existing?.formulaType,
         formulaSharedIndex: cellOverride.formulaSharedIndex ?? existing?.formulaSharedIndex,
         formulaRef: cellOverride.formulaRef ?? existing?.formulaRef,
@@ -920,6 +922,7 @@ export function serializeCell(
     style,
     formula,
     formulaResult,
+    formulaResultType,
     formulaType,
     formulaSharedIndex,
     formulaRef,
@@ -1010,7 +1013,11 @@ export function serializeCell(
     // and booleans need their `t`.
     if (formulaResult !== undefined && formulaResult !== null) {
       if (typeof formulaResult === "string") {
-        cellAttrs["t"] = "str"
+        // An error result is a string too, and written as `t="str"` it
+        // became a formula that returned that *text* (#599). Which one
+        // it is comes from `formulaResultType`, never from the token: a
+        // formula can return the text "#DIV/0!" as well.
+        cellAttrs["t"] = formulaResultType === "error" ? "e" : "str"
         children.push(xmlElement("v", undefined, xmlEscape(formulaResult)))
       } else if (typeof formulaResult === "boolean") {
         cellAttrs["t"] = "b"

@@ -317,6 +317,15 @@ cannot be right. `value` still holds the error token, so spotting an
 error by its value is unaffected, and a _hard-coded_ error cell — one
 with no formula — still reports `"error"`.
 
+An error result and a text result are told apart. Both hold a string in
+`formulaResult`, and a formula can return the text `"#DIV/0!"` as well as
+the error, so the token alone cannot say which it is. A cached `t="e"`
+result now reads with `formulaResultType: "error"`, and the writer emits
+`t="e"` for it rather than `t="str"`; before #599 every error result was
+written back as text. `writeXlsxStream` has no way to say a streamed
+formula's result is an error, so it still writes string results as
+`t="str"`.
+
 ### ISO-8601 date cells
 
 `ST_CellType` (§18.18.11) has seven members and the reader's switch had

@@ -217,6 +217,19 @@ export interface Cell {
   checkbox?: boolean
   formula?: string
   formulaResult?: CellValue
+  /**
+   * `"error"` when the cached {@link formulaResult} is an error token
+   * (`t="e"`) rather than text (`t="str"`). Both hold a string, and
+   * `#DIV/0!` is a perfectly good text result too, so the value alone
+   * cannot tell them apart (ECMA-376 Part 1, §18.18.11 ST_CellType).
+   * See #599.
+   *
+   * The reader sets it only on a formula cell whose cached result is an
+   * error; it is absent otherwise. The writer honours it only when
+   * `formulaResult` is a string — an error token is always text — and
+   * writes any other `formulaResult` as it would without it.
+   */
+  formulaResultType?: "error"
   /** Formula type: "shared" | "array". Undefined means normal formula. */
   formulaType?: "shared" | "array"
   /** Shared formula index (si attribute) */
