@@ -90,6 +90,36 @@ describe("future functions are written with their stored prefix (#597)", () => {
     expect(await stored("XMATCH(1,SEQUENCE(5))")).toBe("_xlfn.XMATCH(1,_xlfn.SEQUENCE(5))")
   })
 
+  it("prefixes the newer functions Excel was seen to store with _xlfn.", async () => {
+    // Neither [MS-XLSX] nor XlsxWriter lists these yet. Excel 16.114 for
+    // Mac saved each with `_xlfn.` when the bare formula was typed in.
+    // GROUPBY and PIVOTBY take a LAMBDA here: given a bare `SUM`, Excel
+    // stores `_xleta.SUM`, a prefix hucre does not add (see PARITY.md).
+    const seen: Array<[string, string]> = [
+      ["PERCENTOF(B2,B2:B3)", "_xlfn.PERCENTOF(B2,B2:B3)"],
+      ["TRIMRANGE(B1:B10)", "_xlfn.TRIMRANGE(B1:B10)"],
+      ['REGEXTEST(A1,"a")', '_xlfn.REGEXTEST(A1,"a")'],
+      ['REGEXEXTRACT(A1,"b")', '_xlfn.REGEXEXTRACT(A1,"b")'],
+      ['REGEXREPLACE(A1,"a","z")', '_xlfn.REGEXREPLACE(A1,"a","z")'],
+      ['TRANSLATE(A1,"en","fi")', '_xlfn.TRANSLATE(A1,"en","fi")'],
+      ["DETECTLANGUAGE(A1)", "_xlfn.DETECTLANGUAGE(A1)"],
+      ['STOCKHISTORY("MSFT",DATE(2024,1,2))', '_xlfn.STOCKHISTORY("MSFT",DATE(2024,1,2))'],
+      [
+        "GROUPBY(A2:A3,B2:B3,LAMBDA(x,SUM(x)))",
+        "_xlfn.GROUPBY(A2:A3,B2:B3,_xlfn.LAMBDA(_xlpm.x,SUM(_xlpm.x)))",
+      ],
+      [
+        "PIVOTBY(A2:A3,A2:A3,B2:B3,LAMBDA(x,SUM(x)))",
+        "_xlfn.PIVOTBY(A2:A3,A2:A3,B2:B3,_xlfn.LAMBDA(_xlpm.x,SUM(_xlpm.x)))",
+      ],
+    ]
+    for (const [typed, saved] of seen) expect(await stored(typed)).toBe(saved)
+  })
+
+  it("does not prefix ENCODEURL, which no source shows prefixed", async () => {
+    expect(await stored("ENCODEURL(A1)")).toBe("ENCODEURL(A1)")
+  })
+
   it("leaves functions Excel 2007 already had alone", async () => {
     expect(await stored('IFERROR(XLOOKUP(A1,B:B,C:C),"")')).toBe(
       'IFERROR(_xlfn.XLOOKUP(A1,B:B,C:C),"")',

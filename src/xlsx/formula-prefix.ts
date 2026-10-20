@@ -14,8 +14,13 @@
 // Added to that: XMATCH, ARRAYTOTEXT, VALUETOTEXT and IMAGE, which the
 // spec does not list yet but Excel stores with `_xlfn.` too; XlsxWriter's
 // future-function table (`_prepare_formula` in xlsxwriter/worksheet.py)
-// has them. Every name is in one of those two lists: prefixing a name
-// Excel stores bare would break a formula that works today.
+// has them. And DETECTLANGUAGE, GROUPBY, PERCENTOF, PIVOTBY, REGEXEXTRACT,
+// REGEXREPLACE, REGEXTEST, STOCKHISTORY, TRANSLATE and TRIMRANGE, which
+// neither list has yet: Excel 16.114 for Mac saved each with `_xlfn.`
+// when it was typed in bare. Every name is in one of those lists or was
+// seen that way: prefixing a name Excel stores bare would break a formula
+// that works today. ENCODEURL is not here for that reason — neither list
+// has it, and Excel for Mac, which lacks the function, stores it bare.
 //
 // Left out on purpose:
 // - ECMA.CEILING, ISO.CEILING, NETWORKDAYS.INTL, WORKDAY.INTL: the spec
@@ -92,6 +97,7 @@ const XLFN_NAMES = [
   "CSCH",
   "DAYS",
   "DECIMAL",
+  "DETECTLANGUAGE",
   "DROP",
   "ERF.PRECISE",
   "ERFC.PRECISE",
@@ -117,6 +123,7 @@ const XLFN_NAMES = [
   "GAMMA.INV",
   "GAMMALN.PRECISE",
   "GAUSS",
+  "GROUPBY",
   "HSTACK",
   "HYPGEOM.DIST",
   "IFNA",
@@ -153,10 +160,12 @@ const XLFN_NAMES = [
   "PDURATION",
   "PERCENTILE.EXC",
   "PERCENTILE.INC",
+  "PERCENTOF",
   "PERCENTRANK.EXC",
   "PERCENTRANK.INC",
   "PERMUTATIONA",
   "PHI",
+  "PIVOTBY",
   "POISSON.DIST",
   "PQSOURCE",
   "PYTHON_STR",
@@ -169,6 +178,9 @@ const XLFN_NAMES = [
   "RANK.AVG",
   "RANK.EQ",
   "REDUCE",
+  "REGEXEXTRACT",
+  "REGEXREPLACE",
+  "REGEXTEST",
   "RRI",
   "SCAN",
   "SEC",
@@ -180,6 +192,7 @@ const XLFN_NAMES = [
   "SORTBY",
   "STDEV.P",
   "STDEV.S",
+  "STOCKHISTORY",
   "SWITCH",
   "T.DIST",
   "T.DIST.2T",
@@ -194,6 +207,8 @@ const XLFN_NAMES = [
   "TEXTSPLIT",
   "TOCOL",
   "TOROW",
+  "TRANSLATE",
+  "TRIMRANGE",
   "UNICHAR",
   "UNICODE",
   "UNIQUE",

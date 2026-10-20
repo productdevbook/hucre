@@ -393,6 +393,13 @@ The names LET and LAMBDA bind get theirs too: `LET(x,2,x*3)` is written
 binding, as Excel writes it, so `LET(Ab,2,aB)` reads back as
 `_xlfn.LET(_xlpm.Ab,2,_xlpm.Ab)`.
 
+One prefix is not added: a function passed as an argument rather than
+called, as in `GROUPBY(A2:A3,B2:B3,SUM)`, is stored `_xleta.SUM`. hucre
+writes it as given, and Excel computes `#NAME?` for it. Telling such a
+name from a defined name of the same spelling needs Excel's whole
+function list. Pass a LAMBDA instead — `GROUPBY(A2:A3,B2:B3,LAMBDA(x,SUM(x)))`
+— which is written in its stored form.
+
 ### Styles read out of a file are shared, not copied
 
 `readXlsx(…, { readStyles: true })` gives every cell its own `CellStyle`
