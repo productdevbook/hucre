@@ -831,8 +831,9 @@ describe("XlsxStreamWriter freeze panes and column properties", () => {
     w.addRow([1, 2])
     const xml = await part(await w.finish(), "xl/worksheets/sheet1.xml")
 
-    expect(xml).toContain('<col min="1" max="1" hidden="true"/>')
-    expect(xml).toContain('<col min="2" max="2" outlineLevel="2"/>')
+    // A width goes out on both: Excel shows a <col> without one zero wide.
+    expect(xml).toContain('<col min="1" max="1" width="9.140625" hidden="true"/>')
+    expect(xml).toContain('<col min="2" max="2" width="9.140625" outlineLevel="2"/>')
   })
 })
 

@@ -28,7 +28,7 @@ import { zipStream, type ZipStreamEntry } from "../zip/stream-writer"
 import { writeContentTypes } from "./content-types-writer"
 import { writeRootRels, writeWorkbookRels } from "./workbook-writer"
 import { createStylesCollector, type StylesCollector } from "./styles-writer"
-import { createSharedStrings, writeSharedStringsXml } from "./worksheet-writer"
+import { createSharedStrings, DEFAULT_COL_WIDTH, writeSharedStringsXml } from "./worksheet-writer"
 import {
   cellRef,
   hasRowAttributes,
@@ -412,6 +412,9 @@ function buildSheetPrelude(columns: ColumnDef[] | undefined, freezePane: FreezeP
         if (col.width !== undefined) {
           colAttrs["width"] = col.width
           colAttrs["customWidth"] = true
+        } else {
+          // Excel shows a `<col>` without a width zero wide. See #603.
+          colAttrs["width"] = DEFAULT_COL_WIDTH
         }
         if (col.hidden) colAttrs["hidden"] = true
         if (col.outlineLevel) colAttrs["outlineLevel"] = col.outlineLevel

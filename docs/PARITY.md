@@ -464,6 +464,19 @@ the workbook-level caches, and has no write counterpart because
 | `WriteSheet.a11y`                                         | authoring metadata. `a11y.summary` is promoted to `properties.description` and does survive; `a11y.headerRow` has no cell to live in                                       |
 | `SheetProtection.password`, `workbookProtection.password` | the file holds a one-way digest, never the password. The digest is read; the password cannot be                                                                            |
 
+### A column with no width comes back with one
+
+A `ColumnDef` that sets a `style`, an outline level or `hidden` but no
+`width` is written with the sheet's `defaultColWidth`, or 9.140625 —
+Excel's default, 8.43 characters shown — when the sheet has none, and
+reads back with that `width`. `customWidth` is not set, so the file still
+says it is the default.
+
+The schema lets `width` be left out, but Excel reads a `<col>` without
+one as zero wide, which hid the column: `columns: [{ style }]` produced a
+column the user could not see. Excel itself always writes a width, even
+for a column that only has a format. Fixed in #603.
+
 ### Losses inside fields that otherwise round-trip
 
 Three cases where a field is carried but a particular _value_ is not.
