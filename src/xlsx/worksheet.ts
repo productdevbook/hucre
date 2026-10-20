@@ -1941,9 +1941,14 @@ function processCell(
       // of a formula that returned the *text* "#DIV/0!" (`t="str"`), so
       // `formulaResultType` is what keeps the two apart — on the way in
       // and, through the writer, on the way back out. See #599.
+      //
+      // `!== undefined`, not truthiness: a cell a shared formula covers
+      // has `formula: ""`, and its cached error is no less an error. Read
+      // as a bare error it lost the result, and the writer then emitted
+      // the shared formula with no `<v>`.
       value = valueText
-      cellType = formula ? "formula" : "error"
-      if (formula) {
+      cellType = formula !== undefined ? "formula" : "error"
+      if (formula !== undefined) {
         formulaResult = value
         formulaResultType = "error"
       }

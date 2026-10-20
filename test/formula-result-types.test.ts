@@ -245,3 +245,33 @@ describe("the value stays where callers look for it", () => {
     expect(wb.sheets[0]!.rows[0]).toEqual([24, "xy", "#DIV/0!", true])
   })
 })
+
+describe("a shared formula's error result", () => {
+  // The cells a shared formula covers carry no formula text of their own
+  // — `<f t="shared" si="0"/>` — so the reader gives them `formula: ""`.
+  // That is still a formula, and its cached error is still an error.
+  const MASTER = '<c r="A1" t="e"><f t="shared" ref="A1:B1" si="0">1/0</f><v>#DIV/0!</v></c>'
+  const SLAVE = '<c r="B1" t="e"><f t="shared" si="0"/><v>#DIV/0!</v></c>'
+
+  it('reads `formulaResultType: "error"` on the covered cell too', async () => {
+    const cells = await cellsOf(`${MASTER}${SLAVE}`)
+
+    expect(cells.get("0,1")).toMatchObject({
+      formula: "",
+      formulaType: "shared",
+      formulaResult: "#DIV/0!",
+      formulaResultType: "error",
+    })
+  })
+
+  it('keeps the covered cell\'s cached result and `t="e"` through a rewrite', async () => {
+    const first = await readXlsx(await withCells(`${MASTER}${SLAVE}`))
+    const rewritten = await writeXlsx({
+      sheets: first.sheets.map((s) => ({ name: s.name, rows: s.rows, cells: s.cells })),
+    })
+
+    expect(await sheetXmlOf(rewritten)).toContain(
+      '<c r="B1" t="e"><f t="shared" si="0"/><v>#DIV/0!</v></c>',
+    )
+  })
+})
