@@ -114,7 +114,7 @@ describe("styled cells of every value shape", () => {
   const styled: CellStyle = { font: { bold: true } }
 
   it("keeps the style index on a rich-text cell", async () => {
-    const xml = await sheetXml({
+    const sheet: WriteSheet = {
       name: "S",
       cells: cellMap([
         [
@@ -125,9 +125,13 @@ describe("styled cells of every value shape", () => {
           },
         ],
       ]),
-    })
+    }
 
-    expect(xml).toMatch(/<c r="A1" t="inlineStr" s="\d+">/)
+    // Shared by default, inline on request — see #602.
+    expect(await sheetXml(sheet)).toMatch(/<c r="A1" t="s" s="\d+"><v>0<\/v><\/c>/)
+    expect(await sheetXml(sheet, { stringMode: "inline" })).toMatch(
+      /<c r="A1" t="inlineStr" s="\d+">/,
+    )
   })
 
   it("keeps the style index on an error cell", async () => {
@@ -329,29 +333,34 @@ describe("sheet-level OOXML blocks", () => {
 
 describe("rich text run properties", () => {
   it("writes vertAlign, family, charset and scheme into <rPr>", async () => {
-    const xml = await sheetXml({
-      name: "S",
-      cells: cellMap([
-        [
-          "0,0",
-          {
-            richText: [
-              { text: "E=mc" },
-              {
-                text: "2",
-                font: {
-                  vertAlign: "superscript",
-                  family: 2,
-                  charset: 204,
-                  scheme: "minor",
-                  color: { indexed: 10 },
+    // Inline, so the runs are in the sheet; the shared form is the same
+    // `serializeRichTextRuns` output inside an `<si>` (#602).
+    const xml = await sheetXml(
+      {
+        name: "S",
+        cells: cellMap([
+          [
+            "0,0",
+            {
+              richText: [
+                { text: "E=mc" },
+                {
+                  text: "2",
+                  font: {
+                    vertAlign: "superscript",
+                    family: 2,
+                    charset: 204,
+                    scheme: "minor",
+                    color: { indexed: 10 },
+                  },
                 },
-              },
-            ],
-          },
-        ],
-      ]),
-    })
+              ],
+            },
+          ],
+        ]),
+      },
+      { stringMode: "inline" },
+    )
 
     expect(xml).toContain('<vertAlign val="superscript"/>')
     expect(xml).toContain('<family val="2"/>')

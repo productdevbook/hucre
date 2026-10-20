@@ -153,8 +153,12 @@ export function rangeRef(
 export interface SharedStringsCollector {
   /** Get or add a string, return its index */
   add(value: string): number
-  /** Get all strings in order */
+  /** Get or add a rich string, return its index */
+  addRich(runs: RichTextRun[]): number
+  /** Get all strings in order. A rich string is its runs' text joined. */
   getAll(): string[]
+  /** The `<r>` runs of each rich string, by index */
+  getRich(): ReadonlyMap<number, string>
   /** Get count */
   count(): number
 }
@@ -162,6 +166,11 @@ export interface SharedStringsCollector {
 export function createSharedStrings(): SharedStringsCollector {
   const strings: string[] = []
   const indexMap = new Map<string, number>()
+  // Rich strings are keyed by their serialized runs, in a map of their
+  // own: "Bold normal" in bold and the plain "Bold normal" are different
+  // entries, while two cells with equal runs share one. See #602.
+  const richIndexMap = new Map<string, number>()
+  const richXml = new Map<number, string>()
 
   function add(value: string): number {
     const existing = indexMap.get(value)
@@ -173,15 +182,31 @@ export function createSharedStrings(): SharedStringsCollector {
     return idx
   }
 
+  function addRich(runs: RichTextRun[]): number {
+    const xml = serializeRichTextRuns(runs).join("")
+    const existing = richIndexMap.get(xml)
+    if (existing !== undefined) return existing
+
+    const idx = strings.length
+    strings.push(runs.map((run) => run.text).join(""))
+    richIndexMap.set(xml, idx)
+    richXml.set(idx, xml)
+    return idx
+  }
+
   function getAll(): string[] {
     return strings
+  }
+
+  function getRich(): ReadonlyMap<number, string> {
+    return richXml
   }
 
   function count(): number {
     return strings.length
   }
 
-  return { add, getAll, count }
+  return { add, addRich, getAll, getRich, count }
 }
 
 /** Generate xl/sharedStrings.xml */
@@ -193,9 +218,13 @@ export function writeSharedStringsXml(sharedStrings: SharedStringsCollector): st
     return xmlDocument("sst", { xmlns: NS_SPREADSHEET, count: 0, uniqueCount: 0 }, "")
   }
 
+  const rich = sharedStrings.getRich()
   const children: string[] = []
-  for (const str of strings) {
-    children.push(xmlElement("si", undefined, [xmlTextElement(str)]))
+  for (let i = 0; i < count; i++) {
+    // A rich `<si>` holds the same `<r>` runs as an inline `<is>`
+    // (§18.4.8, §18.3.1.53).
+    const runs = rich.get(i)
+    children.push(xmlElement("si", undefined, runs ?? [xmlTextElement(strings[i])]))
   }
 
   return xmlDocument("sst", { xmlns: NS_SPREADSHEET, count, uniqueCount: count }, children)
@@ -961,8 +990,13 @@ export function serializeCell(
 
   const ref = cellRef(row, col)
 
-  // Rich text cell (inline string)
+  // Rich text cell. It follows `stringMode` like plain text: it used to be
+  // inline whatever the mode, so tools that only read the shared string
+  // table never saw it, and Excel itself puts rich text there. See #602.
   if (richText && richText.length > 0) {
+    if (!inlineStrings) {
+      return simpleCell(ref, styleIdx, "s", String(sharedStrings.addRich(richText)))
+    }
     const cellAttrs: Record<string, string | number> = { r: ref, t: "inlineStr" }
     if (styleIdx !== 0) cellAttrs["s"] = styleIdx
     const isContent = serializeRichTextRuns(richText)
@@ -1527,7 +1561,7 @@ function serializeColorAttrs(color: Color): Record<string, string | number> {
 
 // ── Rich Text Serialization ──────────────────────────────────────────
 
-/** Serialize an array of RichTextRun into XML elements for an <is> (inline string) block */
+/** Serialize an array of RichTextRun into the `<r>` elements of an `<is>` or a shared `<si>` */
 function serializeRichTextRuns(runs: RichTextRun[]): string[] {
   const elements: string[] = []
 

@@ -146,8 +146,11 @@ describe("the authoring path did not regress", () => {
     })
 
     const xml = await sheetXml(bytes)
+    const sst = new TextDecoder().decode(await new ZipReader(bytes).extract("xl/sharedStrings.xml"))
 
-    expect(xml).toContain("<is>")
+    // Shared string mode, so the runs are in the table (#602).
+    expect(xml).toContain('<c r="A1" t="s"><v>0</v></c>')
+    expect(sst).toContain("<si><r><rPr><b/></rPr><t>bold</t></r></si>")
     expect(xml).toContain('t="shared"')
     expect(xml).toContain('si="0"')
     expect(xml).toMatch(/cm="\d+"/)

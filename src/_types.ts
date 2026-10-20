@@ -1679,6 +1679,8 @@ export interface WriteOptions {
   /** String storage mode. Default: "shared"
    *  - "shared": shared string table (smaller files with repeated strings)
    *  - "inline": inline strings per cell (faster write, larger files)
+   *
+   *  Rich text follows the same choice (#602).
    */
   stringMode?: "shared" | "inline"
   /** VBA project binary (vbaProject.bin) to embed. Output becomes macro-enabled (.xlsm). */
