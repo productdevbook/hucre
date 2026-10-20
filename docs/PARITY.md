@@ -387,8 +387,11 @@ the reader keeps formula text as the file has it. So a formula written as
 strict equality check on a round trip sees the difference. Writing the
 prefixed form again does not prefix it twice (#597).
 
-LET and LAMBDA parameter names are stored as `_xlpm.x` in Excel's files.
-hucre does not add that prefix; it writes them as given.
+The names LET and LAMBDA bind get theirs too: `LET(x,2,x*3)` is written
+`_xlfn.LET(_xlpm.x,2,_xlpm.x*3)`, and an optional `[b]` is bound as
+`_xlop.b`. A use of a bound name is written in the spelling of its
+binding, as Excel writes it, so `LET(Ab,2,aB)` reads back as
+`_xlfn.LET(_xlpm.Ab,2,_xlpm.Ab)`.
 
 ### Styles read out of a file are shared, not copied
 

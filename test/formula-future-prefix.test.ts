@@ -270,3 +270,139 @@ describe("future functions are written with their stored prefix (#597)", () => {
     ])
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════
+// #597, continued — the names LET and LAMBDA bind are stored with a
+// prefix too: `_xlpm.x` where bound and where used, `_xlop.b` for an
+// optional `[b]` where it is bound. With only `_xlfn.` added, Excel for
+// Mac asked to repair the file and deleted both the formula and a named
+// LAMBDA, leaving `=Double(B2)` at `#NAME?`.
+//
+// Every expected string below is what Excel 16.114 for Mac itself wrote
+// when the bare formula was typed into a cell and the book saved.
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("LET and LAMBDA names are written with their stored prefix (#597)", () => {
+  // [bare as typed, stored as Excel saved it]
+  const EXCEL: [string, string][] = [
+    ["LET(x,2,x*3)", "_xlfn.LET(_xlpm.x,2,_xlpm.x*3)"],
+    ["LAMBDA(x,x*2)(3)", "_xlfn.LAMBDA(_xlpm.x,_xlpm.x*2)(3)"],
+    // Nested, and an inner LET binding a name the outer one already has.
+    [
+      "LET(x,1,y,x+1,LET(x,10,x+y))",
+      "_xlfn.LET(_xlpm.x,1,_xlpm.y,_xlpm.x+1,_xlfn.LET(_xlpm.x,10,_xlpm.x+_xlpm.y))",
+    ],
+    // A LET-bound LAMBDA called by name.
+    ["LET(f,LAMBDA(n,n+1),f(2))", "_xlfn.LET(_xlpm.f,_xlfn.LAMBDA(_xlpm.n,_xlpm.n+1),_xlpm.f(2))"],
+    [
+      "LET(p,LAMBDA(x,x*2),q,p,q(4))",
+      "_xlfn.LET(_xlpm.p,_xlfn.LAMBDA(_xlpm.x,_xlpm.x*2),_xlpm.q,_xlpm.p,_xlpm.q(4))",
+    ],
+    // An optional parameter is bound as `_xlop.` and used as `_xlpm.`.
+    [
+      "LAMBDA(a,[b],IF(ISOMITTED(b),a,a+b))(1)",
+      "_xlfn.LAMBDA(_xlpm.a,_xlop.b,IF(_xlfn.ISOMITTED(_xlpm.b),_xlpm.a,_xlpm.a+_xlpm.b))(1)",
+    ],
+    ["LET(x,1,x)+LET(y,2,y)", "_xlfn.LET(_xlpm.x,1,_xlpm.x)+_xlfn.LET(_xlpm.y,2,_xlpm.y)"],
+    // A LET name seen from a LAMBDA inside it.
+    [
+      "LET(k,3,SUM(MAP(A1:A3,LAMBDA(v,v*k))))",
+      "_xlfn.LET(_xlpm.k,3,SUM(_xlfn.MAP(A1:A3,_xlfn.LAMBDA(_xlpm.v,_xlpm.v*_xlpm.k))))",
+    ],
+    // The arguments of a LAMBDA invoked on the spot are outside it: the
+    // last `x` is the outer LET's.
+    ["LET(x,5,LAMBDA(x,x+1)(x))", "_xlfn.LET(_xlpm.x,5,_xlfn.LAMBDA(_xlpm.x,_xlpm.x+1)(_xlpm.x))"],
+    [
+      "LAMBDA(x,LET(y,x*2,y+x))(4)",
+      "_xlfn.LAMBDA(_xlpm.x,_xlfn.LET(_xlpm.y,_xlpm.x*2,_xlpm.y+_xlpm.x))(4)",
+    ],
+    ["LET(t,A1:A3,SUM(t))", "_xlfn.LET(_xlpm.t,A1:A3,SUM(_xlpm.t))"],
+    ['LET(x,"x",x&"x")', '_xlfn.LET(_xlpm.x,"x",_xlpm.x&"x")'],
+    ["LET(x,{1,2,3},SUM(x))", "_xlfn.LET(_xlpm.x,{1,2,3},SUM(_xlpm.x))"],
+    // Excel rewrites a use to its binding's spelling.
+    ["LET(Ab,2,aB*3)", "_xlfn.LET(_xlpm.Ab,2,_xlpm.Ab*3)"],
+    // Spaces stay where they are (Excel also drops the ones before a
+    // comma, which hucre does not need to copy).
+    ["LET( x, 2, x * 3 )", "_xlfn.LET( _xlpm.x, 2, _xlpm.x * 3 )"],
+    // Intersection of two bound ranges.
+    [
+      "LET(a,A1:A3,b,A1:A2,SUM(a b))",
+      "_xlfn.LET(_xlpm.a,A1:A3,_xlpm.b,A1:A2,SUM(_xlpm.a _xlpm.b))",
+    ],
+    // With `a` bound, `A:A` is the name twice; `$` makes a cell.
+    ["LET(a,2,a+SUM(A:A))", "_xlfn.LET(_xlpm.a,2,_xlpm.a+SUM(_xlpm.a:_xlpm.a))"],
+    ["LET(a,2,a+$A$1+A$1+$A1)", "_xlfn.LET(_xlpm.a,2,_xlpm.a+$A$1+A$1+$A1)"],
+    ["LET(c,2,c*SUM(C1:C1))", "_xlfn.LET(_xlpm.c,2,_xlpm.c*SUM(C1:C1))"],
+  ]
+
+  it("writes the forms Excel writes", async () => {
+    for (const [bare, excel] of EXCEL) expect(await stored(bare)).toBe(excel)
+  })
+
+  it("does not prefix Excel's own form again", async () => {
+    for (const [, excel] of EXCEL) expect(await stored(excel)).toBe(excel)
+  })
+
+  // These two ran with a workbook-level name `x` defined as 5, which is
+  // what the bare `x` outside each scope means.
+  it("leaves a name outside the scope that binds it alone", async () => {
+    // A LET value is resolved before its own name is bound.
+    expect(await stored("LET(y,x,y)+x")).toBe("_xlfn.LET(_xlpm.y,x,_xlpm.y)+x")
+    expect(await stored("LET(y,x,x,y+1,x)+x")).toBe(
+      "_xlfn.LET(_xlpm.y,x,_xlpm.x,_xlpm.y+1,_xlpm.x)+x",
+    )
+    expect(await stored("LAMBDA(x,x*2)(x)")).toBe("_xlfn.LAMBDA(_xlpm.x,_xlpm.x*2)(x)")
+  })
+
+  it("leaves a bound name in a string, a sheet name or a qualified name alone", async () => {
+    expect(await stored(`LET(x,1,x+Sheet1!x+x!A1+'x'!A1+"x"&T[x])`)).toBe(
+      `_xlfn.LET(_xlpm.x,1,_xlpm.x+Sheet1!x+x!A1+'x'!A1+"x"&T[x])`,
+    )
+  })
+
+  it("prefixes a named LAMBDA, and leaves the cell that calls it alone", async () => {
+    const buf = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [[null, 1]],
+          cells: new Map([["0,0", { formula: "Double(B2)" }]]),
+        },
+      ],
+      namedRanges: [{ name: "Double", range: "LAMBDA(x,x*2)" }],
+    })
+    expect(texts(await part(buf, "xl/workbook.xml"), "definedName")).toEqual([
+      "_xlfn.LAMBDA(_xlpm.x,_xlpm.x*2)",
+    ])
+    expect(texts(await part(buf, "xl/worksheets/sheet1.xml"), "f")).toEqual(["Double(B2)"])
+  })
+
+  it("reads back the stored form and does not prefix it twice on rewrite", async () => {
+    const first = await writeXlsx({
+      sheets: [{ name: "Sheet1", cells: new Map([["0,0", { formula: "LET(x,2,x*3)" }]]) }],
+    })
+    const formula = (await readXlsx(first)).sheets[0].cells?.get("0,0")?.formula
+    expect(formula).toBe("_xlfn.LET(_xlpm.x,2,_xlpm.x*3)")
+    expect(await stored(formula!)).toBe(formula)
+  })
+
+  // A formula naming LET or LAMBDA goes through the scoped parse rather
+  // than the plain scan; it has to treat everything else the same way.
+  it("prefixes the rest of a formula the same way inside a LET", async () => {
+    for (const f of [
+      'XLOOKUP("b",A1:A3,B1:B3)',
+      "UNIQUE(SORTBY(A1:A9,B1:B9))",
+      "Filter(A1:A3,B1:B3)",
+      "_xlfn._xlws.SORT(_xlfn.UNIQUE(A1:A3))",
+      'IF(A1="XLOOKUP(",IFS(TRUE,1),"say ""SORT("" twice")',
+      "SUM('IFS(x'!A1,'it''s SORT('!B2)+SORT(C1:C3)",
+      "SUM(T[[#This Row],[IFS(a)]])+T['[SORT(]",
+      "IFS!A1+SORT+MYSORT(1)+Book!SORT(1)+SORT.X(1)",
+      "NETWORKDAYS.INTL(A1,B1)+ISO.CEILING(C1)",
+    ]) {
+      expect(await stored(`LET(z,1,${f})`)).toBe(`_xlfn.LET(_xlpm.z,1,${await stored(f)})`)
+    }
+    // A name that only contains LET still gets the functions after it.
+    expect(await stored("OUTLET(1)+IFS(TRUE,1)")).toBe("OUTLET(1)+_xlfn.IFS(TRUE,1)")
+  })
+})

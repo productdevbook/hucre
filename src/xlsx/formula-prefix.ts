@@ -24,8 +24,30 @@
 //   its own, not something a prefix makes work.
 // - `_xlfn.SINGLE` / `_xlfn.ANCHORARRAY`: the stored forms of the `@` and
 //   `#` operators, not names a caller types.
-// - `_xlpm.` on LET / LAMBDA parameter names: that needs to know which
-//   names a LET binds, which a scan for `NAME(` cannot.
+//
+// ── Parameter prefixes ──────────────────────────────────────────────
+//
+// A name that LET or LAMBDA binds is stored as `_xlpm.x`, both where it
+// is bound and everywhere it is used: `_xlfn.LET(_xlpm.x,2,_xlpm.x*3)`.
+// An optional LAMBDA parameter, typed `[b]`, is stored `_xlop.b` where it
+// is bound and `_xlpm.b` where it is used. Written bare, Excel for Mac
+// asks to repair the file and removes the formula; a named LAMBDA goes
+// with it, and every cell that calls it computes `#NAME?` (#597).
+//
+// That needs scope, which a scan for `NAME(` cannot see, so formulas that
+// mention LET or LAMBDA take a second path that parses the argument lists.
+// What it does is what Excel 16.114 for Mac wrote when given the bare
+// form (each case is a test in test/formula-future-prefix.test.ts):
+// - LET(n1, v1, n2, v2, …, calc): n1 is in scope from v2 onwards, not in
+//   v1, where `x` still means whatever it meant outside.
+// - LAMBDA(p1, …, body): the parameters are in scope in the body only.
+//   The arguments of a LAMBDA invoked on the spot, `LAMBDA(x,x*2)(x)`,
+//   are outside it, so that last `x` stays bare.
+// - A bound name called as a function, `f(2)`, is `_xlpm.f(2)`.
+// - A use is rewritten to the spelling of its binding: `LET(Ab,2,aB)` is
+//   stored `_xlfn.LET(_xlpm.Ab,2,_xlpm.Ab)`. Names ignore case.
+// - Inside a scope that binds `a`, `A:A` is `_xlpm.a:_xlpm.a`, but `$A$1`,
+//   `A$1` and `$A1` are still cells.
 
 const XLFN = "_xlfn."
 const XLWS = "_xlfn._xlws."
@@ -214,8 +236,48 @@ function isNameChar(code: number): boolean {
 }
 
 /**
- * Add the stored prefix to every call of a future function in `formula`,
- * so `XLOOKUP(` is written as `_xlfn.XLOOKUP(` (#597).
+ * Skip a string literal or quoted sheet name starting at `i`; a doubled
+ * quote is an escape. Returns the index after the closing quote.
+ */
+function skipQuoted(formula: string, i: number): number {
+  const quote = formula.charCodeAt(i)
+  const n = formula.length
+  i++
+  while (i < n) {
+    if (formula.charCodeAt(i) === quote) {
+      if (formula.charCodeAt(i + 1) === quote) i += 2
+      else break
+    } else i++
+  }
+  return i + 1
+}
+
+/**
+ * Skip a structured reference (`T[[#This Row],[Col]]`) or external book
+ * index (`[1]Sheet1!A1`) starting at `i`. Brackets nest, and `'` escapes
+ * the next character inside them. Returns the index after the last `]`.
+ */
+function skipBracket(formula: string, i: number): number {
+  const n = formula.length
+  let depth = 0
+  while (i < n) {
+    const c = formula.charCodeAt(i)
+    if (c === 0x27) i++
+    else if (c === 0x5b) depth++
+    else if (c === 0x5d && --depth === 0) break
+    i++
+  }
+  return i + 1
+}
+
+/** `LET(` or `LAMBDA(`, prefixed or not; a false hit only costs the slow path. */
+const BINDS_NAMES = /(?:LET|LAMBDA)\(/i
+
+/**
+ * Add the stored prefixes to `formula`: `_xlfn.` (or `_xlfn._xlws.`) on
+ * every call of a future function, so `XLOOKUP(` is written as
+ * `_xlfn.XLOOKUP(` (#597), and `_xlpm.` / `_xlop.` on the names LET and
+ * LAMBDA bind.
  *
  * Only a name immediately followed by `(` is a call. String literals,
  * quoted sheet names and `[…]` structured references are skipped whole,
@@ -226,6 +288,7 @@ function isNameChar(code: number): boolean {
 export function addFuturePrefixes(formula: string): string {
   // No call, nothing to prefix; this is on the per-cell write path.
   if (!formula.includes("(")) return formula
+  if (BINDS_NAMES.test(formula)) return addScopedPrefixes(formula)
   let out = ""
   let last = 0
   let i = 0
@@ -233,28 +296,9 @@ export function addFuturePrefixes(formula: string): string {
   while (i < n) {
     const ch = formula.charCodeAt(i)
     if (ch === 0x22 /* " */ || ch === 0x27 /* ' */) {
-      // String literal or quoted sheet name; a doubled quote is an escape.
-      i++
-      while (i < n) {
-        if (formula.charCodeAt(i) === ch) {
-          if (formula.charCodeAt(i + 1) === ch) i += 2
-          else break
-        } else i++
-      }
-      i++
+      i = skipQuoted(formula, i)
     } else if (ch === 0x5b /* [ */) {
-      // Structured reference (`T[[#This Row],[Col]]`) or external book
-      // index (`[1]Sheet1!A1`). Brackets nest, and `'` escapes the next
-      // character inside them.
-      let depth = 0
-      while (i < n) {
-        const c = formula.charCodeAt(i)
-        if (c === 0x27) i++
-        else if (c === 0x5b) depth++
-        else if (c === 0x5d && --depth === 0) break
-        i++
-      }
-      i++
+      i = skipBracket(formula, i)
     } else if (isNameChar(ch)) {
       const start = i
       while (i < n && isNameChar(formula.charCodeAt(i))) i++
@@ -269,4 +313,228 @@ export function addFuturePrefixes(formula: string): string {
     }
   }
   return out === "" ? formula : out + formula.slice(last)
+}
+
+// ── The scoped path ─────────────────────────────────────────────────
+
+const XLPM = "_xlpm."
+const XLOP = "_xlop."
+
+interface Span {
+  start: number
+  end: number
+}
+
+/**
+ * What the parse keeps of a formula: names, calls with their argument
+ * lists, and `[…]` groups (an optional LAMBDA parameter is one). Anything
+ * else is `other`, kept only so an argument of `x+1` is not mistaken for
+ * the bare name `x`.
+ */
+type Item =
+  | { kind: "name"; span: Span }
+  | { kind: "bracket"; span: Span }
+  | { kind: "call"; callee: Span | undefined; args: Item[][] }
+  | { kind: "other" }
+
+const OTHER: Item = { kind: "other" }
+
+/** Replace `formula.slice(start, end)` with `text`; `start === end` inserts. */
+interface Edit extends Span {
+  text: string
+}
+
+/** Upper-case name → the spelling it was bound with. */
+type Scope = ReadonlyMap<string, string>
+
+function addScopedPrefixes(formula: string): string {
+  const edits: Edit[] = []
+  const [top] = parseList(formula, 0, false)
+  resolve(formula, top[0], new Map(), edits)
+  if (edits.length === 0) return formula
+  // Each edit is at a different token, so in source order they never overlap.
+  edits.sort((a, b) => a.start - b.start)
+  let out = ""
+  let last = 0
+  for (const e of edits) {
+    out += formula.slice(last, e.start) + e.text
+    last = e.end
+  }
+  return out + formula.slice(last)
+}
+
+/**
+ * Parse from `i` to the `)` that closes the call (`inCall`), or to the end
+ * of the formula. Returns the argument lists — one when not in a call —
+ * and the index after the `)`. A stray `)` at the top level, or a missing
+ * one at the end, is tolerated: this is a writer, not a validator.
+ */
+function parseList(formula: string, i: number, inCall: boolean): [Item[][], number] {
+  const n = formula.length
+  const args: Item[][] = [[]]
+  let current = args[0]
+  // Commas inside an array constant `{1,2;3,4}` separate its columns,
+  // not arguments: `LET(x,{1,2},x)` still binds one name.
+  let braces = 0
+  while (i < n) {
+    const ch = formula.charCodeAt(i)
+    if (ch === 0x22 /* " */ || ch === 0x27 /* ' */) {
+      i = skipQuoted(formula, i)
+      current.push(OTHER)
+    } else if (ch === 0x5b /* [ */) {
+      const start = i
+      i = skipBracket(formula, i)
+      current.push({ kind: "bracket", span: { start, end: Math.min(i, n) } })
+    } else if (isNameChar(ch)) {
+      const start = i
+      while (i < n && isNameChar(formula.charCodeAt(i))) i++
+      current.push({ kind: "name", span: { start, end: i } })
+    } else if (ch === 0x28 /* ( */) {
+      // A name right before the `(` is the function being called. After
+      // a `)` it is not — `LAMBDA(x,x*2)(3)` calls the LAMBDA's result —
+      // and neither is a bare `(` grouping an expression.
+      const prev = current[current.length - 1]
+      let callee: Span | undefined
+      if (prev?.kind === "name" && prev.span.end === i) {
+        current.pop()
+        callee = prev.span
+      }
+      const [sub, next] = parseList(formula, i + 1, true)
+      current.push({ kind: "call", callee, args: sub })
+      i = next
+    } else if (ch === 0x29 /* ) */ && inCall) {
+      return [args, i + 1]
+    } else if (ch === 0x2c /* , */ && inCall && braces === 0) {
+      current = []
+      args.push(current)
+      i++
+    } else {
+      if (ch === 0x7b /* { */) braces++
+      else if (ch === 0x7d /* } */ && braces > 0) braces--
+      if (ch !== 0x20 && ch !== 0x0a && ch !== 0x0d && ch !== 0x09) current.push(OTHER)
+      i++
+    }
+  }
+  return [args, n]
+}
+
+function resolve(formula: string, items: Item[], scope: Scope, edits: Edit[]): void {
+  for (const item of items) {
+    if (item.kind === "name") reference(formula, item.span, scope, edits)
+    else if (item.kind === "call") call(formula, item, scope, edits)
+  }
+}
+
+/**
+ * Whether the name at `span` stands on its own as a reference, rather than
+ * being a sheet (`x!A1`), a table (`T[Col]`), a name qualified by its sheet
+ * (`Sheet1!x`) or part of an absolute cell reference (`$A$1`, `A$1`).
+ */
+function standsAlone(formula: string, span: Span): boolean {
+  const before = span.start > 0 ? formula.charCodeAt(span.start - 1) : 0
+  const after = formula.charCodeAt(span.end)
+  return before !== 0x21 && before !== 0x24 && after !== 0x21 && after !== 0x5b && after !== 0x24
+}
+
+/** A use of a name: `_xlpm.` if a LET or LAMBDA around it binds it. */
+function reference(formula: string, span: Span, scope: Scope, edits: Edit[]): void {
+  if (scope.size === 0 || !standsAlone(formula, span)) return
+  const bound = scope.get(formula.slice(span.start, span.end).toUpperCase())
+  if (bound !== undefined) edits.push({ ...span, text: XLPM + bound })
+}
+
+function call(
+  formula: string,
+  item: Extract<Item, { kind: "call" }>,
+  scope: Scope,
+  edits: Edit[],
+): void {
+  const { callee, args } = item
+  let fn = ""
+  if (callee !== undefined && standsAlone(formula, callee)) {
+    const upper = formula.slice(callee.start, callee.end).toUpperCase()
+    const bound = scope.get(upper)
+    if (bound !== undefined) {
+      // A LET-bound LAMBDA called by its name: `_xlpm.f(2)`.
+      edits.push({ ...callee, text: XLPM + bound })
+    } else {
+      const prefix = FUTURE_FUNCTION_PREFIXES.get(upper)
+      if (prefix !== undefined) edits.push({ start: callee.start, end: callee.start, text: prefix })
+      fn = upper.startsWith("_XLFN.") ? upper.slice(XLFN.length) : upper
+    }
+  }
+  if (fn === "LET") {
+    const inner = new Map(scope)
+    let k = 0
+    for (; k + 1 < args.length; k += 2) {
+      const name = binding(formula, args[k], false, edits)
+      if (name === undefined) resolve(formula, args[k], inner, edits)
+      // The value is resolved before its name is bound: in
+      // `LET(x,x+1,…)` the second `x` is the one from outside.
+      resolve(formula, args[k + 1], inner, edits)
+      if (name !== undefined) inner.set(name.toUpperCase(), name)
+    }
+    if (k < args.length) resolve(formula, args[k], inner, edits)
+  } else if (fn === "LAMBDA") {
+    const inner = new Map(scope)
+    const body = args.length - 1
+    for (let k = 0; k < body; k++) {
+      const name = binding(formula, args[k], true, edits)
+      if (name === undefined) resolve(formula, args[k], scope, edits)
+      else inner.set(name.toUpperCase(), name)
+    }
+    resolve(formula, args[body], inner, edits)
+  } else {
+    for (const arg of args) resolve(formula, arg, scope, edits)
+  }
+}
+
+/**
+ * The name an argument in a binding position binds, after queueing the
+ * edit that prefixes it — or `undefined` when the argument is not a lone
+ * name, which leaves a malformed LET or LAMBDA as it was. `optional` is
+ * for LAMBDA, whose `[b]` is stored `_xlop.b`.
+ */
+function binding(
+  formula: string,
+  arg: Item[],
+  optional: boolean,
+  edits: Edit[],
+): string | undefined {
+  if (arg.length !== 1) return undefined
+  const item = arg[0]
+  if (item.kind === "name") {
+    const text = formula.slice(item.span.start, item.span.end)
+    const upper = text.toUpperCase()
+    // Already in the stored form, as the reader hands it back.
+    if (upper.startsWith("_XLPM.") || (optional && upper.startsWith("_XLOP."))) {
+      return text.slice(XLPM.length)
+    }
+    if (!isParameterName(text)) return undefined
+    edits.push({ start: item.span.start, end: item.span.start, text: XLPM })
+    return text
+  }
+  if (item.kind === "bracket" && optional && formula.charCodeAt(item.span.end - 1) === 0x5d) {
+    const name = formula.slice(item.span.start + 1, item.span.end - 1).trim()
+    if (!isParameterName(name)) return undefined
+    edits.push({ ...item.span, text: XLOP + name })
+    return name
+  }
+  return undefined
+}
+
+/**
+ * Whether `text` can be a LET or LAMBDA name: name characters, not
+ * starting with a digit, and no dot — Excel refuses one in a parameter,
+ * which is what keeps `_xlpm.x` from being read as a name of its own.
+ */
+function isParameterName(text: string): boolean {
+  if (text === "") return false
+  const first = text.charCodeAt(0)
+  if (first >= 0x30 && first <= 0x39) return false
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i)
+    if (c === 0x2e || !isNameChar(c)) return false
+  }
+  return true
 }

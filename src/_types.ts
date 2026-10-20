@@ -222,8 +222,8 @@ export interface Cell {
    * adds it, so `XLOOKUP(…)` and `_xlfn.XLOOKUP(…)` write the same file,
    * and a read hands back the prefixed form (#597). Conditional
    * formatting, data validation, table total and defined name formulas
-   * are treated the same way. LET / LAMBDA parameter names are not
-   * given their `_xlpm.` prefix.
+   * are treated the same way, and so are the names LET and LAMBDA bind,
+   * stored as `_xlpm.x` (`_xlop.x` for an optional `[x]` parameter).
    */
   formula?: string
   formulaResult?: CellValue
@@ -420,7 +420,8 @@ export interface NamedRange {
   /**
    * Cell range reference (e.g. "Sheet1!$A$1:$D$10"), or any formula a
    * defined name can hold. Newer functions get their `_xlfn.` prefix on
-   * write, as in `Cell.formula` (#597).
+   * write, and a named LAMBDA's parameters their `_xlpm.`, as in
+   * `Cell.formula` (#597).
    */
   range: string
   /** Scope: undefined = workbook level, string = sheet name */
