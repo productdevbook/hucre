@@ -376,6 +376,20 @@ field to either interface fails `tsc` until it is registered — as a probe
 that round-trips, or as a one-way entry with its reason. That register,
 not this list, is the thing that stays current.
 
+### Newer functions read back with their `_xlfn.` prefix
+
+Functions added after Excel 2007 are stored under a prefixed name —
+`_xlfn.XLOOKUP`, `_xlfn.IFS`, `_xlfn._xlws.FILTER` — that Excel hides in
+the formula bar. The writer adds the prefix to cell, conditional
+formatting, data validation, table total and defined name formulas, and
+the reader keeps formula text as the file has it. So a formula written as
+`XLOOKUP(…)` reads back as `_xlfn.XLOOKUP(…)`: the same formula, but a
+strict equality check on a round trip sees the difference. Writing the
+prefixed form again does not prefix it twice (#597).
+
+LET and LAMBDA parameter names are stored as `_xlpm.x` in Excel's files.
+hucre does not add that prefix; it writes them as given.
+
 ### Styles read out of a file are shared, not copied
 
 `readXlsx(…, { readStyles: true })` gives every cell its own `CellStyle`

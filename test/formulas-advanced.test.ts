@@ -231,7 +231,8 @@ describe("array formula writing", () => {
     expect(fEl.attrs["cm"]).toBeUndefined()
     expect(fEl.attrs["t"]).toBe("array")
     expect(fEl.attrs["ref"]).toBe("B2:B10")
-    expect(getElementText(fEl)).toBe("SORT(A2:A10)")
+    // SORT is stored as `_xlfn._xlws.SORT`; the bare name is `#NAME?` (#597).
+    expect(getElementText(fEl)).toBe("_xlfn._xlws.SORT(A2:A10)")
   })
 
   it("marks a plain (non-array) dynamic formula on the cell too", async () => {
@@ -459,7 +460,8 @@ describe("array formula reading", () => {
 
     const cell = sheetCells.get("1,1")
     expect(cell).toBeDefined()
-    expect(cell!.formula).toBe("SORT(A2:A10)")
+    // Read back in the stored form the writer gave it (#597).
+    expect(cell!.formula).toBe("_xlfn._xlws.SORT(A2:A10)")
     expect(cell!.formulaType).toBe("array")
     expect(cell!.formulaRef).toBe("B2:B10")
     expect(cell!.formulaDynamic).toBe(true)
@@ -625,7 +627,8 @@ describe("array formula round-trip", () => {
     expect(cell!.formulaType).toBe("array")
     expect(cell!.formulaRef).toBe("B1:B5")
     expect(cell!.formulaDynamic).toBe(true)
-    expect(cell!.formula).toBe("UNIQUE(A1:A5)")
+    // Read back in the stored form the writer gave it (#597).
+    expect(cell!.formula).toBe("_xlfn.UNIQUE(A1:A5)")
   })
 })
 

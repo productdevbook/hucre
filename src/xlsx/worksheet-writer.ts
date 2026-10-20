@@ -30,6 +30,7 @@ import { isHyperlinkValue } from "./hyperlink"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape, xmlTextElement } from "../xml/writer"
 import { calculateColumnWidth } from "./auto-width"
 import { DYNAMIC_ARRAY_CM } from "./metadata"
+import { addFuturePrefixes } from "./formula-prefix"
 import { hashSheetPassword } from "./password"
 import { validateColumnIndex } from "../_validate"
 import { toCellValue } from "../_inline-cells"
@@ -980,6 +981,11 @@ export function serializeCell(
     // cellMetadata collection; see ./metadata.ts for the part itself.
     if (formulaDynamic) cellAttrs["cm"] = DYNAMIC_ARRAY_CM
 
+    // Functions newer than Excel 2007 are stored as `_xlfn.XLOOKUP` and
+    // the like; written bare they compute `#NAME?` (#597). The streaming
+    // writers come through here too.
+    const fText = xmlEscape(addFuturePrefixes(formula))
+
     // Build <f> element with appropriate attributes
     let fElement: string
     if (formulaType === "shared") {
@@ -990,18 +996,18 @@ export function serializeCell(
       if (formula === "") {
         fElement = xmlSelfClose("f", fAttrs)
       } else {
-        fElement = xmlElement("f", fAttrs, xmlEscape(formula))
+        fElement = xmlElement("f", fAttrs, fText)
       }
     } else if (formulaType === "array") {
       const fAttrs: Record<string, string | number> = { t: "array" }
       if (formulaRef) fAttrs["ref"] = formulaRef
-      fElement = xmlElement("f", fAttrs, xmlEscape(formula))
+      fElement = xmlElement("f", fAttrs, fText)
     } else {
       // Normal formula. `formulaDynamic` used to be honoured only inside
       // the `t="array"` branch above, so a spilling function written
       // without `formulaType: "array"` silently lost the flag (#407); it
       // now lands on `<c>` for both shapes.
-      fElement = xmlElement("f", undefined, xmlEscape(formula))
+      fElement = xmlElement("f", undefined, fText)
     }
 
     const children: string[] = [fElement]
@@ -1198,11 +1204,12 @@ function serializeDataValidations(validations: DataValidation[]): string {
       const quotedList = `"${dv.values.join(",")}"`
       children.push(xmlElement("formula1", undefined, xmlEscape(quotedList)))
     } else if (dv.formula1 !== undefined) {
-      children.push(xmlElement("formula1", undefined, xmlEscape(dv.formula1)))
+      // Same stored form as a cell formula: `_xlfn.` on newer functions (#597).
+      children.push(xmlElement("formula1", undefined, xmlEscape(addFuturePrefixes(dv.formula1))))
     }
 
     if (dv.formula2 !== undefined) {
-      children.push(xmlElement("formula2", undefined, xmlEscape(dv.formula2)))
+      children.push(xmlElement("formula2", undefined, xmlEscape(addFuturePrefixes(dv.formula2))))
     }
 
     if (children.length > 0) {
@@ -1686,8 +1693,9 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
   // Formulas
   if (rule.formula !== undefined) {
     const formulas = Array.isArray(rule.formula) ? rule.formula : [rule.formula]
+    // Same stored form as a cell formula: `_xlfn.` on newer functions (#597).
     for (const f of formulas) {
-      children.push(xmlElement("formula", undefined, xmlEscape(f)))
+      children.push(xmlElement("formula", undefined, xmlEscape(addFuturePrefixes(f))))
     }
   }
 
