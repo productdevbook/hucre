@@ -85,10 +85,10 @@ printing, copies, DPI and printer defaults; the exception is `r:id`,
 which points at a binary printer-settings part and has no portable
 meaning — headers and footers, sheet views
 and tab colours, hidden and very-hidden sheets, tables, row and column
-definitions, manual page breaks, outline properties, sparklines, text
-boxes, background images, images, document properties, named ranges, the
-1904 date system, workbook protection, theme colours, Excel 2024
-checkboxes, and encryption.
+definitions (a row or column format included), manual page breaks,
+outline properties, sparklines, text boxes, background images, images,
+document properties, named ranges, the 1904 date system, workbook
+protection, theme colours, Excel 2024 checkboxes, and encryption.
 
 ### Formula results are write-only in practice
 
@@ -522,11 +522,11 @@ document properties (six fields), and six style facets — bold, italic,
 font size, font colour, background colour, number format.
 
 Not modelled in **either** direction: borders, alignment, font name,
-underline, strikethrough, column widths, row heights, hidden rows and
-columns, freeze and split panes, data validation, conditional formatting,
-auto-filter, tables, images, page setup, sheet protection, tab colour,
-hidden sheets, and `time` cells (which read back as the raw ISO duration
-string).
+underline, strikethrough, column widths, row heights, row formats, hidden
+rows and columns, freeze and split panes, data validation, conditional
+formatting, auto-filter, tables, images, page setup, sheet protection,
+tab colour, hidden sheets, and `time` cells (which read back as the raw
+ISO duration string).
 
 Named ranges left that list: `<table:named-expressions>` carries them
 both ways. Only workbook-level ones — ODF scopes a name to a sheet by

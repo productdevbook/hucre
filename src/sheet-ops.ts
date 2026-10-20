@@ -955,7 +955,9 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
   if (sheet.rowDefs && sheet.rowDefs.size > 0) {
     const rowDefs = new Map<number, RowDef>()
     for (const [key, def] of sheet.rowDefs) {
-      rowDefs.set(key, { ...def })
+      // The style is an object of its own, so a spread alone would share
+      // it between the two sheets. See #601.
+      rowDefs.set(key, def.style ? { ...def, style: cloneCellStyle(def.style) } : { ...def })
     }
     cloned.rowDefs = rowDefs
   }

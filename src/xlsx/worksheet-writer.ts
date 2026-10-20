@@ -110,7 +110,8 @@ export function colToLetter(col: number): string {
  */
 export function rowAttributes(
   rowIndex: number,
-  rowDef?: RowDef,
+  rowDef: RowDef | undefined,
+  styles: StylesCollector,
 ): Record<string, string | number | boolean> {
   const attrs: Record<string, string | number | boolean> = { r: rowIndex + 1 }
   if (rowDef?.height !== undefined) {
@@ -120,6 +121,16 @@ export function rowAttributes(
   if (rowDef?.hidden) attrs["hidden"] = 1
   if (rowDef?.outlineLevel) attrs["outlineLevel"] = rowDef.outlineLevel
   if (rowDef?.collapsed) attrs["collapsed"] = 1
+  // §18.3.1.73: `s` is the row's format only when `customFormat` is 1 —
+  // without it Excel ignores `s`. Index 0 is the default xf and needs
+  // neither, as on `<col style>`; a row with no style is unchanged. See #601.
+  if (rowDef?.style) {
+    const styleId = styles.addStyle(rowDef.style)
+    if (styleId !== 0) {
+      attrs["s"] = styleId
+      attrs["customFormat"] = 1
+    }
+  }
   return attrs
 }
 
@@ -130,7 +141,8 @@ export function hasRowAttributes(rowDef?: RowDef): boolean {
     (rowDef.height !== undefined ||
       Boolean(rowDef.hidden) ||
       Boolean(rowDef.outlineLevel) ||
-      Boolean(rowDef.collapsed))
+      Boolean(rowDef.collapsed) ||
+      rowDef.style !== undefined)
   )
 }
 
@@ -512,9 +524,7 @@ export function writeWorksheetXml(
   for (let r = 0; r < rowCount; r++) {
     const row = resolvedRows[r]
     const rowDef = sheet.rowDefs?.get(r)
-    const hasRowDef =
-      rowDef &&
-      (rowDef.height !== undefined || rowDef.hidden || rowDef.outlineLevel || rowDef.collapsed)
+    const hasRowDef = hasRowAttributes(rowDef)
 
     if ((!row || row.length === 0) && !hasRowDef) continue
 
@@ -551,7 +561,7 @@ export function writeWorksheetXml(
       // floor. The cell fast path below it pays because there are 1.2M
       // cells to a sheet's 100k rows — a twelfth of the allocations is a
       // twelfth of the prize. See #472.
-      const rowAttrs = rowAttributes(r, rowDef)
+      const rowAttrs = rowAttributes(r, rowDef, styles)
       if (hasAnyCells) {
         rowElements.push(xmlElement("row", rowAttrs, cellElements))
       } else {
@@ -774,6 +784,15 @@ function columnCellStyle(col: ColumnDef | undefined): CellStyle | undefined {
 function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
   const resolved: Array<Array<ResolvedCell | null>> = []
 
+  // A row format goes on the cells as well as on `<row s>`, the way a
+  // column format does — Excel writes the row's `s` onto every cell
+  // already in it, and a reader that looks only at the cells should see
+  // the format too. It wins over the column's where both cover a cell
+  // that has no style of its own, `numFmt` included: a cell's own format
+  // first, then its row's, then its column's is the order Excel is
+  // understood to resolve them in. Not verified in Excel. See #601.
+  const rowStyle = (r: number): CellStyle | undefined => sheet.rowDefs?.get(r)?.style
+
   if (sheet.data && sheet.columns) {
     // Object-based data with column keys
     const keys = sheet.columns.map((col) => col.key)
@@ -782,11 +801,12 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
     const hasHeaders = sheet.columns.some((col) => col.header)
     if (hasHeaders) {
       const headerRow: Array<ResolvedCell | null> = []
+      const rowFormat = rowStyle(0)
       for (let c = 0; c < sheet.columns.length; c++) {
         const col = sheet.columns[c]
         headerRow.push({
           value: col.header ?? col.key ?? null,
-          style: col.style,
+          style: rowFormat ?? col.style,
         })
       }
       resolved.push(headerRow)
@@ -794,12 +814,13 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
 
     for (const obj of sheet.data) {
       const row: Array<ResolvedCell | null> = []
+      const rowFormat = rowStyle(resolved.length)
       for (let c = 0; c < keys.length; c++) {
         const key = keys[c]
         const raw = key !== undefined ? (obj[key] ?? null) : null
         const cell: ResolvedCell = {
           value: isHyperlinkValue(raw) ? raw.text : raw,
-          style: columnCellStyle(sheet.columns[c]),
+          style: rowFormat ?? columnCellStyle(sheet.columns[c]),
         }
         if (isHyperlinkValue(raw)) cell.hyperlink = toHyperlink(raw)
         row.push(cell)
@@ -815,13 +836,14 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
     // exempt — hucre cannot tell which of the caller's rows is one.
     for (const row of sheet.rows) {
       const resolvedRow: Array<ResolvedCell | null> = []
+      const rowFormat = rowStyle(resolved.length)
       for (let c = 0; c < row.length; c++) {
         // `writeXlsx` lifts an inline cell object into `cells` before this
         // runs, so the entry is a value by then. Reading it through
         // `toCellValue` keeps `resolveRows` correct for a caller that
         // reached it another way, rather than emitting `[object Object]`.
         const value = toCellValue(row[c]!)
-        const style = sheet.columns ? columnCellStyle(sheet.columns[c]) : undefined
+        const style = rowFormat ?? (sheet.columns ? columnCellStyle(sheet.columns[c]) : undefined)
         resolvedRow.push(style ? { value, style } : { value })
       }
       resolved.push(resolvedRow)
@@ -847,7 +869,7 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
       const existing = row[c]
       row[c] = {
         value: cellOverride.value ?? existing?.value ?? null,
-        style: cellOverride.style ?? existing?.style,
+        style: cellOverride.style ?? existing?.style ?? rowStyle(r),
         checkbox: cellOverride.checkbox ?? existing?.checkbox,
         formula: cellOverride.formula ?? existing?.formula,
         formulaResult: cellOverride.formulaResult ?? existing?.formulaResult,

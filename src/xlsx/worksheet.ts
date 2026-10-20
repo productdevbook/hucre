@@ -551,6 +551,30 @@ function worksheetParser(
                 rowDefs.set(rowNum, existing)
               }
             }
+            // The row's format. §18.3.1.73 makes `s` mean something only
+            // when `customFormat` is set, and Excel ignores it otherwise,
+            // so a bare `s` is not read as one. It used to be dropped
+            // either way, which lost a formatted row on the way through.
+            // See #601.
+            if (
+              ctx.readStyles &&
+              ctx.styles &&
+              attrs["s"] !== undefined &&
+              (attrs["customFormat"] === "1" || attrs["customFormat"] === "true")
+            ) {
+              const rowNum = Number(attrs["r"]) - 1
+              const styleIndex = Number(attrs["s"])
+              if (!Number.isNaN(rowNum) && styleIndex >= 0) {
+                const rowStyle = resolveStyle(ctx.styles, styleIndex)
+                if (Object.keys(rowStyle).length > 0) {
+                  const existing = rowDefs.get(rowNum) ?? {}
+                  // Each row gets its own copy, as each column does:
+                  // `resolveStyle` hands out shared records.
+                  existing.style = cloneCellStyle(rowStyle)
+                  rowDefs.set(rowNum, existing)
+                }
+              }
+            }
           }
           break
         case "c":
