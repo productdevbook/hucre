@@ -171,6 +171,9 @@ const SHEET_FIELDS: { [K in keyof Required<WriteSheet>]: Entry<WriteSheet[K]> } 
         altText: "a chart of nothing",
         title: "Figure 1",
       },
+      // No `to`: written as a oneCellAnchor, so it reads back without one
+      // rather than with a corner the writer made up (#598).
+      { data: PNG_1X1, type: "png", anchor: { from: { row: 12, col: 1 } }, width: 200, height: 40 },
     ],
     read: (sheet) =>
       sheet.images?.map((i) => ({
@@ -190,6 +193,15 @@ const SHEET_FIELDS: { [K in keyof Required<WriteSheet>]: Entry<WriteSheet[K]> } 
         height: 80,
         altText: "a chart of nothing",
         title: "Figure 1",
+        bytes: PNG_1X1.length,
+      },
+      {
+        type: "png",
+        anchor: { from: { row: 12, col: 1 } },
+        width: 200,
+        height: 40,
+        altText: undefined,
+        title: undefined,
         bytes: PNG_1X1.length,
       },
     ],

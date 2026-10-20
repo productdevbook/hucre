@@ -659,15 +659,24 @@ export interface ThreadedComment {
 export interface SheetImage {
   data: Uint8Array
   type: "png" | "jpeg" | "gif" | "svg" | "webp"
-  /** Anchor to cell */
+  /**
+   * Anchor to cell. With `to`, the image is written as a `twoCellAnchor`
+   * and stretched to fill `from`–`to` ("Move and size with cells"). Without
+   * it, the image is written as a `oneCellAnchor` at `from`, sized by
+   * `width` / `height` ("Move but don't size with cells"), and reads back
+   * without a `to`. See #598.
+   */
   anchor: {
     from: { row: number; col: number }
     to?: { row: number; col: number }
   }
   /**
-   * Rendered size in pixels at 96 DPI, stored as EMU in the drawing's
-   * `<a:ext>`. Absent on write means the writer's own default size, which
-   * is then what the reader reports — a file records a size either way.
+   * Rendered size in pixels at 96 DPI, stored as EMU in the picture's
+   * `<a:ext>` and, without `anchor.to`, in the `oneCellAnchor`'s own
+   * `<xdr:ext>`, which is what sets the size there. Absent on write means
+   * the writer's own default size, which is then what the reader reports —
+   * a file records a size either way. With `anchor.to`, Excel and
+   * LibreOffice size the image from the cells instead (#598).
    */
   width?: number
   height?: number
