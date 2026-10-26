@@ -222,8 +222,14 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
     // column via currentRowCells.length so any cells reserved by an
     // earlier row's rowspan (occupied) are skipped correctly — the old
     // arithmetic drifted as nulls were pushed.
+    //
+    // `occupied.size` goes first because the probe builds a string key per
+    // slot: a table with no rowspan reached the cell budget only after 20
+    // million of them, about 7 seconds under Node against a few hundred
+    // milliseconds without the probe.
     for (let c = 1; c < currentCellColspan; c++) {
       while (
+        occupied.size > 0 &&
         currentRowCells.length <= MAX_COL_INDEX &&
         occupied.has(`${currentRow},${currentRowCells.length}`)
       ) {

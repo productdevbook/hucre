@@ -232,7 +232,9 @@ describe("fromHtml resource bounds", () => {
     expect(html.length).toBeLessThan(60_000)
     expect(() => fromHtml(html)).toThrow(ParseError)
     expect(() => fromHtml(html)).toThrow(String(MAX_TOTAL_CELLS))
-  }, 20_000)
+    // Under a second since the rowspan probe stopped costing a string per
+    // slot; it took 11-15 s under Node before, and timed out the gate.
+  }, 5_000)
 
   it("refuses a page of hostile rowspans, not just one", () => {
     // The per-cell bound is paid once per cell; two cells pay it twice.

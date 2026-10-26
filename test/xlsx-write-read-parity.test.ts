@@ -298,12 +298,15 @@ const SHEET_FIELDS: { [K in keyof Required<WriteSheet>]: Entry<WriteSheet[K]> } 
   colBreaks: { value: [1], read: (sheet) => sheet.colBreaks },
 
   rowDefs: {
-    value: new Map([[1, { height: 30, hidden: false, outlineLevel: 1 }]]),
+    value: new Map([
+      [1, { height: 30, hidden: false, outlineLevel: 1, style: { numFmt: "0.00" } }],
+    ]),
     read: (sheet) => ({
       height: sheet.rowDefs?.get(1)?.height,
       outlineLevel: sheet.rowDefs?.get(1)?.outlineLevel,
+      numFmt: sheet.rowDefs?.get(1)?.style?.numFmt,
     }),
-    expected: { height: 30, outlineLevel: 1 },
+    expected: { height: 30, outlineLevel: 1, numFmt: "0.00" },
   },
 
   defaultRowHeight: {

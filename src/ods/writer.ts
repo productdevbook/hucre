@@ -137,7 +137,10 @@ function isTimeFormat(code: string): boolean {
 
 function isPercentageFormat(code: string): boolean {
   // Strip quoted literals so a literal "%" inside a string doesn't trigger
-  return /(?<!\\)%/.test(code.replace(/"[^"]*"/g, "").replace(/\\./g, ""))
+  // The second replace strips every backslash-escaped character, `\%`
+  // included, so a surviving `%` is never escaped and needs no lookbehind
+  // (Safari < 16.4 throws a SyntaxError on one at module load, #591).
+  return /%/.test(code.replace(/"[^"]*"/g, "").replace(/\\./g, ""))
 }
 
 function detectCurrencySymbol(code: string): string | undefined {

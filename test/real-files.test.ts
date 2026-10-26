@@ -531,6 +531,26 @@ describe("workbooks written by Excel, not by this test suite", () => {
     })
   })
 
+  // Excel formats a whole row by writing `s` and `customFormat="1"` on
+  // `<row>`. Rows 3 and 4 here have a format and no cells at all, so the
+  // `<row>` is the only place it lives — and the reader used to drop it.
+  // See #601.
+  describe("excel-styleonly.xlsx", () => {
+    it("#601 — reads the row formats Excel wrote", async () => {
+      const wb = await readXlsx(bytes("excel-styleonly.xlsx"), { readStyles: true })
+      const rowDefs = wb.sheets[0]!.rowDefs!
+
+      expect(rowDefs.get(0)?.style?.font?.bold).toBe(true)
+      for (const r of [1, 2, 3]) {
+        expect(rowDefs.get(r)?.style?.numFmt).toBe("0.00")
+        expect(rowDefs.get(r)?.style?.fill).toMatchObject({
+          pattern: "solid",
+          fgColor: { rgb: "DDEBF7" },
+        })
+      }
+    })
+  })
+
   // A test that reads no bytes would pass just as green. This one fails
   // loudly if test/fixtures/ ever stops being on disk.
   it("is actually reading the files", () => {

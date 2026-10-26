@@ -14,6 +14,9 @@
   <a href="https://github.com/productdevbook/hucre/blob/main/LICENSE"><img src="https://img.shields.io/github/license/productdevbook/hucre?style=flat&colorA=18181B&colorB=34d399" alt="license"></a>
 </p>
 
+> [!NOTE]
+> The only official sources for hucre are this repository ([productdevbook/hucre](https://github.com/productdevbook/hucre)) and the [`hucre` package on npm](https://npmjs.com/package/hucre). The website hucre.dev is not affiliated with this project.
+
 ## Quick Start
 
 ```sh
@@ -208,6 +211,17 @@ await writeXlsx({
 Anything a cell carries works there — `style`, `formula`, `richText`,
 `hyperlink`, `checkbox`. `cells` still takes a `"row,col"` map, and wins
 where both describe the same position.
+
+A whole row or column can carry a format of its own. `rowDefs` takes a
+`style` beside `height` and the rest — written as Excel writes a
+formatted row, `<row s="N" customFormat="1">` — and `columns[i].style`
+does the same for a column. Either one is also stamped onto the cells in
+it that have no style of their own; where a row and a column both cover
+such a cell, the row's wins.
+
+```ts
+rowDefs: new Map([[9, { height: 20, style: { font: { bold: true }, numFmt: "#,##0.00" } }]])
+```
 
 Features: cell styles, auto column widths, merged cells, freeze/split panes, auto-filter (per-column value, custom, top-10, dynamic and date-group criteria; colour and icon criteria are not carried), data validation, hyperlinks, images (PNG/JPEG/GIF/SVG/WebP), comments, tables, conditional formatting (all 15 rule types, with their dxf styles), named ranges, print settings, page breaks, sheet protection, workbook protection, rich text, shared/array/dynamic formulas, sparklines, textboxes, background images, number formats, hidden sheets, Excel 2024 native checkboxes, HTML/Markdown/JSON/TSV export, template engine.
 
@@ -756,19 +770,19 @@ The ODS reader and writer model the same narrow set, so **ODS → ODS is
 lossless**. The loss shows up when converting _into_ ODS from a format
 that models more, which in practice means XLSX.
 
-|                                                            | ODS                                                                                         |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Cell values — string, number, boolean, date                | yes                                                                                         |
-| Formulas, including the `of:=` translation                 | yes                                                                                         |
-| Merged cells                                               | yes                                                                                         |
-| Cell styles                                                | **six facets only**: bold, italic, font size, font colour, background colour, number format |
-| Document properties                                        | six fields: title, subject, creator, description, keywords, created                         |
-| Borders, alignment, font name, underline, strikethrough    | no                                                                                          |
-| Column widths, row heights, hidden rows and columns        | no                                                                                          |
-| Freeze and split panes, sheet views, tab colour            | no                                                                                          |
-| Data validation, conditional formatting, auto-filter       | no                                                                                          |
-| Named ranges, tables, images, page setup, sheet protection | no                                                                                          |
-| Hidden sheets                                              | no                                                                                          |
+|                                                                  | ODS                                                                                         |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Cell values — string, number, boolean, date                      | yes                                                                                         |
+| Formulas, including the `of:=` translation                       | yes                                                                                         |
+| Merged cells                                                     | yes                                                                                         |
+| Cell styles                                                      | **six facets only**: bold, italic, font size, font colour, background colour, number format |
+| Document properties                                              | six fields: title, subject, creator, description, keywords, created                         |
+| Borders, alignment, font name, underline, strikethrough          | no                                                                                          |
+| Column widths, row heights, row formats, hidden rows and columns | no                                                                                          |
+| Freeze and split panes, sheet views, tab colour                  | no                                                                                          |
+| Data validation, conditional formatting, auto-filter             | no                                                                                          |
+| Named ranges, tables, images, page setup, sheet protection       | no                                                                                          |
+| Hidden sheets                                                    | no                                                                                          |
 
 So `readXlsx` → `writeOds` keeps values, formulas, merges and those six
 style facets, and drops the rest **silently** — there is no warning,
