@@ -409,12 +409,7 @@ function scopedPrefixes(formula: string): string {
  * and the index after the `)`. A stray `)` at the top level, or a missing
  * one at the end, is tolerated: this is a writer, not a validator.
  */
-function parseList(
-  formula: string,
-  i: number,
-  inCall: boolean,
-  depth: number,
-): [Item[][], number] {
+function parseList(formula: string, i: number, inCall: boolean, depth: number): [Item[][], number] {
   if (depth > MAX_DEPTH) throw TOO_DEEP
   const n = formula.length
   const args: Item[][] = [[]]
