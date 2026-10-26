@@ -1786,6 +1786,19 @@ export function serializeConditionalFormatting(
   return elements
 }
 
+/**
+ * Attributes of a `<cfvo>`. A `formula` threshold is formula text like the
+ * `<formula>` child, so it takes the same stored form: `_xlfn.` on newer
+ * functions (#597). The other types hold a number or a percentage.
+ */
+function cfvoAttributes(cfvo: { type: string; value?: string }): Record<string, string> {
+  const attrs: Record<string, string> = { type: cfvo.type }
+  if (cfvo.value !== undefined) {
+    attrs["val"] = cfvo.type === "formula" ? addFuturePrefixes(cfvo.value) : cfvo.value
+  }
+  return attrs
+}
+
 /** Serialize a single `<cfRule>` element */
 function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string {
   const attrs: Record<string, string | number | boolean> = {
@@ -1826,9 +1839,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
   if (rule.type === "colorScale" && rule.colorScale) {
     const csChildren: string[] = []
     for (const cfvo of rule.colorScale.cfvo) {
-      const cfvoAttrs: Record<string, string> = { type: cfvo.type }
-      if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
-      csChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
+      csChildren.push(xmlSelfClose("cfvo", cfvoAttributes(cfvo)))
     }
     // Colour scale and data bar colours used to be written as given, so a
     // 6-digit value — which every other colour field accepts — went out as
@@ -1843,9 +1854,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
   if (rule.type === "dataBar" && rule.dataBar) {
     const dbChildren: string[] = []
     for (const cfvo of rule.dataBar.cfvo) {
-      const cfvoAttrs: Record<string, string> = { type: cfvo.type }
-      if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
-      dbChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
+      dbChildren.push(xmlSelfClose("cfvo", cfvoAttributes(cfvo)))
     }
     dbChildren.push(xmlSelfClose("color", { rgb: toArgb(rule.dataBar.color) }))
     children.push(xmlElement("dataBar", undefined, dbChildren))
@@ -1861,9 +1870,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
 
     const isChildren: string[] = []
     for (const cfvo of rule.iconSet.cfvo) {
-      const cfvoAttrs: Record<string, string> = { type: cfvo.type }
-      if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
-      isChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
+      isChildren.push(xmlSelfClose("cfvo", cfvoAttributes(cfvo)))
     }
     children.push(xmlElement("iconSet", isAttrs, isChildren))
   }

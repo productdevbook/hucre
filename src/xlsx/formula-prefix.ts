@@ -362,9 +362,34 @@ interface Edit extends Span {
 /** Upper-case name → the spelling it was bound with. */
 type Scope = ReadonlyMap<string, string>
 
+/**
+ * How deep the scoped path will nest before it gives up. Excel allows 64
+ * levels of nesting, so a real formula is nowhere near this; the cap is for
+ * text like `"(".repeat(100000) + "1" + ")".repeat(100000) + "+LET(x,1,x)"`,
+ * where `parseList`, `resolve` and `call` recurse once per level and the
+ * stack runs out first. That used to surface as a RangeError out of
+ * `writeXlsx`.
+ */
+const MAX_DEPTH = 1024
+
+/** Thrown past `MAX_DEPTH`; never leaves this module. */
+const TOO_DEEP = Symbol("formula too deep")
+
 function addScopedPrefixes(formula: string): string {
+  try {
+    return scopedPrefixes(formula)
+  } catch (e) {
+    // Past the cap the formula is not one Excel could have made, so it is
+    // written as given rather than failing the whole workbook over a
+    // prefix. Anything that is not our own signal is not ours to swallow.
+    if (e === TOO_DEEP) return formula
+    throw e
+  }
+}
+
+function scopedPrefixes(formula: string): string {
   const edits: Edit[] = []
-  const [top] = parseList(formula, 0, false)
+  const [top] = parseList(formula, 0, false, 0)
   resolve(formula, top[0], new Map(), edits)
   if (edits.length === 0) return formula
   // Each edit is at a different token, so in source order they never overlap.
@@ -384,7 +409,13 @@ function addScopedPrefixes(formula: string): string {
  * and the index after the `)`. A stray `)` at the top level, or a missing
  * one at the end, is tolerated: this is a writer, not a validator.
  */
-function parseList(formula: string, i: number, inCall: boolean): [Item[][], number] {
+function parseList(
+  formula: string,
+  i: number,
+  inCall: boolean,
+  depth: number,
+): [Item[][], number] {
+  if (depth > MAX_DEPTH) throw TOO_DEEP
   const n = formula.length
   const args: Item[][] = [[]]
   let current = args[0]
@@ -414,7 +445,7 @@ function parseList(formula: string, i: number, inCall: boolean): [Item[][], numb
         current.pop()
         callee = prev.span
       }
-      const [sub, next] = parseList(formula, i + 1, true)
+      const [sub, next] = parseList(formula, i + 1, true, depth + 1)
       current.push({ kind: "call", callee, args: sub })
       i = next
     } else if (ch === 0x29 /* ) */ && inCall) {
