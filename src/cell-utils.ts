@@ -12,13 +12,18 @@ export { colToLetter, cellRef, rangeRef } from "./xlsx/worksheet-writer"
 
 /**
  * Matches an A1-style cell reference that is NOT part of a larger
- * identifier and NOT a function name. The negative lookbehind rejects a
- * preceding letter/digit/underscore (so the "G10" inside "LOG10" or the
- * tail of a defined name is left alone); the negative lookahead rejects a
+ * identifier and NOT a function name. The leading `(^|[^…])` group rejects
+ * a preceding letter/digit/underscore/`$` (so the "G10" inside "LOG10" or
+ * the tail of a defined name is left alone) and the replacer re-emits it.
+ * It is a capture rather than a lookbehind assertion because Safari < 16.4
+ * throws a SyntaxError on lookbehind at module load (#591). Two tokens one
+ * character apart (`A1+B1`) both still match: a token never contains a
+ * character from the excluded class, so it can't need the char the previous
+ * match consumed. The negative lookahead rejects a
  * following "(" (so "SUM(" / "ATAN2(" are not treated as the column "SUM"
  * etc.) and a following letter/digit (so "A1B" isn't split).
  */
-const A1_REF_TOKEN = /(?<![A-Za-z0-9_$])(\$?[A-Z]{1,3}\$?\d+)(?![A-Za-z0-9_(])/g
+const A1_REF_TOKEN = /(^|[^A-Za-z0-9_$])(\$?[A-Z]{1,3}\$?\d+)(?![A-Za-z0-9_(])/g
 
 /**
  * The sheet a reference is qualified with, written either Excel's way
@@ -38,12 +43,12 @@ const A1_REF = "\\$?[A-Z]{1,3}\\$?\\d+"
  * of the match, not something the caller finds afterwards: a consumer that
  * only ever sees `A1` cannot tell `Sheet2!A1` from `A1`, and the ODS writer
  * used to prove it by emitting `Sheet2.[.A1]` — brackets around the cell but
- * not the sheet, which is not a reference ODF recognises. The lookbehind
- * also rejects a preceding `.`/`!` so that a qualifier this pattern failed
+ * not the sheet, which is not a reference ODF recognises. The leading prefix
+ * group (a capture, not a lookbehind; see {@link A1_REF_TOKEN}) also rejects a preceding `.`/`!` so that a qualifier this pattern failed
  * to parse can never be left outside the match.
  */
 const A1_RANGE_TOKEN = new RegExp(
-  `(?<![A-Za-z0-9_$.!])(${SHEET_QUALIFIER})(${A1_REF})(?::(${SHEET_QUALIFIER})(${A1_REF}))?(?![A-Za-z0-9_(])`,
+  `(^|[^A-Za-z0-9_$.!])(${SHEET_QUALIFIER})(${A1_REF})(?::(${SHEET_QUALIFIER})(${A1_REF}))?(?![A-Za-z0-9_(])`,
   "g",
 )
 
@@ -81,7 +86,8 @@ export function replaceA1Ranges(
     if (i % 2 === 1) continue
     parts[i] = parts[i].replace(
       A1_RANGE_TOKEN,
-      (_m, q1: string, r1: string, q2?: string, r2?: string) =>
+      (_m, pre: string, q1: string, r1: string, q2?: string, r2?: string) =>
+        pre +
         replacer({
           sheet1: normalizeQualifier(q1),
           ref1: r1,
@@ -110,7 +116,7 @@ export function replaceA1Refs(formula: string, replacer: (ref: string) => string
   for (let i = 0; i < parts.length; i++) {
     // Odd indices are the captured string literals — leave them verbatim.
     if (i % 2 === 1) continue
-    parts[i] = parts[i].replace(A1_REF_TOKEN, (m) => replacer(m))
+    parts[i] = parts[i].replace(A1_REF_TOKEN, (_m, pre: string, ref: string) => pre + replacer(ref))
   }
   return parts.join("")
 }
