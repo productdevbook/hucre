@@ -3,6 +3,7 @@
 
 import type { TableDefinition } from "../_types"
 import { parseRange } from "../cell-utils"
+import { InvalidArgumentError } from "../errors"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
 import { addFuturePrefixes } from "./formula-prefix"
 
@@ -139,6 +140,9 @@ export interface TotalRowCell {
   formula?: string
 }
 
+/** `A1:B5`: two plain cell references, no `$`, no sheet, no whole columns. */
+const TABLE_REF = /^[A-Za-z]{1,3}[1-9]\d*:[A-Za-z]{1,3}[1-9]\d*$/
+
 /**
  * The cells a table's total row needs on the sheet.
  *
@@ -155,6 +159,17 @@ export interface TotalRowCell {
  */
 export function totalRowCells(table: TableDefinition, range: string): TotalRowCell[] {
   if (table.showTotalRow !== true) return []
+  // The total row sits on the range's last row, so the range has to be read.
+  // A table `ref` is a plain `A1:B5`: `$A$1:$B$5` threw "Cannot read
+  // properties of undefined" out of parseRange, and `Sheet1!A1:B5` a
+  // "Column index 8826682 is not a valid 0-based column". Both were invalid
+  // in the file anyway; this says so, and names the table.
+  if (!TABLE_REF.test(range)) {
+    throw new InvalidArgumentError(
+      `Table "${table.name}" has range "${range}", which is not a table reference. ` +
+        `A table range is a plain A1:B5 with no "$" and no sheet name.`,
+    )
+  }
   const { startCol, endRow } = parseRange(range)
   const displayName = table.displayName ?? table.name
   const cells: TotalRowCell[] = []
