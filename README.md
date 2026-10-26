@@ -209,7 +209,7 @@ Anything a cell carries works there — `style`, `formula`, `richText`,
 `hyperlink`, `checkbox`. `cells` still takes a `"row,col"` map, and wins
 where both describe the same position.
 
-Features: cell styles, auto column widths, merged cells, freeze/split panes, auto-filter (with per-column value filters — `<filters><filter val="…"/></filters>`; custom/dynamic/colour criteria are not emitted), data validation, hyperlinks, images (PNG/JPEG/GIF/SVG/WebP), comments, tables, conditional formatting (all 15 rule types, with their dxf styles), named ranges, print settings, page breaks, sheet protection, workbook protection, rich text, shared/array/dynamic formulas, sparklines, textboxes, background images, number formats, hidden sheets, Excel 2024 native checkboxes, HTML/Markdown/JSON/TSV export, template engine.
+Features: cell styles, auto column widths, merged cells, freeze/split panes, auto-filter (per-column value, custom, top-10, dynamic and date-group criteria; colour and icon criteria are not carried), data validation, hyperlinks, images (PNG/JPEG/GIF/SVG/WebP), comments, tables, conditional formatting (all 15 rule types, with their dxf styles), named ranges, print settings, page breaks, sheet protection, workbook protection, rich text, shared/array/dynamic formulas, sparklines, textboxes, background images, number formats, hidden sheets, Excel 2024 native checkboxes, HTML/Markdown/JSON/TSV export, template engine.
 
 ### Auto Column Width
 
@@ -2267,7 +2267,8 @@ See the [issue tracker](https://github.com/productdevbook/hucre/issues) for the 
 - Chart authoring for the remaining kinds — bubble, radar, surface, stock, and combo (multi-kind plot areas); these read and round-trip today
 - Streaming XML reader (`readXml` takes a whole string today)
 - Conditional formatting: `timePeriod` rules, and the `rank` / `percent` / `bottom` / `aboveAverage` / `equalAverage` / `stdDev` knobs on `top10` and `aboveAverage`
-- Auto-filter criteria beyond value lists (custom, dynamic, colour, icon filters)
+- Auto-filter colour and icon criteria
+- Cell-embedded ("Place in Cell") pictures — not read; see `docs/PARITY.md`
 - Pre-computed pivot value cells (the writer emits the structure; Excel computes on open)
 - Threaded comments (Excel 365+) — synthesize from a fresh write (read + roundtrip already supported). `WriteSheet` has no `threadedComments` field; it is not silently accepted
 - Slicers & timeline filters — synthesize from a fresh write (read + roundtrip already supported)

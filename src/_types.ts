@@ -409,13 +409,66 @@ export interface ConditionalRule {
 export interface AutoFilter {
   /** Range (e.g. "A1:D100") */
   range: string
-  /** Column filter criteria */
-  columns?: Array<{
-    /** 0-based column index within the autoFilter range */
-    colIndex: number
-    /** List of values to filter by */
-    filters?: string[]
+  /**
+   * One entry per `<filterColumn>`. A column carries at most one criterion
+   * kind (`filters`, `custom`, `top10` or `dynamic`) because the schema's
+   * `CT_FilterColumn` allows a single choice; if several are set the writer
+   * emits the first in that order. Colour and icon filters are not modelled.
+   */
+  columns?: AutoFilterColumn[]
+}
+
+export interface AutoFilterColumn {
+  /** 0-based column index within the autoFilter range */
+  colIndex: number
+  /** List of values to filter by */
+  filters?: string[]
+  /** `<filters blank="1">`: blank cells are part of the value list. */
+  blank?: boolean
+  /** `<dateGroupItem>` entries of a value filter, e.g. "all of March 2024". */
+  dateGroups?: Array<{
+    year: number
+    month?: number
+    day?: number
+    hour?: number
+    minute?: number
+    second?: number
+    grouping: "year" | "month" | "day" | "hour" | "minute" | "second"
   }>
+  /** `<customFilters>`: one or two comparisons joined by and/or. */
+  custom?: {
+    /** Join the two conditions with AND instead of the default OR. */
+    and?: boolean
+    conditions: Array<{
+      /** `equal` is the schema default and is read back when absent. */
+      operator:
+        | "equal"
+        | "lessThan"
+        | "lessThanOrEqual"
+        | "notEqual"
+        | "greaterThanOrEqual"
+        | "greaterThan"
+      /** Comparison operand; may contain `*` / `?` wildcards for text. */
+      value: string
+    }>
+  }
+  /** `<top10>`: top/bottom N items or percent. */
+  top10?: {
+    /** Bottom instead of top. */
+    bottom?: boolean
+    /** `val` is a percentage rather than an item count. */
+    percent?: boolean
+    val: number
+  }
+  /** `<dynamicFilter>`: a date/average filter Excel recomputes, e.g. "aboveAverage". */
+  dynamic?: {
+    /** The `type` token verbatim, e.g. "thisMonth", "aboveAverage", "Q1". */
+    type: string
+    val?: number
+    maxVal?: number
+  }
+  /** `hiddenButton="1"`: the dropdown arrow is hidden for this column. */
+  hiddenButton?: boolean
 }
 
 // ── Freeze Pane ────────────────────────────────────────────────────

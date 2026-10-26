@@ -377,6 +377,7 @@ export type {
   DataValidation,
   ConditionalRule,
   AutoFilter,
+  AutoFilterColumn,
   FreezePane,
   SplitPane,
   SheetImage,

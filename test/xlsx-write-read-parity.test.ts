@@ -158,7 +158,16 @@ const SHEET_FIELDS: { [K in keyof Required<WriteSheet>]: Entry<WriteSheet[K]> } 
     read: (sheet) => sheet.conditionalRules,
   },
 
-  autoFilter: { value: { range: "A1:B3" }, read: (sheet) => sheet.autoFilter },
+  autoFilter: {
+    value: {
+      range: "A1:B3",
+      columns: [
+        { colIndex: 0, filters: ["a"] },
+        { colIndex: 1, custom: { conditions: [{ operator: "greaterThan", value: "5" }] } },
+      ],
+    },
+    read: (sheet) => sheet.autoFilter,
+  },
 
   freezePane: { value: { rows: 1, columns: 1 }, read: (sheet) => sheet.freezePane },
 

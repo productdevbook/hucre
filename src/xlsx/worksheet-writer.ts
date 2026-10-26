@@ -4,6 +4,7 @@
 import { toRanges } from "../cell-utils"
 import type {
   AutoFilter,
+  AutoFilterColumn,
   RowDef,
   WriteSheet,
   CellValue,
@@ -1709,21 +1710,66 @@ function serializeFontProps(font: FontStyle): string[] {
  * when column criteria are configured.
  */
 export function serializeAutoFilter(autoFilter: AutoFilter): string {
-  if (autoFilter.columns && autoFilter.columns.length > 0) {
-    const filterChildren: string[] = []
-    for (const col of autoFilter.columns) {
-      if (col.filters && col.filters.length > 0) {
-        const filterElements = col.filters.map((v) => xmlSelfClose("filter", { val: v }))
-        filterChildren.push(
-          xmlElement("filterColumn", { colId: col.colIndex }, [
-            xmlElement("filters", undefined, filterElements),
-          ]),
-        )
-      }
-    }
+  const filterChildren: string[] = []
+  for (const col of autoFilter.columns ?? []) {
+    const criterion = serializeFilterCriterion(col)
+    if (criterion === undefined) continue
+    const attrs: Record<string, string | number> = { colId: col.colIndex }
+    if (col.hiddenButton) attrs.hiddenButton = 1
+    filterChildren.push(xmlElement("filterColumn", attrs, [criterion]))
+  }
+  if (filterChildren.length > 0) {
     return xmlElement("autoFilter", { ref: autoFilter.range }, filterChildren)
   }
   return xmlSelfClose("autoFilter", { ref: autoFilter.range })
+}
+
+/**
+ * The single criterion element of a `<filterColumn>` (CT_FilterColumn is a
+ * choice, not a sequence). Custom, top-10 and dynamic filters used to be
+ * dropped on read and never written, so a sheet filtered on two columns
+ * came back with only its value-list column (#565).
+ */
+function serializeFilterCriterion(col: AutoFilterColumn): string | undefined {
+  if ((col.filters && col.filters.length > 0) || col.blank || col.dateGroups?.length) {
+    const kids: string[] = (col.filters ?? []).map((v) => xmlSelfClose("filter", { val: v }))
+    for (const g of col.dateGroups ?? []) {
+      kids.push(
+        xmlSelfClose("dateGroupItem", {
+          year: g.year,
+          month: g.month,
+          day: g.day,
+          hour: g.hour,
+          minute: g.minute,
+          second: g.second,
+          dateTimeGrouping: g.grouping,
+        }),
+      )
+    }
+    return xmlElement("filters", col.blank ? { blank: 1 } : undefined, kids)
+  }
+  if (col.custom && col.custom.conditions.length > 0) {
+    // The schema allows one or two conditions.
+    const kids = col.custom.conditions
+      .slice(0, 2)
+      .map((c) => xmlSelfClose("customFilter", { operator: c.operator, val: c.value }))
+    return xmlElement("customFilters", col.custom.and ? { and: 1 } : undefined, kids)
+  }
+  if (col.top10) {
+    return xmlSelfClose("top10", {
+      top: col.top10.bottom ? 0 : undefined,
+      percent: col.top10.percent ? 1 : undefined,
+      val: col.top10.val,
+    })
+  }
+  if (col.dynamic) {
+    return xmlSelfClose("dynamicFilter", {
+      type: col.dynamic.type,
+      val: col.dynamic.val,
+      maxVal: col.dynamic.maxVal,
+    })
+  }
+  return undefined
 }
 
 // ── Conditional Formatting Serialization ─────────────────────────

@@ -12,6 +12,7 @@ import type {
   FontStyle,
   Hyperlink,
   AutoFilter,
+  AutoFilterColumn,
   ConditionalRule,
   ConditionalRuleType,
   DataValidation,
@@ -209,6 +210,11 @@ function clampColumnBound(raw: string | undefined, fallback: number): number {
 /**
  * Parse a range reference like "A1:B2" into start and end positions.
  */
+/** An xsd:boolean attribute that is present and true. */
+function isOn(raw: string | undefined): boolean {
+  return raw === "1" || raw === "true"
+}
+
 function parseRangeRef(ref: string): MergeRange {
   const parts = ref.split(":")
   const start = parseCellRef(parts[0])
@@ -293,8 +299,12 @@ function worksheetParser(
   // Auto filter parsed from <autoFilter> element
   let autoFilter: AutoFilter | undefined
   let inAutoFilter = false
-  let currentFilterColIndex = -1
-  let currentFilterValues: string[] = []
+  // The <filterColumn> being read. Kept as one object rather than a
+  // colIndex plus a value list: the old pair only understood
+  // <filters><filter val/>, so a column filtered by a custom, top-10 or
+  // dynamic criterion was dropped and only the value-list columns came back
+  // (#565).
+  let currentFilterCol: AutoFilterColumn | undefined
 
   // Sheet protection parsed from <sheetProtection> element
   let sheetProtection: SheetProtection | undefined
@@ -713,13 +723,77 @@ function worksheetParser(
           break
         case "filterColumn":
           if (inAutoFilter && attrs["colId"] !== undefined) {
-            currentFilterColIndex = Number(attrs["colId"])
-            currentFilterValues = []
+            currentFilterCol = { colIndex: Number(attrs["colId"]) }
+            if (isOn(attrs["hiddenButton"])) currentFilterCol.hiddenButton = true
           }
           break
+        case "filters":
+          if (currentFilterCol && isOn(attrs["blank"])) currentFilterCol.blank = true
+          if (currentFilterCol) currentFilterCol.filters ??= []
+          break
         case "filter":
-          if (inAutoFilter && currentFilterColIndex >= 0 && attrs["val"] !== undefined) {
-            currentFilterValues.push(attrs["val"])
+          if (currentFilterCol && attrs["val"] !== undefined) {
+            ;(currentFilterCol.filters ??= []).push(attrs["val"])
+          }
+          break
+        case "dateGroupItem":
+          if (currentFilterCol && attrs["year"] !== undefined) {
+            const g = attrs["dateTimeGrouping"]
+            if (
+              g === "year" ||
+              g === "month" ||
+              g === "day" ||
+              g === "hour" ||
+              g === "minute" ||
+              g === "second"
+            ) {
+              const item: NonNullable<AutoFilterColumn["dateGroups"]>[number] = {
+                year: Number(attrs["year"]),
+                grouping: g,
+              }
+              for (const k of ["month", "day", "hour", "minute", "second"] as const) {
+                if (attrs[k] !== undefined) item[k] = Number(attrs[k])
+              }
+              ;(currentFilterCol.dateGroups ??= []).push(item)
+            }
+          }
+          break
+        case "customFilters":
+          if (currentFilterCol) {
+            currentFilterCol.custom = { conditions: [] }
+            if (isOn(attrs["and"])) currentFilterCol.custom.and = true
+          }
+          break
+        case "customFilter":
+          if (currentFilterCol?.custom && attrs["val"] !== undefined) {
+            const op = attrs["operator"] ?? "equal"
+            if (
+              op === "equal" ||
+              op === "lessThan" ||
+              op === "lessThanOrEqual" ||
+              op === "notEqual" ||
+              op === "greaterThanOrEqual" ||
+              op === "greaterThan"
+            ) {
+              currentFilterCol.custom.conditions.push({ operator: op, value: attrs["val"] })
+            }
+          }
+          break
+        case "top10":
+          if (currentFilterCol && attrs["val"] !== undefined) {
+            currentFilterCol.top10 = { val: Number(attrs["val"]) }
+            // `top` defaults to true in the schema, so only "0" means bottom.
+            if (attrs["top"] === "0" || attrs["top"] === "false")
+              currentFilterCol.top10.bottom = true
+            if (isOn(attrs["percent"])) currentFilterCol.top10.percent = true
+          }
+          break
+        case "dynamicFilter":
+          if (currentFilterCol && attrs["type"]) {
+            currentFilterCol.dynamic = { type: attrs["type"] }
+            if (attrs["val"] !== undefined) currentFilterCol.dynamic.val = Number(attrs["val"])
+            if (attrs["maxVal"] !== undefined)
+              currentFilterCol.dynamic.maxVal = Number(attrs["maxVal"])
           }
           break
         case "mergeCells":
@@ -1123,20 +1197,25 @@ function worksheetParser(
           inAutoFilter = false
           break
         case "filterColumn":
-          if (
-            inAutoFilter &&
-            autoFilter &&
-            currentFilterColIndex >= 0 &&
-            currentFilterValues.length > 0
-          ) {
-            if (!autoFilter.columns) autoFilter.columns = []
-            autoFilter.columns.push({
-              colIndex: currentFilterColIndex,
-              filters: currentFilterValues,
-            })
+          if (inAutoFilter && autoFilter && currentFilterCol) {
+            const col = currentFilterCol
+            // A column with a criterion we do not model (colour, icon) and
+            // no value list has nothing to keep; an empty `filters: []` is
+            // not the same as "no filter".
+            if (
+              (col.filters && col.filters.length > 0) ||
+              col.blank ||
+              col.dateGroups ||
+              (col.custom && col.custom.conditions.length > 0) ||
+              col.top10 ||
+              col.dynamic
+            ) {
+              if (col.filters && col.filters.length === 0) delete col.filters
+              if (col.custom && col.custom.conditions.length === 0) delete col.custom
+              ;(autoFilter.columns ??= []).push(col)
+            }
           }
-          currentFilterColIndex = -1
-          currentFilterValues = []
+          currentFilterCol = undefined
           break
         case "hyperlinks":
           inHyperlinks = false
