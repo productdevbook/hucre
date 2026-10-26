@@ -1244,10 +1244,10 @@ function serializeDataValidations(validations: DataValidation[]): string {
   const dvElements: string[] = []
 
   for (const dv of validations) {
-    const attrs: Record<string, string | number> = {
-      type: dv.type,
-      sqref: dv.range,
-    }
+    // "none" is the schema default, so it is left off, as Excel does (#622).
+    const attrs: Record<string, string | number> = {}
+    if (dv.type !== "none") attrs["type"] = dv.type
+    attrs["sqref"] = dv.range
 
     if (dv.operator) {
       attrs["operator"] = dv.operator

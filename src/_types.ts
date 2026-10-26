@@ -300,13 +300,13 @@ export interface MergeRange {
 // ── Data Validation ────────────────────────────────────────────────
 
 export type ValidationType =
-  | "list"
-  | "whole"
-  | "decimal"
-  | "date"
-  | "time"
-  | "textLength"
-  | "custom"
+  /**
+   * No constraint on the value: the input message (and nothing else) is what
+   * the validation does. `type` is optional in the file and defaults to this
+   * (ECMA-376 §18.3.1.32), so a `<dataValidation>` without one reads as "none"
+   * (#622).
+   */
+  "none" | "list" | "whole" | "decimal" | "date" | "time" | "textLength" | "custom"
 
 export type ValidationOperator =
   | "between"

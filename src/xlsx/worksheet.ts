@@ -1552,6 +1552,7 @@ function parseSheetProtectionAttrs(attrs: Record<string, string>): SheetProtecti
 // ── Data Validation Builder ─────────────────────────────────────────
 
 const VALID_TYPES = new Set<string>([
+  "none",
   "list",
   "whole",
   "decimal",
@@ -1576,8 +1577,11 @@ function buildDataValidation(
   formula1Text: string,
   formula2Text: string,
 ): DataValidation | null {
-  const typeStr = attrs["type"]
-  if (!typeStr || !VALID_TYPES.has(typeStr)) return null
+  // `type` is optional and defaults to "none" (§18.3.1.32). Excel writes
+  // input-message-only validations without it; returning null here dropped
+  // them on open -> save (#622). An unknown explicit type is still skipped.
+  const typeStr = attrs["type"] ?? "none"
+  if (!VALID_TYPES.has(typeStr)) return null
 
   const sqref = attrs["sqref"]
   if (!sqref) return null
