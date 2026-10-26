@@ -79,6 +79,23 @@ describe("column ranges (#622)", () => {
     ])
   })
 
+  it("merges styled stream columns only when the style id matches (#616 + #622)", async () => {
+    const money = { numFmt: "0.00" }
+    const stream = writeXlsxStream([[1, 2, 3, 4]], {
+      name: "S",
+      columns: [
+        { width: 10, style: money },
+        { width: 10, style: money },
+        { width: 10, style: { numFmt: "0%" } },
+        { width: 10 },
+      ],
+    })
+    const total = new Uint8Array(await new Response(stream).arrayBuffer())
+    expect(
+      cols(await sheetXml(total)).map((c) => /min="(\d+)" max="(\d+)"/.exec(c)!.slice(1).join("-")),
+    ).toEqual(["1-2", "3-3", "4-4"])
+  })
+
   it("merges in the stream writer too", async () => {
     const stream = writeXlsxStream([[1, 2, 3]], {
       name: "S",
