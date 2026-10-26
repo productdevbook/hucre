@@ -20,6 +20,7 @@ import type {
   FreezePane,
   MergeRange,
   OutlineProperties,
+  RichTextRun,
   RowDef,
   SpreadsheetStreamWriter,
 } from "../_types"
@@ -157,6 +158,8 @@ export interface StreamStyledCell {
   value?: CellValue
   style?: CellStyle
   formula?: string
+  /** Per-run text formatting; non-empty runs take precedence over value. */
+  richText?: RichTextRun[]
 }
 
 /** A streamed row: positional values, or an object read through `columns[].key`. */
@@ -179,12 +182,17 @@ function serializeMergeCells(input: Array<MergeRange | string>): string {
 /**
  * Copy a captured header row. `slice()` alone keeps a reference to each styled
  * cell, so a caller reusing one wrapper for later rows would see the header
- * repeated on rolled-over sheets carrying the mutated value.
+ * repeated on rolled-over sheets carrying the mutated value. Rich-text runs
+ * and their nested fonts must also be independent of the caller (#637).
  */
 function snapshotRow(
   values: Array<CellValue | StreamStyledCell>,
 ): Array<CellValue | StreamStyledCell> {
-  return values.map((value) => (isStreamStyledCell(value) ? { ...value } : value))
+  return values.map((value) =>
+    isStreamStyledCell(value)
+      ? { ...value, ...(value.richText ? { richText: structuredClone(value.richText) } : {}) }
+      : value,
+  )
 }
 
 function isStreamStyledCell(value: CellValue | StreamStyledCell): value is StreamStyledCell {
@@ -192,7 +200,7 @@ function isStreamStyledCell(value: CellValue | StreamStyledCell): value is Strea
     value !== null &&
     typeof value === "object" &&
     !(value instanceof Date) &&
-    ("value" in value || "style" in value || "formula" in value)
+    ("value" in value || "style" in value || "formula" in value || "richText" in value)
   )
 }
 
@@ -330,6 +338,7 @@ class RowSerializer {
         value,
         style,
         styled ? raw.formula : undefined,
+        styled ? raw.richText : undefined,
       )
       if (cellXml) cellElements.push(cellXml)
     }
@@ -360,8 +369,11 @@ class RowSerializer {
     value: CellValue,
     style: CellStyle | undefined,
     formula?: string,
+    richText?: RichTextRun[],
   ): string | null {
-    const resolved: ResolvedCell = { value, style }
+    // Both streaming APIs must carry runs to the shared serializer, which
+    // already handles inline/shared rich strings and literal text (#637).
+    const resolved: ResolvedCell = { value, style, richText }
     if (formula !== undefined) {
       resolved.formula = formula
       // A streamed cell carries one value, and when it also carries a
@@ -619,7 +631,7 @@ export class XlsxStreamWriter implements SpreadsheetStreamWriter {
     }
   }
 
-  /** Add a row of values, each optionally carrying its own style or formula. */
+  /** Add a row of values, each optionally carrying its own style, formula or rich text. */
   addRow(values: Array<CellValue | StreamStyledCell>): void {
     // Capture the very first row as a fallback header for repeatHeaders, in
     // case the caller didn't supply column definitions but does want their
