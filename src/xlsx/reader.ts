@@ -1,6 +1,7 @@
 // ── XLSX Reader ──────────────────────────────────────────────────────
 // Reads Office Open XML (.xlsx) spreadsheet files.
 
+import { readPasswordDigest } from "./password"
 import type {
   Sheet,
   SheetKind,
@@ -1577,7 +1578,7 @@ function parseWorkbookXml(
   sheets: SheetInfo[]
   dateSystem: "1900" | "1904"
   namedRanges: NamedRange[]
-  workbookProtection?: { lockStructure?: boolean; lockWindows?: boolean }
+  workbookProtection?: Workbook["workbookProtection"]
   /**
    * `<bookViews><workbookView activeTab>` — the tab Excel opens on.
    * Omitted when the file declares tab 0, which is the OOXML default and
@@ -1606,7 +1607,7 @@ function parseWorkbookXml(
     dateSystem = "1900"
   }
 
-  let wbProtection: { lockStructure?: boolean; lockWindows?: boolean } | undefined
+  let wbProtection: Workbook["workbookProtection"]
   let activeSheet: number | undefined
 
   // First pass: collect sheets (needed for resolving localSheetId)
@@ -1629,10 +1630,16 @@ function parseWorkbookXml(
         child.attrs["lockStructure"] === "1" || child.attrs["lockStructure"] === "true"
       const lockWindows =
         child.attrs["lockWindows"] === "1" || child.attrs["lockWindows"] === "true"
-      if (lockStructure || lockWindows) {
+      // The digests are read too: dropping them unlocked the structure of a
+      // password-protected template on open -> save (#622).
+      const digest = readPasswordDigest(child.attrs, "workbook")
+      const revisionsDigest = readPasswordDigest(child.attrs, "revisions")
+      if (lockStructure || lockWindows || digest || revisionsDigest) {
         wbProtection = {}
         if (lockStructure) wbProtection.lockStructure = true
         if (lockWindows) wbProtection.lockWindows = true
+        if (digest) wbProtection.digest = digest
+        if (revisionsDigest) wbProtection.revisionsDigest = revisionsDigest
       }
     }
 

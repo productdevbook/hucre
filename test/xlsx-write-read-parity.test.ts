@@ -452,10 +452,13 @@ const OPTION_FIELDS: { [K in keyof Required<WriteOptions>]: Entry<WriteOptions[K
 
   workbookProtection: {
     value: { lockStructure: true, lockWindows: true, password: "s3cret" },
-    read: (_sheet, wb) => wb.workbookProtection,
-    // Same one-way hash as sheet protection; the flags come back, the
-    // password does not.
-    expected: { lockStructure: true, lockWindows: true },
+    read: (_sheet, wb) => ({
+      ...wb.workbookProtection,
+      digest: wb.workbookProtection?.digest?.hash ? "hash" : undefined,
+    }),
+    // Same one-way hash as sheet protection; the flags come back and so
+    // does the digest (#622), but the password does not.
+    expected: { lockStructure: true, lockWindows: true, digest: "hash" },
   },
 
   stringMode: {

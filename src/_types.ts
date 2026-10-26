@@ -829,8 +829,31 @@ export interface A11yIssue {
 
 // ── Sheet Protection ───────────────────────────────────────────────
 
+/**
+ * The password digest a protected file carries (ECMA-376 §18.3.1.85 /
+ * §18.2.29). A file never holds the password, only this; read it and write it
+ * back to keep the same lock (#622).
+ */
+export interface PasswordDigest {
+  /** Legacy 16-bit hash, 4 hex digits (`password` / `workbookPassword` / `revisionsPassword`). */
+  hash?: string
+  /** Modern digest: `SHA-512`, etc. */
+  algorithmName?: string
+  /** Base64 digest. */
+  hashValue?: string
+  /** Base64 salt. */
+  saltValue?: string
+  spinCount?: number
+}
+
 export interface SheetProtection {
+  /**
+   * Plaintext password, hashed on write. Never populated by the reader. When
+   * set it wins over `digest`.
+   */
   password?: string
+  /** Digest read from the file, written back as-is when `password` is unset. */
+  digest?: PasswordDigest
   sheet?: boolean
   objects?: boolean
   scenarios?: boolean
@@ -1470,6 +1493,10 @@ export interface Workbook {
   workbookProtection?: {
     lockStructure?: boolean
     lockWindows?: boolean
+    /** Structure/windows password digest as read from the file. */
+    digest?: PasswordDigest
+    /** Shared-workbook revisions password digest as read from the file. */
+    revisionsDigest?: PasswordDigest
   }
   /**
    * Workbook-wide person directory referenced from threaded comments.
@@ -1767,7 +1794,11 @@ export interface WriteOptions {
   workbookProtection?: {
     lockStructure?: boolean
     lockWindows?: boolean
+    /** Plaintext, hashed on write. Wins over `digest`. */
     password?: string
+    /** Digest carried through from a read workbook. */
+    digest?: PasswordDigest
+    revisionsDigest?: PasswordDigest
   }
   /** String storage mode. Default: "shared"
    *  - "shared": shared string table (smaller files with repeated strings)

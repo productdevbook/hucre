@@ -1,6 +1,7 @@
 // ── Worksheet Parser ─────────────────────────────────────────────────
 // Parses xl/worksheets/sheetN.xml into a Sheet object.
 
+import { readPasswordDigest } from "./password"
 import type {
   ReadWarning,
   Sheet,
@@ -1503,10 +1504,11 @@ export async function parseWorksheetStream(
 function parseSheetProtectionAttrs(attrs: Record<string, string>): SheetProtection {
   const prot: SheetProtection = {}
 
-  // password is stored as hex hash — we store it as-is (hashed form)
-  // We do NOT store it as the `password` field since that's the raw plaintext in our API.
-  // Instead we skip it — the hash is one-way and can't be reversed.
-  // The presence of a password attr just means the sheet was password-protected.
+  // The digest goes to `digest`, never `password`: `password` is the
+  // plaintext the writer hashes. Dropping it changed the template's lock on
+  // open -> save (#622).
+  const digest = readPasswordDigest(attrs, "")
+  if (digest) prot.digest = digest
 
   if (attrs["sheet"] === "1" || attrs["sheet"] === "true") {
     prot.sheet = true

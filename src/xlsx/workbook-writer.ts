@@ -1,9 +1,9 @@
 // ── Workbook XML Writer ──────────────────────────────────────────────
 // Generates xl/workbook.xml, xl/_rels/workbook.xml.rels, and _rels/.rels
 
-import type { WriteSheet, NamedRange } from "../_types"
+import type { WriteSheet, NamedRange, WriteOptions } from "../_types"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
-import { hashSheetPassword } from "./password"
+import { writePasswordDigest } from "./password"
 import { METADATA_REL_TYPE } from "./metadata"
 import { addFuturePrefixes } from "./formula-prefix"
 import { FPB_REL_TYPE } from "./feature-property-bag"
@@ -38,7 +38,7 @@ export function writeWorkbookXml(
   namedRanges?: NamedRange[],
   dateSystem?: "1900" | "1904",
   activeSheet?: number,
-  workbookProtection?: { lockStructure?: boolean; lockWindows?: boolean; password?: string },
+  workbookProtection?: WriteOptions["workbookProtection"],
   externalLinkRels?: ReadonlyArray<{ rId: string }>,
   pivotCacheRefs?: ReadonlyArray<PivotCacheRef>,
   slicerCacheRels?: ReadonlyArray<{ rId: string }>,
@@ -76,9 +76,14 @@ export function writeWorkbookXml(
     const protAttrs: Record<string, string | number> = {}
     if (workbookProtection.lockStructure) protAttrs["lockStructure"] = 1
     if (workbookProtection.lockWindows) protAttrs["lockWindows"] = 1
-    if (workbookProtection.password) {
-      protAttrs["workbookPassword"] = hashSheetPassword(workbookProtection.password)
-    }
+    // Plaintext wins over a digest carried from a read file (#622).
+    writePasswordDigest(
+      protAttrs,
+      "workbook",
+      workbookProtection.password,
+      workbookProtection.digest,
+    )
+    writePasswordDigest(protAttrs, "revisions", undefined, workbookProtection.revisionsDigest)
     parts.push(xmlSelfClose("workbookProtection", protAttrs))
   }
 

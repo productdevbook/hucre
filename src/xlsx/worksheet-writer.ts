@@ -31,7 +31,7 @@ import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape, xmlTextElement } from
 import { calculateColumnWidth } from "./auto-width"
 import { DYNAMIC_ARRAY_CM } from "./metadata"
 import { addFuturePrefixes } from "./formula-prefix"
-import { hashSheetPassword } from "./password"
+import { writePasswordDigest } from "./password"
 import { validateColumnIndex } from "../_validate"
 import { toCellValue } from "../_inline-cells"
 import { computeTableRange } from "./derived-ranges"
@@ -1192,9 +1192,8 @@ function serializeSheetProtection(protection: SheetProtection): string {
   const attrs: Record<string, string | number> = {}
 
   // Password hash
-  if (protection.password) {
-    attrs["password"] = hashSheetPassword(protection.password)
-  }
+  // Plaintext wins over a digest carried from a read file (#622).
+  writePasswordDigest(attrs, "", protection.password, protection.digest)
 
   // sheet, objects, scenarios: true means protected → "1"
   if (protection.sheet !== false) {
