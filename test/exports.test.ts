@@ -149,7 +149,7 @@ describe("hucre/xlsx", () => {
   })
 
   it("exports the other formats it can read", () => {
-    expectExports(xlsx, ["readXlsb", "readXls"], "hucre/xlsx")
+    expectExports(xlsx, ["readXlsb", "readXls", "streamXlsRows"], "hucre/xlsx")
   })
 
   it("exports the streaming API", () => {

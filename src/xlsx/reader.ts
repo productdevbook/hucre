@@ -452,6 +452,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
       styles: parsedStyles,
       readStyles,
       dateSystem,
+      dates: options?.dates,
       worksheetRels,
       maxRows: options?.maxRows,
       range: options?.range,
@@ -1097,8 +1098,10 @@ function parseTwoCellAnchor(
  * On a `twoCellAnchor` the from/to cells are what Excel actually honours,
  * but `a:ext` is still required by the schema and every writer — hucre's
  * included — records the intended size there. Reading it is the only way
- * to recover {@link SheetImage.width} from a hucre-written file, which
- * always uses `twoCellAnchor` (#407).
+ * to recover {@link SheetImage.width} from a `twoCellAnchor`, which is what
+ * hucre writes for an image with `anchor.to` (#407). An image without `to`
+ * is written as a `oneCellAnchor`, whose size is the anchor's own
+ * `<xdr:ext>` — see `parseOneCellAnchor` (#598).
  */
 function findShapeExtent(shapeEl: {
   children: Array<unknown>

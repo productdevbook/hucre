@@ -174,20 +174,23 @@ describe("writeDrawing", () => {
     expect(result.drawingXml).toContain('r:embed="rId1"')
   })
 
-  it("uses default to anchor when not specified", () => {
+  it("uses a oneCellAnchor sized by ext when to is not specified", () => {
     const images: SheetImage[] = [makeImage("png", { row: 2, col: 1 })]
     const result = writeDrawing(images, 1)
 
-    // Default to: from.col + 3, from.row + 5
+    // No invented `to` corner: the default size goes in the anchor's ext (#598).
     const doc = parseXml(result.drawingXml)
-    const anchor = findChild(doc, "twoCellAnchor")
+    expect(findChild(doc, "twoCellAnchor")).toBeUndefined()
+    const anchor = findChild(doc, "oneCellAnchor")
     expect(anchor).toBeTruthy()
+    expect(findChild(anchor, "to")).toBeUndefined()
 
-    const toEl = findChild(anchor, "to")
-    const toCol = findChild(toEl, "col")
-    const toRow = findChild(toEl, "row")
-    expect(toCol.children[0]).toBe("4") // 1 + 3
-    expect(toRow.children[0]).toBe("7") // 2 + 5
+    const fromEl = findChild(anchor, "from")
+    expect(findChild(fromEl, "col").children[0]).toBe("1")
+    expect(findChild(fromEl, "row").children[0]).toBe("2")
+    const ext = findChild(anchor, "ext")
+    expect(ext.attrs.cx).toBe("3000000")
+    expect(ext.attrs.cy).toBe("2000000")
   })
 })
 

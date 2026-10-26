@@ -20,7 +20,13 @@ import { dirname, findRIdAttr, parseRelationships, resolvePath } from "./relatio
 import { parseSharedStrings } from "./shared-strings"
 import { parseStyles, isDateStyle } from "./styles"
 import { parseCellRef, parseIsoCellDate } from "./worksheet"
-import { serialToDate } from "../_date"
+import { dateToSerial, serialToDate } from "../_date"
+import {
+  applyRangeFilter,
+  parseRangeFilter,
+  resolveTargetSheet,
+  type RangeFilter,
+} from "../_stream-rows"
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -28,34 +34,6 @@ import { serialToDate } from "../_date"
 // the two had near-identical shapes under two names. Re-exported here so
 // `import type { StreamRow } from "hucre/xlsx"` keeps working.
 export type { StreamRow } from "../_types"
-
-// ── Range filter ────────────────────────────────────────────────────
-
-interface RangeFilter {
-  startRow: number
-  endRow: number
-  startCol: number
-  endCol: number
-}
-
-/**
- * Parse a range reference like "A1:D10" into 0-based row/col bounds.
- * Single-cell refs like "B2" are also accepted (start == end).
- */
-function parseRangeFilter(ref: string): RangeFilter {
-  const parts = ref.split(":")
-  if (parts.length === 0 || parts.length > 2) {
-    throw new ParseError(`Invalid range reference: "${ref}"`)
-  }
-  const start = parseCellRef(parts[0]!)
-  const end = parts.length > 1 ? parseCellRef(parts[1]!) : start
-  return {
-    startRow: Math.min(start.row, end.row),
-    endRow: Math.max(start.row, end.row),
-    startCol: Math.min(start.col, end.col),
-    endCol: Math.max(start.col, end.col),
-  }
-}
 
 // ── OOXML Relationship Types ─────────────────────────────────────────
 // Use lenient matching (matchesRelType) so both Transitional and Strict
@@ -142,21 +120,6 @@ function parseWorkbookXml(
   }
 
   return { sheets, dateSystem }
-}
-
-// ── Resolve target sheet ────────────────────────────────────────────
-
-function resolveTargetSheet(allSheets: SheetInfo[], sheetSpec?: number | string): SheetInfo | null {
-  if (sheetSpec === undefined) {
-    // Default: first sheet
-    return allSheets[0] ?? null
-  }
-
-  if (typeof sheetSpec === "number") {
-    return sheetSpec >= 0 && sheetSpec < allSheets.length ? allSheets[sheetSpec] : null
-  }
-
-  return allSheets.find((s) => s.name === sheetSpec) ?? null
 }
 
 // ── Worksheet SAX handlers (shared between sync and streaming paths) ─
@@ -297,6 +260,7 @@ function handleCloseTag(
   sharedStrings: SharedString[],
   styles: ParsedStyles | null,
   dateSystem: "1900" | "1904",
+  dates: ReadOptions["dates"],
 ): StreamRow | null {
   const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag
 
@@ -323,6 +287,7 @@ function handleCloseTag(
           sharedStrings,
           styles,
           dateSystem,
+          dates,
         )
         if (s.cellRef) {
           const pos = parseCellRef(s.cellRef)
@@ -362,29 +327,6 @@ function handleCloseTag(
   return null
 }
 
-// ── Filter application ─────────────────────────────────────────────
-
-/**
- * Apply the range filter to a freshly-yielded row. Returns the row to emit
- * (with cells outside the column range nulled out) or `null` if the row
- * itself falls outside the row range.
- *
- * Mirrors the batch reader (`parseWorksheet`): values stay aligned to
- * their original column index, and cells outside the column window are
- * masked to `null` rather than removed, so callers can still address
- * `row.values[colIndex]` for columns inside the range.
- */
-function applyRangeFilter(row: StreamRow, range: RangeFilter): StreamRow | null {
-  if (row.index < range.startRow || row.index > range.endRow) return null
-  const len = Math.max(row.values.length, range.endCol + 1)
-  const out: CellValue[] = Array.from({ length: len }, () => null)
-  const upper = Math.min(row.values.length - 1, range.endCol)
-  for (let c = range.startCol; c <= upper; c++) {
-    out[c] = row.values[c] ?? null
-  }
-  return { index: row.index, values: out }
-}
-
 // ── Streaming row parser via SAX (async — ReadableStream) ──────────
 
 async function* parseWorksheetRowsStreaming(
@@ -392,6 +334,7 @@ async function* parseWorksheetRowsStreaming(
   sharedStrings: SharedString[],
   styles: ParsedStyles | null,
   dateSystem: "1900" | "1904",
+  dates: ReadOptions["dates"],
   filters: { range?: RangeFilter; maxRows?: number } = {},
 ): AsyncGenerator<StreamRow, void, undefined> {
   const s = createRowSaxState()
@@ -445,7 +388,7 @@ async function* parseWorksheetRowsStreaming(
     },
     onCloseTag(tag) {
       if (aborted) return
-      const row = handleCloseTag(tag, s, sharedStrings, styles, dateSystem)
+      const row = handleCloseTag(tag, s, sharedStrings, styles, dateSystem, dates)
       if (row) {
         // If the SAX-emitted row is past the range end, we can stop now —
         // worksheet rows are written in ascending order in valid OOXML.
@@ -536,6 +479,7 @@ function resolveStreamCellValue(
   sharedStrings: SharedString[],
   styles: ParsedStyles | null,
   dateSystem: "1900" | "1904",
+  dates: ReadOptions["dates"],
 ): CellValue {
   switch (type) {
     case "s": {
@@ -573,9 +517,11 @@ function resolveStreamCellValue(
       // same cell. See #496.
       //
       // The value is an instant, not an offset from an epoch, so the
-      // 1904 system does not apply to it.
+      // 1904 system does not apply to it — except under `dates: "serial"`,
+      // where it becomes the serial in the workbook's system, exactly as
+      // in the buffered reader. See #600.
       const parsed = parseIsoCellDate(valueText)
-      if (parsed) return parsed
+      if (parsed) return dates === "serial" ? dateToSerial(parsed, dateSystem === "1904") : parsed
       // A bare time (`13:45:30`, openpyxl's `datetime.time`) has no day
       // to anchor it; left as text rather than guessed onto an epoch,
       // which is what the buffered reader does too.
@@ -590,8 +536,9 @@ function resolveStreamCellValue(
 
       const num = Number(valueText)
       if (!Number.isNaN(num)) {
-        // Check if this is a date via style
-        if (styles && styleIndex >= 0 && isDateStyle(styles, styleIndex)) {
+        // Check if this is a date via style, unless the caller asked for
+        // the serial itself. See #600.
+        if (dates !== "serial" && styles && styleIndex >= 0 && isDateStyle(styles, styleIndex)) {
           return serialToDate(num, dateSystem === "1904")
         }
         return num
@@ -616,6 +563,8 @@ function resolveStreamCellValue(
  * Honored {@link ReadOptions} fields:
  * - `sheet` — target sheet (number index or name). Default: first sheet.
  * - `dateSystem` — `"1900"` / `"1904"` / `"auto"`. Default: auto-detect.
+ * - `dates` — `"serial"` yields date-formatted numbers as the serial
+ *   rather than a `Date`. Default: `"date"`.
  * - `range` — A1-style range filter (e.g. `"B2:D10"`). Rows outside the
  *   row span are skipped; cells outside the column span are nulled out.
  *   Parsing stops once a row past the end-row is observed.
@@ -804,6 +753,7 @@ export async function* streamXlsxRows(
         prep.meta.sharedStrings,
         prep.meta.parsedStyles,
         prep.meta.dateSystem,
+        options?.dates,
         {
           range: rangeFilter,
           maxRows: maxRowsLimit > 0 ? maxRowsLimit : undefined,
@@ -945,8 +895,15 @@ export async function* streamXlsxRows(
   // Use streaming decompression: pipe ZIP entry through DecompressionStream
   // directly into the SAX parser, yielding rows as they complete.
   const wsStream = zip.extractStream(wsPath)
-  yield* parseWorksheetRowsStreaming(wsStream, sharedStrings, parsedStyles, dateSystem, {
-    range: rangeFilter,
-    maxRows: maxRowsLimit > 0 ? maxRowsLimit : undefined,
-  })
+  yield* parseWorksheetRowsStreaming(
+    wsStream,
+    sharedStrings,
+    parsedStyles,
+    dateSystem,
+    options?.dates,
+    {
+      range: rangeFilter,
+      maxRows: maxRowsLimit > 0 ? maxRowsLimit : undefined,
+    },
+  )
 }

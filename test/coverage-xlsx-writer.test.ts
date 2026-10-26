@@ -114,7 +114,7 @@ describe("styled cells of every value shape", () => {
   const styled: CellStyle = { font: { bold: true } }
 
   it("keeps the style index on a rich-text cell", async () => {
-    const xml = await sheetXml({
+    const sheet: WriteSheet = {
       name: "S",
       cells: cellMap([
         [
@@ -125,9 +125,13 @@ describe("styled cells of every value shape", () => {
           },
         ],
       ]),
-    })
+    }
 
-    expect(xml).toMatch(/<c r="A1" t="inlineStr" s="\d+">/)
+    // Shared by default, inline on request — see #602.
+    expect(await sheetXml(sheet)).toMatch(/<c r="A1" t="s" s="\d+"><v>0<\/v><\/c>/)
+    expect(await sheetXml(sheet, { stringMode: "inline" })).toMatch(
+      /<c r="A1" t="inlineStr" s="\d+">/,
+    )
   })
 
   it("keeps the style index on an error cell", async () => {
@@ -329,29 +333,34 @@ describe("sheet-level OOXML blocks", () => {
 
 describe("rich text run properties", () => {
   it("writes vertAlign, family, charset and scheme into <rPr>", async () => {
-    const xml = await sheetXml({
-      name: "S",
-      cells: cellMap([
-        [
-          "0,0",
-          {
-            richText: [
-              { text: "E=mc" },
-              {
-                text: "2",
-                font: {
-                  vertAlign: "superscript",
-                  family: 2,
-                  charset: 204,
-                  scheme: "minor",
-                  color: { indexed: 10 },
+    // Inline, so the runs are in the sheet; the shared form is the same
+    // `serializeRichTextRuns` output inside an `<si>` (#602).
+    const xml = await sheetXml(
+      {
+        name: "S",
+        cells: cellMap([
+          [
+            "0,0",
+            {
+              richText: [
+                { text: "E=mc" },
+                {
+                  text: "2",
+                  font: {
+                    vertAlign: "superscript",
+                    family: 2,
+                    charset: 204,
+                    scheme: "minor",
+                    color: { indexed: 10 },
+                  },
                 },
-              },
-            ],
-          },
-        ],
-      ]),
-    })
+              ],
+            },
+          ],
+        ]),
+      },
+      { stringMode: "inline" },
+    )
 
     expect(xml).toContain('<vertAlign val="superscript"/>')
     expect(xml).toContain('<family val="2"/>')
@@ -398,7 +407,73 @@ describe("conditional formatting rule bodies", () => {
 
     expect(xml).toContain('<cfvo type="num" val="0"/>')
     expect(xml).toContain('<cfvo type="num" val="100"/>')
-    expect(xml).toContain('<color rgb="638EC6"/>')
+    expect(xml).toContain('<color rgb="FF638EC6"/>')
+  })
+
+  // CT_Color/@rgb is ST_UnsignedIntHex: four bytes, eight hex digits. A
+  // 6-digit colour is what every other colour field accepts, so it gets the
+  // same FF alpha prefix here instead of going out as an invalid value (#595).
+  it("prefixes 6-digit colour scale and data bar colours with FF", async () => {
+    const rules: ConditionalRule[] = [
+      {
+        type: "colorScale",
+        range: "A1:A3",
+        priority: 1,
+        colorScale: { cfvo: [{ type: "min" }, { type: "max" }], colors: ["638EC6", "F8696B"] },
+      },
+      {
+        type: "dataBar",
+        range: "A1:A3",
+        priority: 2,
+        dataBar: { cfvo: [{ type: "min" }, { type: "max" }], color: "5A8AC6" },
+      },
+    ]
+    const xml = await sheetXml({ name: "S", rows: [[1], [2], [3]], conditionalRules: rules })
+
+    expect(xml).toContain('<color rgb="FF638EC6"/><color rgb="FFF8696B"/>')
+    expect(xml).toContain('<color rgb="FF5A8AC6"/>')
+    expect(xml).not.toMatch(/rgb="[0-9A-F]{6}"/)
+  })
+
+  it("passes 8-digit colour scale and data bar colours through untouched", async () => {
+    const rules: ConditionalRule[] = [
+      {
+        type: "colorScale",
+        range: "A1:A3",
+        priority: 1,
+        colorScale: { cfvo: [{ type: "min" }, { type: "max" }], colors: ["80638EC6", "FFF8696B"] },
+      },
+      {
+        type: "dataBar",
+        range: "A1:A3",
+        priority: 2,
+        dataBar: { cfvo: [{ type: "min" }, { type: "max" }], color: "805A8AC6" },
+      },
+    ]
+    const xml = await sheetXml({ name: "S", rows: [[1], [2], [3]], conditionalRules: rules })
+
+    expect(xml).toContain('<color rgb="80638EC6"/><color rgb="FFF8696B"/>')
+    expect(xml).toContain('<color rgb="805A8AC6"/>')
+    expect(xml).not.toContain("FF80")
+  })
+
+  it("prefixes 6-digit colour scale colours in the streaming writer too", async () => {
+    const buf = await drain(
+      writeXlsxStream([[1], [2], [3]], {
+        name: "S",
+        conditionalRules: [
+          {
+            type: "colorScale",
+            range: "A1:A3",
+            priority: 1,
+            colorScale: { cfvo: [{ type: "min" }, { type: "max" }], colors: ["638EC6", "F8696B"] },
+          },
+        ],
+      }),
+    )
+    const xml = await part(buf, "xl/worksheets/sheet1.xml")
+
+    expect(xml).toContain('<color rgb="FF638EC6"/><color rgb="FFF8696B"/>')
   })
 
   it("honours reverse and showValue:false on an icon set", async () => {
@@ -831,8 +906,9 @@ describe("XlsxStreamWriter freeze panes and column properties", () => {
     w.addRow([1, 2])
     const xml = await part(await w.finish(), "xl/worksheets/sheet1.xml")
 
-    expect(xml).toContain('<col min="1" max="1" hidden="true"/>')
-    expect(xml).toContain('<col min="2" max="2" outlineLevel="2"/>')
+    // A width goes out on both: Excel shows a <col> without one zero wide.
+    expect(xml).toContain('<col min="1" max="1" width="9.140625" hidden="true"/>')
+    expect(xml).toContain('<col min="2" max="2" width="9.140625" outlineLevel="2"/>')
   })
 })
 

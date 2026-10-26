@@ -5,6 +5,7 @@ export { readXlsx } from "./xlsx/reader"
 export { writeXlsx } from "./xlsx/writer"
 export { readXlsb } from "./xlsx/xlsb/reader"
 export { readXls } from "./xls/reader"
+export { streamXlsRows } from "./xls/stream-reader"
 export { readXlsxObjects, writeXlsxObjects } from "./xlsx/objects"
 export type {
   XlsxObjectsReadOptions,

@@ -119,7 +119,7 @@ export async function readXlsb(
   // hostile .bin can make the Cursor/DataView throw a raw RangeError. Wrap the
   // parse so malformed input surfaces as the library's ParseError.
   try {
-    return await parseXlsbParts(zip, workbookPath, workbookDir, options?.dateSystem)
+    return await parseXlsbParts(zip, workbookPath, workbookDir, options?.dateSystem, options?.dates)
   } catch (err) {
     if (err instanceof ParseError || err instanceof EncryptedFileError || err instanceof ZipError) {
       throw err
@@ -135,6 +135,7 @@ async function parseXlsbParts(
   workbookPath: string,
   workbookDir: string,
   dateSystem: ReadOptions["dateSystem"],
+  dates: ReadOptions["dates"],
 ): Promise<Workbook> {
   // Sheets (name + relId) and the workbook's own date system from the .bin.
   const { sheets: sheetEntries, file1904 } = parseWorkbookBin(await zip.extract(workbookPath))
@@ -164,8 +165,12 @@ async function parseXlsbParts(
     sharedStringsPath && zip.has(sharedStringsPath)
       ? parseSharedStringsBin(await zip.extract(sharedStringsPath))
       : []
-  const dateXf =
+  const styleDateXf =
     stylesPath && zip.has(stylesPath) ? parseStylesBin(await zip.extract(stylesPath)) : []
+  // Under `dates: "serial"` no style counts as a date, so every number
+  // reads as the serial the file holds — a Date rounds to the
+  // millisecond and puts serial 60 on the same day as 59. See #600.
+  const dateXf = dates === "serial" ? [] : styleDateXf
 
   const sheets: Sheet[] = []
   for (const entry of sheetEntries) {

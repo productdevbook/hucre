@@ -160,6 +160,10 @@ const REGENERATED_SHEET_PREFIXES = [
 /**
  * Read an XLSX file and return a Workbook with preserved raw data
  * for round-trip writing.
+ *
+ * With `dates: "serial"`, pass `readStyles: true` as well. `saveXlsx`
+ * writes a serial back as a plain number, so its date format survives
+ * only when the cell's style was read. See #600.
  */
 export async function openXlsx(
   input: Uint8Array | ArrayBuffer,

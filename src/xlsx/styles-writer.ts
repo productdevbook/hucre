@@ -349,6 +349,41 @@ export function createStylesCollector(
     return id
   }
 
+  // A cell format's `fontId` picks one complete `<font>`; it does not layer
+  // on fonts[0]. So a font that gave only part of itself — `{ bold: true }`
+  // — was written without a face or size, and Excel and LibreOffice drew it
+  // in their own default rather than the workbook's (#594). It takes `name`
+  // and `size` from the base font here, which is what `defaultFont` promises.
+  //
+  // `family`, `charset` and `scheme` describe the base's typeface, so they
+  // come along only with its name: `scheme="minor"` on a font that names
+  // Georgia would have Excel draw the theme font instead. Colour and the
+  // other parts stay as the cell gave them.
+  //
+  // Cell formats only. A differential format (`addDxf`) keeps exactly what
+  // it says, because there a missing part means "keep the cell's own".
+  //
+  // This runs once per cell where there is no identity cache, so a font that
+  // already names both is passed through without a copy.
+  function inheritBaseFont(font: FontStyle): FontStyle {
+    if (font.name && font.size !== undefined) return font
+    const merged: FontStyle = { ...font }
+    if (merged.size === undefined) merged.size = baseFont.size
+    if (!merged.name) {
+      merged.name = baseFont.name
+      if (merged.family === undefined && baseFont.family !== undefined) {
+        merged.family = baseFont.family
+      }
+      if (merged.charset === undefined && baseFont.charset !== undefined) {
+        merged.charset = baseFont.charset
+      }
+      if (merged.scheme === undefined && baseFont.scheme !== undefined) {
+        merged.scheme = baseFont.scheme
+      }
+    }
+    return merged
+  }
+
   function addFill(fill: FillStyle): number {
     const key = fillKey(fill)
     const existing = fillMap.get(key)
@@ -452,7 +487,7 @@ export function createStylesCollector(
       if (cached !== undefined) return cached
     }
 
-    const fontId = style.font ? addFont(style.font) : 0
+    const fontId = style.font ? addFont(inheritBaseFont(style.font)) : 0
     const fillId = style.fill ? addFill(style.fill) : 0
     const borderId = style.border ? addBorder(style.border) : 0
     const numFmtId = style.numFmt ? addNumFmt(style.numFmt) : 0

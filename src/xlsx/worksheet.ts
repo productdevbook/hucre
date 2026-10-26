@@ -33,7 +33,7 @@ import type { Relationship } from "./relationships"
 import { resolveStyle, isDateStyle } from "./styles"
 import { cloneCellStyle } from "../_style"
 import { PAPER_SIZE_REVERSE } from "./worksheet-writer"
-import { serialToDate } from "../_date"
+import { dateToSerial, serialToDate } from "../_date"
 import { parseSax, parseSaxStream, decodeOoxmlEscapes, type SaxHandlers } from "../xml/parser"
 import { MAX_CELL_MAP_ENTRIES, MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
 import { ParseError } from "../errors"
@@ -111,6 +111,8 @@ export interface WorksheetContext {
   styles: ParsedStyles | null
   readStyles: boolean
   dateSystem: "1900" | "1904"
+  /** Return date-formatted numbers as serials; see ReadOptions.dates. Default `"date"`. */
+  dates?: "date" | "serial"
   /** Worksheet-level relationships (from xl/worksheets/_rels/sheetN.xml.rels) */
   worksheetRels?: Relationship[]
   /** Maximum number of data rows to parse. Default: unlimited */
@@ -1891,6 +1893,7 @@ function processCell(
   let cellType: Cell["type"] = "empty"
   let formula: string | undefined
   let formulaResult: CellValue | undefined
+  let formulaResultType: Cell["formulaResultType"]
   let richText: RichTextRun[] | undefined
 
   // Handle formula (including shared formula slave cells with no text)
@@ -1973,9 +1976,22 @@ function processCell(
       // `value` still holds the error token either way, so spotting an
       // error by its value is unaffected; a *hard-coded* error cell,
       // which carries no formula, still reports `"error"`. See #497.
+      //
+      // The cached result is still a plain string, and so is the result
+      // of a formula that returned the *text* "#DIV/0!" (`t="str"`), so
+      // `formulaResultType` is what keeps the two apart — on the way in
+      // and, through the writer, on the way back out. See #599.
+      //
+      // `!== undefined`, not truthiness: a cell a shared formula covers
+      // has `formula: ""`, and its cached error is no less an error. Read
+      // as a bare error it lost the result, and the writer then emitted
+      // the shared formula with no `<v>`.
       value = valueText
-      cellType = formula ? "formula" : "error"
-      if (formula) formulaResult = value
+      cellType = formula !== undefined ? "formula" : "error"
+      if (formula !== undefined) {
+        formulaResult = value
+        formulaResultType = "error"
+      }
       break
     }
     case "d": {
@@ -1989,8 +2005,15 @@ function processCell(
       // The value is an instant, not an offset from an epoch, so
       // `date1904` must NOT be applied — unlike the serial path below,
       // where the same day is 1,462 days apart between the two systems.
+      //
+      // Under `dates: "serial"` it becomes the serial for that instant in
+      // the workbook's system, so a caller asking for numbers gets numbers
+      // whichever way the producer stored the date. See #600.
       const parsed = parseIsoCellDate(valueText)
-      if (parsed) {
+      if (parsed && ctx.dates === "serial") {
+        value = dateToSerial(parsed, ctx.dateSystem === "1904")
+        cellType = "number"
+      } else if (parsed) {
         value = parsed
         cellType = "date"
       } else if (valueText !== "") {
@@ -2021,8 +2044,16 @@ function processCell(
 
       const num = Number(valueText)
       if (!Number.isNaN(num) && valueText !== "") {
-        // Check if this is a date via style
-        if (ctx.styles && styleIndex >= 0 && isDateStyle(ctx.styles, styleIndex)) {
+        // Check if this is a date via style — unless the caller asked for
+        // the serial, which a Date cannot always give back: it rounds to
+        // the millisecond and puts serial 60 on the same day as 59. A
+        // formula's cached result follows, so it stays a number too. See #600.
+        if (
+          ctx.dates !== "serial" &&
+          ctx.styles &&
+          styleIndex >= 0 &&
+          isDateStyle(ctx.styles, styleIndex)
+        ) {
           value = serialToDate(num, ctx.dateSystem === "1904")
           cellType = "date"
         } else {
@@ -2080,6 +2111,9 @@ function processCell(
       cell.formula = formula
       if (formulaResult !== undefined) {
         cell.formulaResult = formulaResult
+      }
+      if (formulaResultType !== undefined) {
+        cell.formulaResultType = formulaResultType
       }
       // Store formula type metadata
       if (formulaType === "shared") {

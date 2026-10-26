@@ -11,7 +11,16 @@ import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
 import { readInputToUint8Array } from "../_input"
 import { readCfb } from "../xlsx/crypto/cfb"
 import { isBuiltinDateFormatId, isDateFormat, serialToDate } from "../_date"
-import { decodeRk, parseRecords, parseSst, Reader, SID, type BiffRecord } from "./biff"
+import {
+  decodeChars,
+  decodeRk,
+  parseSst,
+  Reader,
+  RecordCursor,
+  recordStarts,
+  SID,
+  type BiffRecord,
+} from "./biff"
 import { codepageDecoder } from "./codepage"
 
 const ERROR_TEXT: Record<number, string> = {
@@ -40,6 +49,19 @@ export async function readXls(
   input: Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>,
   options?: ReadOptions,
 ): Promise<Workbook> {
+  const stream = await openWorkbookStream(input, options)
+  try {
+    return parseWorkbookRecords(stream, options)
+  } catch (err) {
+    throw asParseError(err)
+  }
+}
+
+/** The container's Workbook (BIFF8) or Book (BIFF5) stream, read whole. */
+export async function openWorkbookStream(
+  input: Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>,
+  options?: ReadOptions,
+): Promise<Uint8Array> {
   const data = await readInputToUint8Array(input, options?.maxInputBytes)
   let streams: Map<string, Uint8Array>
   try {
@@ -51,18 +73,20 @@ export async function readXls(
   }
   const stream = streams.get("Workbook") ?? streams.get("Book")
   if (!stream) throw new ParseError("Invalid XLS: missing Workbook stream")
+  return stream
+}
 
-  // Record parsing reads many length-prefixed binary fields; a truncated or
-  // hostile file can make DataView accessors throw a raw RangeError. Wrap the
-  // whole pass so malformed input surfaces as the library's ParseError.
-  try {
-    return parseWorkbookRecords(stream, options)
-  } catch (err) {
-    if (err instanceof ParseError) throw err
-    throw new ParseError("Failed to parse XLS workbook (malformed or truncated)", undefined, {
-      cause: err,
-    })
-  }
+/**
+ * Record parsing reads many length-prefixed binary fields; a truncated or
+ * hostile file can make DataView accessors throw a raw RangeError. Each
+ * reader wraps its whole pass in this, so malformed input surfaces as the
+ * library's ParseError.
+ */
+export function asParseError(err: unknown): ParseError {
+  if (err instanceof ParseError) return err
+  return new ParseError("Failed to parse XLS workbook (malformed or truncated)", undefined, {
+    cause: err,
+  })
 }
 
 /**
@@ -72,7 +96,7 @@ export async function readXls(
  * length prefix is a u16 on cell text and a u8 on names and format codes
  * in both.
  */
-interface BiffStrings {
+export interface BiffStrings {
   long(r: Reader): string
   short(r: Reader): string
 }
@@ -106,8 +130,9 @@ function biff5Strings(decode: (bytes: Uint8Array) => string): BiffStrings {
  * of the globals pass because the strings that pass decodes — sheet names,
  * format codes — may in principle precede it.
  */
-function findCodepage(records: BiffRecord[]): number | undefined {
-  for (const rec of records) {
+function findCodepage(stream: Uint8Array): number | undefined {
+  const cursor = new RecordCursor(stream)
+  for (let rec = cursor.next(); rec; rec = cursor.next()) {
     if (rec.id === SID.EOF) return undefined
     if (rec.id === SID.CODEPAGE) {
       if (rec.data.length < 2) throw new ParseError("Invalid XLS: CODEPAGE record is too short")
@@ -117,8 +142,45 @@ function findCodepage(records: BiffRecord[]): number | undefined {
   return undefined
 }
 
+/** What the globals substream settles for every sheet: how to read text and dates, and where the sheets are. */
+export interface XlsGlobals {
+  strings: BiffStrings
+  sst: string[]
+  isDate: (ixfe: number) => boolean
+  date1904: boolean
+  boundSheets: Array<{ name: string; pos: number }>
+}
+
 function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbook {
-  const records = parseRecords(stream)
+  const globals = readGlobals(stream, options)
+
+  // ── Sheet substreams ──
+  const starts = recordStarts(
+    stream,
+    globals.boundSheets.map((bs) => bs.pos),
+  )
+  const sheets: Sheet[] = []
+  for (const bs of globals.boundSheets) {
+    if (!starts.has(bs.pos)) {
+      sheets.push({ name: bs.name, rows: [] })
+      continue
+    }
+    sheets.push(
+      parseSheet(
+        new RecordCursor(stream, bs.pos),
+        bs.name,
+        globals,
+        options?.maxTotalCells ?? MAX_TOTAL_CELLS,
+      ),
+    )
+  }
+
+  return { sheets }
+}
+
+/** The globals substream (BOF … first EOF), read once for any reader. */
+export function readGlobals(stream: Uint8Array, options?: ReadOptions): XlsGlobals {
+  const cursor = new RecordCursor(stream)
 
   // ── BIFF version gate ──
   // The first record is the workbook globals BOF; its first u16 is the BIFF
@@ -126,7 +188,7 @@ function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbo
   // are Excel 5.0 and 95 — the same record layout except that strings are
   // code-page bytes and there is no shared-string table. Anything else is
   // rejected rather than misread.
-  const bof = records[0]
+  const bof = cursor.next()
   if (!bof || bof.id !== SID.BOF) {
     throw new ParseError("Invalid XLS: missing BOF record at start of Workbook stream")
   }
@@ -145,28 +207,18 @@ function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbo
   // any string is read, so a bad page fails here rather than mid-sheet.
   const strings: BiffStrings =
     biffVersion === BIFF5
-      ? biff5Strings(
-          codepageDecoder(findCodepage(records) ?? options?.codepage ?? DEFAULT_CODEPAGE),
-        )
+      ? biff5Strings(codepageDecoder(findCodepage(stream) ?? options?.codepage ?? DEFAULT_CODEPAGE))
       : BIFF8_STRINGS
 
-  const offsetToIndex = new Map<number, number>()
-  for (let i = 0; i < records.length; i++) offsetToIndex.set(records[i].offset, i)
-
-  // ── Globals substream (records[0] = BOF … first EOF) ──
+  // ── Globals substream (BOF … first EOF) ──
   let date1904 = options?.dateSystem === "1904"
   const xfFmtIds: number[] = []
   const fmtCodes = new Map<number, string>()
   const boundSheets: Array<{ name: string; pos: number }> = []
   const sst: string[] = []
 
-  let gi = 0
-  for (; gi < records.length; gi++) {
-    const rec = records[gi]
-    if (rec.id === SID.EOF) {
-      gi++
-      break
-    }
+  for (let rec: BiffRecord | undefined = bof; rec; rec = cursor.next()) {
+    if (rec.id === SID.EOF) break
     switch (rec.id) {
       case SID.DATEMODE: {
         if (!options?.dateSystem || options.dateSystem === "auto") {
@@ -199,9 +251,9 @@ function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbo
       case SID.SST: {
         const blocks: Uint8Array[] = [rec.data]
         // Gather trailing CONTINUE records belonging to the SST.
-        for (let j = gi + 1; j < records.length; j++) {
-          if (records[j].id !== SID.CONTINUE) break
-          blocks.push(records[j].data)
+        for (let next = cursor.peek(); next?.id === SID.CONTINUE; next = cursor.peek()) {
+          blocks.push(next.data)
+          cursor.next()
         }
         // A loop, not `push(...parseSst(blocks))`: spreading an array as
         // arguments puts one stack slot per element, so a workbook with a
@@ -230,41 +282,19 @@ function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbo
     return isBuiltinDateFormatId(id)
   })
 
-  const isDate = (ixfe: number): boolean => dateXf[ixfe] === true
+  // Under `dates: "serial"` no format counts as a date, so every number
+  // reads as the serial the file holds — a Date rounds to the
+  // millisecond and puts serial 60 on the same day as 59. See #600.
+  const isDate =
+    options?.dates === "serial" ? () => false : (ixfe: number): boolean => dateXf[ixfe] === true
 
-  // ── Sheet substreams ──
-  const sheets: Sheet[] = []
-  for (const bs of boundSheets) {
-    const startIdx = offsetToIndex.get(bs.pos)
-    if (startIdx === undefined) {
-      sheets.push({ name: bs.name, rows: [] })
-      continue
-    }
-    sheets.push(
-      parseSheet(
-        records,
-        startIdx,
-        bs.name,
-        sst,
-        strings,
-        isDate,
-        date1904,
-        options?.maxTotalCells ?? MAX_TOTAL_CELLS,
-      ),
-    )
-  }
-
-  return { sheets }
+  return { strings, sst, isDate, date1904, boundSheets }
 }
 
 function parseSheet(
-  records: BiffRecord[],
-  startIdx: number,
+  cursor: RecordCursor,
   name: string,
-  sst: string[],
-  strings: BiffStrings,
-  isDate: (ixfe: number) => boolean,
-  date1904: boolean,
+  globals: XlsGlobals,
   cellLimit: number,
 ): Sheet {
   const rows: CellValue[][] = []
@@ -277,16 +307,7 @@ function parseSheet(
   // not. See #363.
   let widestCol = 0
   const setCell = (row: number, col: number, value: CellValue): void => {
-    if (row < 0 || row > MAX_ROW_INDEX) {
-      throw new ParseError(
-        `Cell row ${row} is outside the supported sheet bounds (max ${MAX_ROW_INDEX + 1})`,
-      )
-    }
-    if (col < 0 || col > MAX_COL_INDEX) {
-      throw new ParseError(
-        `Cell column ${col} is outside the supported sheet bounds (max ${MAX_COL_INDEX + 1})`,
-      )
-    }
+    assertInSheetBounds(row, col)
     if (col >= widestCol) widestCol = col + 1
     const boundingBox = Math.max(rows.length, row + 1) * widestCol
     if (boundingBox > cellLimit) {
@@ -297,107 +318,24 @@ function parseSheet(
     }
     let r = rows[row]
     if (!r) r = rows[row] = []
-    while (r.length < col) r.push(null)
-    r[col] = value
-  }
-  const numeric = (row: number, col: number, ixfe: number, n: number): void => {
-    setCell(row, col, isDate(ixfe) ? serialToDate(n, date1904) : n)
+    placeCell(r, col, value)
   }
 
-  for (let i = startIdx + 1; i < records.length; i++) {
-    const rec = records[i]
+  cursor.skip() // the sheet's BOF
+  for (let rec = cursor.next(); rec; rec = cursor.next()) {
     if (rec.id === SID.EOF) break
+    if (rec.id !== SID.MERGECELLS) {
+      decodeCells(rec, cursor, globals, setCell)
+      continue
+    }
     const r = new Reader(rec.data)
-    switch (rec.id) {
-      case SID.LABELSST: {
-        const row = r.u16(),
-          col = r.u16()
-        r.u16() // ixfe
-        setCell(row, col, sst[r.u32()] ?? "")
-        break
-      }
-      case SID.RK: {
-        const row = r.u16(),
-          col = r.u16(),
-          ixfe = r.u16()
-        numeric(row, col, ixfe, decodeRk(r.u32()))
-        break
-      }
-      case SID.NUMBER: {
-        const row = r.u16(),
-          col = r.u16(),
-          ixfe = r.u16()
-        numeric(row, col, ixfe, r.f64())
-        break
-      }
-      case SID.MULRK: {
-        const row = r.u16()
-        const colFirst = r.u16()
-        const count = (rec.data.length - 6) / 6
-        for (let k = 0; k < count; k++) {
-          const ixfe = r.u16()
-          numeric(row, colFirst + k, ixfe, decodeRk(r.u32()))
-        }
-        break
-      }
-      case SID.BOOLERR: {
-        const row = r.u16(),
-          col = r.u16()
-        r.u16() // ixfe
-        const val = r.u8()
-        const isError = r.u8() === 1
-        setCell(row, col, isError ? (ERROR_TEXT[val] ?? "#ERR!") : val !== 0)
-        break
-      }
-      case SID.LABEL:
-      case SID.RSTRING: {
-        // Same head; RSTRING (BIFF5 rich text) trails formatting runs the
-        // value does not carry.
-        const row = r.u16(),
-          col = r.u16()
-        r.u16() // ixfe
-        const text = strings.long(r)
-        if (rec.id === SID.RSTRING) skipBiff5Runs(r)
-        setCell(row, col, text)
-        break
-      }
-      case SID.FORMULA: {
-        const row = r.u16(),
-          col = r.u16(),
-          ixfe = r.u16()
-        const b = rec.data.subarray(r.pos, r.pos + 8)
-        if (b[6] === 0xff && b[7] === 0xff) {
-          const kind = b[0]
-          if (kind === 1)
-            setCell(row, col, b[2] !== 0) // boolean
-          else if (kind === 2)
-            setCell(row, col, ERROR_TEXT[b[2]] ?? "#ERR!") // error
-          else if (kind === 0) {
-            // string: value is in the following STRING record
-            const next = records[i + 1]
-            if (next && next.id === SID.STRING)
-              setCell(row, col, strings.long(new Reader(next.data)))
-          }
-          // kind === 3 → blank/empty
-        } else {
-          const num = new DataView(b.buffer, b.byteOffset, 8).getFloat64(0, true)
-          numeric(row, col, ixfe, num)
-        }
-        break
-      }
-      case SID.MERGECELLS: {
-        const cmcs = r.u16()
-        for (let k = 0; k < cmcs; k++) {
-          const rwFirst = r.u16(),
-            rwLast = r.u16(),
-            colFirst = r.u16(),
-            colLast = r.u16()
-          merges.push({ startRow: rwFirst, endRow: rwLast, startCol: colFirst, endCol: colLast })
-        }
-        break
-      }
-      default:
-        break
+    const cmcs = r.u16()
+    for (let k = 0; k < cmcs; k++) {
+      const rwFirst = r.u16(),
+        rwLast = r.u16(),
+        colFirst = r.u16(),
+        colLast = r.u16()
+      merges.push({ startRow: rwFirst, endRow: rwLast, startCol: colFirst, endCol: colLast })
     }
   }
 
@@ -413,6 +351,125 @@ function parseSheet(
   const sheet: Sheet = { name, rows }
   if (merges.length > 0) sheet.merges = merges
   return sheet
+}
+
+/** BIFF rows and columns are u16s; the model is narrower, and a cell past it is refused, not dropped. */
+export function assertInSheetBounds(row: number, col: number): void {
+  if (row < 0 || row > MAX_ROW_INDEX) {
+    throw new ParseError(
+      `Cell row ${row} is outside the supported sheet bounds (max ${MAX_ROW_INDEX + 1})`,
+    )
+  }
+  if (col < 0 || col > MAX_COL_INDEX) {
+    throw new ParseError(
+      `Cell column ${col} is outside the supported sheet bounds (max ${MAX_COL_INDEX + 1})`,
+    )
+  }
+}
+
+/** Write `value` at `col`, padding the row with nulls up to it. */
+export function placeCell(row: CellValue[], col: number, value: CellValue): void {
+  while (row.length < col) row.push(null)
+  row[col] = value
+}
+
+/**
+ * The cells one record carries, each handed to `set` in the record's own
+ * order — every reader decodes values here, so they cannot drift apart.
+ * Records that carry no value (BLANK, MERGECELLS, formatting) pass through.
+ * A string formula's cached value is in the STRING record after it, which
+ * `cursor` still points at.
+ */
+export function decodeCells(
+  rec: BiffRecord,
+  cursor: RecordCursor,
+  globals: XlsGlobals,
+  set: (row: number, col: number, value: CellValue) => void,
+): void {
+  const { sst, strings, isDate, date1904 } = globals
+  const numeric = (row: number, col: number, ixfe: number, n: number): void => {
+    set(row, col, isDate(ixfe) ? serialToDate(n, date1904) : n)
+  }
+  const r = new Reader(rec.data)
+  switch (rec.id) {
+    case SID.LABELSST: {
+      const row = r.u16(),
+        col = r.u16()
+      r.u16() // ixfe
+      set(row, col, sst[r.u32()] ?? "")
+      break
+    }
+    case SID.RK: {
+      const row = r.u16(),
+        col = r.u16(),
+        ixfe = r.u16()
+      numeric(row, col, ixfe, decodeRk(r.u32()))
+      break
+    }
+    case SID.NUMBER: {
+      const row = r.u16(),
+        col = r.u16(),
+        ixfe = r.u16()
+      numeric(row, col, ixfe, r.f64())
+      break
+    }
+    case SID.MULRK: {
+      const row = r.u16()
+      const colFirst = r.u16()
+      const count = (rec.data.length - 6) / 6
+      for (let k = 0; k < count; k++) {
+        const ixfe = r.u16()
+        numeric(row, colFirst + k, ixfe, decodeRk(r.u32()))
+      }
+      break
+    }
+    case SID.BOOLERR: {
+      const row = r.u16(),
+        col = r.u16()
+      r.u16() // ixfe
+      const val = r.u8()
+      const isError = r.u8() === 1
+      set(row, col, isError ? (ERROR_TEXT[val] ?? "#ERR!") : val !== 0)
+      break
+    }
+    case SID.LABEL:
+    case SID.RSTRING: {
+      // Same head; RSTRING (BIFF5 rich text) trails formatting runs the
+      // value does not carry.
+      const row = r.u16(),
+        col = r.u16()
+      r.u16() // ixfe
+      const text = strings.long(r)
+      if (rec.id === SID.RSTRING) skipBiff5Runs(r)
+      set(row, col, text)
+      break
+    }
+    case SID.FORMULA: {
+      const row = r.u16(),
+        col = r.u16(),
+        ixfe = r.u16()
+      const b = rec.data.subarray(r.pos, r.pos + 8)
+      if (b[6] === 0xff && b[7] === 0xff) {
+        const kind = b[0]
+        if (kind === 1)
+          set(row, col, b[2] !== 0) // boolean
+        else if (kind === 2)
+          set(row, col, ERROR_TEXT[b[2]] ?? "#ERR!") // error
+        else if (kind === 0) {
+          // string: value is in the following STRING record
+          const next = cursor.peek()
+          if (next && next.id === SID.STRING) set(row, col, strings.long(new Reader(next.data)))
+        }
+        // kind === 3 → blank/empty
+      } else {
+        const num = new DataView(b.buffer, b.byteOffset, 8).getFloat64(0, true)
+        numeric(row, col, ixfe, num)
+      }
+      break
+    }
+    default:
+      break
+  }
 }
 
 /**
@@ -449,6 +506,15 @@ function readShortString(r: Reader): string {
 function readChars(r: Reader, cch: number): string {
   const grbit = r.u8()
   const compressed = (grbit & 0x01) === 0
+  const bytes = compressed ? cch : cch * 2
+  if (bytes <= r.remaining()) {
+    const s = decodeChars(r.buf, r.pos, cch, compressed)
+    r.skip(bytes)
+    return s
+  }
+  // A string running past its record — truncated, or a long formula result
+  // continued into a CONTINUE record, which is not followed here — reads
+  // as it always has, a character at a time.
   let s = ""
   for (let i = 0; i < cch; i++) s += String.fromCharCode(compressed ? r.u8() : r.u16())
   return s

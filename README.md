@@ -138,6 +138,7 @@ const wb = await readXlsx(uint8Array, {
   sheets: [0, "Products"], // Filter sheets by index or name
   readStyles: true, // Parse cell styles
   dateSystem: "auto", // Auto-detect 1900/1904
+  dates: "date", // Or "serial" to keep date-formatted numbers as numbers
 })
 
 for (const sheet of wb.sheets) {
@@ -336,6 +337,7 @@ Process large files row-by-row without loading everything into memory:
 
 ```ts
 import {
+  streamXlsRows,
   streamXlsxRows,
   writeXlsxStream,
   writeXlsxStreamSheets,
@@ -372,6 +374,15 @@ for await (const row of streamXlsxRows(buffer, { maxRows: 100 })) {
 for await (const row of streamXlsxRows(buffer, { range: "B2:D1000" })) {
   // row.values[0] === null (column A is outside)
   // row.values[1..3] carry B/C/D
+}
+
+// Legacy .xls streams the same way, with the same `sheet`, `range` and
+// `maxRows`. The file is read whole — a CFB container needs random
+// access — and a sheet whose cells come in row order is never held
+// whole; one whose records go back a row is buffered, under
+// `maxTotalCells`, and yielded in order.
+for await (const row of streamXlsRows(xlsBytes, { sheet: "Data" })) {
+  console.log(row.index, row.values)
 }
 
 // Stream write — the workbook is emitted as bytes while rows are pulled
@@ -730,6 +741,9 @@ const cyrillic = await readXls(bytes, { codepage: 1251 })
 Decodes the shared-string table (with CONTINUE spanning), RK / MULRK /
 number / boolean / error cells, labels, cached formula values, dates, and
 merged cells. Read-only.
+
+For a sheet too large to hold as a workbook, `streamXlsRows` yields the
+same values a row at a time — see [Streaming](#streaming).
 
 Both legacy readers surface sheet names, cell values, and merges — and
 nothing else. Formulas arrive as their **cached value**, never as formula
@@ -1975,6 +1989,18 @@ instant to map to, so `serialToDate(60)` and `serialToDate(59)` both give
 that actually contains serial 60 therefore shifts by a day on rewrite.
 Excel produces it only for files inherited from Lotus.
 
+When you need the number the cell holds — serial 60 intact, no
+millisecond rounding, a time as a fraction of a day — read with
+`dates: "serial"`. The cell is then typed `"number"`, and its format is
+still on the style for `isDateFormat`:
+
+```ts
+const wb = await readXlsx(bytes, { dates: "serial", readStyles: true })
+const cell = wb.sheets[0].cells?.get("0,0")
+cell?.value // 45306.123456789, not a Date
+isDateFormat(cell?.style?.numFmt ?? "") // true
+```
+
 ## Platform Support
 
 hucre works everywhere — no Node.js APIs (`fs`, `crypto`, `Buffer`) in core.
@@ -2042,6 +2068,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `openXlsx(input, options?)`        | Open for round-trip (preserves unknown parts)                                           |
 | `saveXlsx(workbook)`               | Save round-trip workbook back to XLSX                                                   |
 | `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time                                              |
+| `streamXlsRows(input, options?)`   | The same for a legacy `.xls` sheet (BIFF5/BIFF8)                                        |
 | `writeXlsxStream(rows, options)`   | Constant-memory XLSX writing — returns a `ReadableStream<Uint8Array>`                   |
 | `toWriteOptions(workbook, opts?)`  | Convert a read `Workbook` into `WriteOptions`; `onDrop` reports what it could not carry |
 | `XlsxStreamWriter`                 | Incremental XLSX writing (`addRow`/`addObject`); auto-splits past `maxRowsPerSheet`     |

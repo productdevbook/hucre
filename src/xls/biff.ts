@@ -45,22 +45,74 @@ export const SID = {
   BOF: 0x0809,
 } as const
 
-/** Parse a stream into records, recording each one's byte offset. */
-export function parseRecords(stream: Uint8Array): BiffRecord[] {
-  const out: BiffRecord[] = []
-  const view = new DataView(stream.buffer, stream.byteOffset, stream.byteLength)
-  let pos = 0
-  while (pos + 4 <= stream.length) {
-    const id = view.getUint16(pos, true)
-    const len = view.getUint16(pos + 2, true)
-    const start = pos
-    pos += 4
-    out.push({ id, data: stream.subarray(pos, pos + len), offset: start })
-    pos += len
-    // A zero id past real data means padding — stop.
-    if (id === 0 && len === 0) break
+/**
+ * Walks a stream's records in place, one at a time.
+ *
+ * The reader used to materialize every record before decoding the first:
+ * an object and a view apiece, ~155 bytes each, and a map from offset to
+ * index on top. A 17 MB workbook is ~960k records, so that was ~150 MB
+ * held for the whole read. Framing is unchanged — a record running past
+ * the end of the stream is cut short, and a zero id with a zero length is
+ * padding that ends it.
+ */
+export class RecordCursor {
+  private view: DataView
+  private ended = false
+
+  constructor(
+    private stream: Uint8Array,
+    private pos = 0,
+  ) {
+    this.view = new DataView(stream.buffer, stream.byteOffset, stream.byteLength)
   }
-  return out
+
+  /** Move past the record at the cursor and return its offset, or -1 at the end. */
+  skip(): number {
+    if (this.ended || this.pos + 4 > this.stream.length) return -1
+    const offset = this.pos
+    const id = this.view.getUint16(offset, true)
+    const len = this.view.getUint16(offset + 2, true)
+    this.pos = offset + 4 + len
+    // A zero id past real data means padding — stop.
+    if (id === 0 && len === 0) this.ended = true
+    return offset
+  }
+
+  next(): BiffRecord | undefined {
+    const offset = this.skip()
+    if (offset < 0) return undefined
+    const len = this.view.getUint16(offset + 2, true)
+    return {
+      id: this.view.getUint16(offset, true),
+      data: this.stream.subarray(offset + 4, offset + 4 + len),
+      offset,
+    }
+  }
+
+  /** The record `next` would return, without moving past it. */
+  peek(): BiffRecord | undefined {
+    const { pos, ended } = this
+    const rec = this.next()
+    this.pos = pos
+    this.ended = ended
+    return rec
+  }
+}
+
+/**
+ * Which of `offsets` begin a record. A BOUNDSHEET names its sheet by the
+ * byte offset of the sheet's BOF, and one landing inside a record — a
+ * damaged file — has always read as an empty sheet rather than as records
+ * taken out of phase.
+ */
+export function recordStarts(stream: Uint8Array, offsets: Iterable<number>): Set<number> {
+  const wanted = new Set(offsets)
+  const found = new Set<number>()
+  const cursor = new RecordCursor(stream)
+  for (let at = cursor.skip(); at >= 0 && found.size < wanted.size; at = cursor.skip()) {
+    if (wanted.has(at)) found.add(at)
+  }
+  return found
 }
 
 /** Little-endian cursor over a record body. */
@@ -101,6 +153,43 @@ export class Reader {
   remaining(): number {
     return this.buf.length - this.pos
   }
+}
+
+/** The most characters handed to one `String.fromCharCode` call. */
+const CHARS_PER_CALL = 8192
+
+/**
+ * `count` characters from `start`: a byte each when compressed (the byte
+ * is the code point), else UTF-16LE code units. The caller guarantees the
+ * bytes are there.
+ *
+ * Built a character at a time with `+=`, a string is a rope, one node per
+ * character until something flattens it, and nothing in a read did. A
+ * workbook's 2.3 million shared characters held ~70 MB that way, against
+ * ~7 MB decoded flat. TextDecoder would be wrong twice over: the Encoding
+ * Standard maps "latin1" to windows-1252, which moves 0x80–0x9F, and
+ * "utf-16le" turns a lone surrogate into U+FFFD — which is what each half
+ * of a pair becomes when a CONTINUE boundary splits it.
+ */
+export function decodeChars(
+  buf: Uint8Array,
+  start: number,
+  count: number,
+  compressed: boolean,
+): string {
+  const units = compressed ? buf.subarray(start, start + count) : utf16Units(buf, start, count)
+  if (units.length <= CHARS_PER_CALL) return String.fromCharCode(...units)
+  const parts: string[] = []
+  for (let i = 0; i < units.length; i += CHARS_PER_CALL) {
+    parts.push(String.fromCharCode(...units.subarray(i, i + CHARS_PER_CALL)))
+  }
+  return parts.join("")
+}
+
+function utf16Units(buf: Uint8Array, start: number, count: number): Uint16Array {
+  const units = new Uint16Array(count)
+  for (let i = 0, p = start; i < count; i++, p += 2) units[i] = buf[p] | (buf[p + 1] << 8)
+  return units
 }
 
 /** Decode an RK number (MS-XLS §2.5.166). */
@@ -171,6 +260,12 @@ class BlockStream {
     this.pos += 4
     return v
   }
+  /** `count` characters from the current block, which holds them all. */
+  chars(count: number, compressed: boolean): string {
+    const s = decodeChars(this.cur(), this.pos, count, compressed)
+    this.pos += compressed ? count : count * 2
+    return s
+  }
   skip(n: number): void {
     // skip may cross blocks (rich/phonetic trailers), no grbit byte
     let left = n
@@ -224,6 +319,7 @@ function readSstString(s: BlockStream): string {
   const cRun = rich ? s.u16() : 0
   const cbExt = phonetic ? s.u32() : 0
 
+  // A block's worth of characters at a time — see decodeChars.
   let str = ""
   let read = 0
   while (read < cch) {
@@ -234,8 +330,17 @@ function readSstString(s: BlockStream): string {
       grbit = s.u8()
       compressed = (grbit & 0x01) === 0
     }
-    str += String.fromCharCode(compressed ? s.u8() : s.u16())
-    read++
+    const fit = compressed ? s.remainingInBlock() : s.remainingInBlock() >> 1
+    if (fit > 0) {
+      const take = Math.min(cch - read, fit)
+      str += s.chars(take, compressed)
+      read += take
+    } else {
+      // A two-byte character straddling the end of a block is malformed;
+      // it reads exactly as it always has.
+      str += String.fromCharCode(compressed ? s.u8() : s.u16())
+      read++
+    }
   }
   if (rich) s.skip(cRun * 4)
   if (phonetic) s.skip(cbExt)

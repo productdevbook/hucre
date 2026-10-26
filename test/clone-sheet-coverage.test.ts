@@ -30,7 +30,10 @@ const FULL_CELL: Required<Cell> = {
   style: { font: { bold: true }, numFmt: "0.00" },
   checkbox: true,
   formula: "",
-  formulaResult: 42,
+  // A string, because `formulaResultType: "error"` only means anything
+  // on one — an error token is text. See #599.
+  formulaResult: "#DIV/0!",
+  formulaResultType: "error",
   formulaType: "shared",
   formulaSharedIndex: 3,
   formulaRef: "A1:A9",

@@ -40,7 +40,37 @@ describe("CFB container", () => {
     expect([...streams.get("EncryptionInfo")!]).toEqual([...small])
     expect([...streams.get("EncryptedPackage")!]).toEqual([...big])
   })
+
+  // The header names 109 FAT sectors, enough for 109 × 128 sectors of 512
+  // bytes — just under 7 MB. A larger container lists the rest of its FAT
+  // in DIFAT sectors, which the writer never wrote: what it produced read
+  // back cut off at 7,143,936 bytes, whatever had gone in.
+  it.each([
+    ["one DIFAT sector", 8 * 1024 * 1024, 1],
+    ["two chained DIFAT sectors", 16 * 1024 * 1024, 2],
+  ])("round-trips a stream whose FAT needs %s", (_, size, difatSectors) => {
+    const data = patterned(size)
+    const file = writeCfb([{ name: "EncryptedPackage", data }])
+
+    const back = readCfb(file).get("EncryptedPackage")!
+    expect(back.length).toBe(data.length)
+    expect(firstDifference(back, data)).toBe(-1)
+    expect(new DataView(file.buffer).getUint32(72, true)).toBe(difatSectors)
+  })
 })
+
+/** Bytes that differ from sector to sector, so a misordered chain cannot read back equal. */
+function patterned(size: number): Uint8Array {
+  const out = new Uint8Array(size)
+  for (let i = 0; i < size; i++) out[i] = (i * 31 + (i >> 9)) & 0xff
+  return out
+}
+
+/** The first index at which the two differ, or -1; cheaper than a deep equal at this size. */
+function firstDifference(a: Uint8Array, b: Uint8Array): number {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return i
+  return -1
+}
 
 describe("agile crypto primitive", () => {
   it("encrypt → decrypt recovers arbitrary bytes", async () => {
@@ -88,7 +118,44 @@ describe("writeXlsx encryption ↔ readXlsx decryption", () => {
     const enc = await writeXlsx({ ...book(), encryption: { password: "pw", spinCount: 64 } })
     await expect(readXlsx(enc, { password: "nope" })).rejects.toBeInstanceOf(DecryptionError)
   })
+
+  // A package past the ~7 MB the CFB header's own FAT list can map: it was
+  // written, and reading it back failed with "Not a valid encrypted
+  // workbook container". Random text barely compresses, so 80k cells of it
+  // make a package of ~8.6 MB.
+  it(
+    "round-trips a workbook whose encrypted package is over 7 MB",
+    { timeout: 30_000 },
+    async () => {
+      const rows = noiseRows(80_000, 128)
+      const enc = await writeXlsx({
+        sheets: [{ name: "Sheet1", rows }],
+        encryption: { password: "pw", spinCount: 64 },
+      })
+      expect(enc.length).toBeGreaterThan(7_500_000)
+
+      const wb = await readXlsx(enc, { password: "pw" })
+      expect(wb.sheets[0].rows).toHaveLength(rows.length)
+      expect(wb.sheets[0].rows.at(-1)).toEqual(rows.at(-1))
+    },
+  )
 })
+
+/** Rows of one cell of pseudo-random text each — deterministic, and nearly incompressible. */
+function noiseRows(count: number, width: number): CellValue[][] {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  let seed = 1
+  const rows: CellValue[][] = []
+  for (let r = 0; r < count; r++) {
+    let text = ""
+    for (let i = 0; i < width; i++) {
+      seed = (Math.imul(seed, 1103515245) + 12345) >>> 0
+      text += alphabet[seed >>> 26]
+    }
+    rows.push([text])
+  }
+  return rows
+}
 
 describe("decryption across the read entry points", () => {
   it("read() auto-detects and decrypts", async () => {

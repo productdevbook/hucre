@@ -215,8 +215,31 @@ export interface Cell {
    * raw `TRUE`/`FALSE` value.
    */
   checkbox?: boolean
+  /**
+   * Formula text in the form the file stores it. Functions newer than
+   * Excel 2007 are stored with a prefix (`_xlfn.XLOOKUP`,
+   * `_xlfn._xlws.FILTER`) that Excel hides in the formula bar. The writer
+   * adds it, so `XLOOKUP(…)` and `_xlfn.XLOOKUP(…)` write the same file,
+   * and a read hands back the prefixed form (#597). Conditional
+   * formatting, data validation, table total and defined name formulas
+   * are treated the same way, and so are the names LET and LAMBDA bind,
+   * stored as `_xlpm.x` (`_xlop.x` for an optional `[x]` parameter).
+   */
   formula?: string
   formulaResult?: CellValue
+  /**
+   * `"error"` when the cached {@link formulaResult} is an error token
+   * (`t="e"`) rather than text (`t="str"`). Both hold a string, and
+   * `#DIV/0!` is a perfectly good text result too, so the value alone
+   * cannot tell them apart (ECMA-376 Part 1, §18.18.11 ST_CellType).
+   * See #599.
+   *
+   * The reader sets it only on a formula cell whose cached result is an
+   * error; it is absent otherwise. The writer honours it only when
+   * `formulaResult` is a string — an error token is always text — and
+   * writes any other `formulaResult` as it would without it.
+   */
+  formulaResultType?: "error"
   /** Formula type: "shared" | "array". Undefined means normal formula. */
   formulaType?: "shared" | "array"
   /** Shared formula index (si attribute) */
@@ -349,7 +372,12 @@ export interface ConditionalRule {
       type: "min" | "max" | "num" | "percent" | "percentile"
       value?: string
     }>
-    colors: string[] // hex ARGB colors like "FF63BE7B"
+    /**
+     * Hex colours, one per cfvo: ARGB like `"FF63BE7B"`, or 6-digit RGB like
+     * `"63BE7B"`, which is written with an `FF` alpha prefix and so reads
+     * back as `"FF63BE7B"`.
+     */
+    colors: string[]
   }
   /** Data bar configuration */
   dataBar?: {
@@ -357,6 +385,11 @@ export interface ConditionalRule {
       type: "min" | "max" | "num" | "percent" | "percentile"
       value?: string
     }>
+    /**
+     * Bar colour: ARGB like `"FF638EC6"`, or 6-digit RGB like `"638EC6"`,
+     * which is written with an `FF` alpha prefix and so reads back as
+     * `"FF638EC6"`.
+     */
     color: string
   }
   /** Icon set configuration */
@@ -409,7 +442,12 @@ export interface SplitPane {
 
 export interface NamedRange {
   name: string
-  /** Cell range reference (e.g. "Sheet1!$A$1:$D$10") */
+  /**
+   * Cell range reference (e.g. "Sheet1!$A$1:$D$10"), or any formula a
+   * defined name can hold. Newer functions get their `_xlfn.` prefix on
+   * write, and a named LAMBDA's parameters their `_xlpm.`, as in
+   * `Cell.formula` (#597).
+   */
   range: string
   /** Scope: undefined = workbook level, string = sheet name */
   scope?: string
@@ -476,8 +514,15 @@ export type PaperSizeName =
 export interface PageSetup {
   paperSize?: PaperSize
   orientation?: "portrait" | "landscape"
+  /**
+   * Scale the sheet to fit `fitToWidth` × `fitToHeight` pages instead of
+   * printing at `scale`. The writer turns this on when either count is
+   * set; pass `false` to keep the counts out of the file.
+   */
   fitToPage?: boolean
+  /** Pages wide to fit the sheet to. `0` means as many as needed. Implies `fitToPage`. */
   fitToWidth?: number
+  /** Pages tall to fit the sheet to. `0` means as many as needed. Implies `fitToPage`. */
   fitToHeight?: number
   scale?: number
   margins?: PageMargins
@@ -661,15 +706,24 @@ export interface ThreadedComment {
 export interface SheetImage {
   data: Uint8Array
   type: "png" | "jpeg" | "gif" | "svg" | "webp"
-  /** Anchor to cell */
+  /**
+   * Anchor to cell. With `to`, the image is written as a `twoCellAnchor`
+   * and stretched to fill `from`–`to` ("Move and size with cells"). Without
+   * it, the image is written as a `oneCellAnchor` at `from`, sized by
+   * `width` / `height` ("Move but don't size with cells"), and reads back
+   * without a `to`. See #598.
+   */
   anchor: {
     from: { row: number; col: number }
     to?: { row: number; col: number }
   }
   /**
-   * Rendered size in pixels at 96 DPI, stored as EMU in the drawing's
-   * `<a:ext>`. Absent on write means the writer's own default size, which
-   * is then what the reader reports — a file records a size either way.
+   * Rendered size in pixels at 96 DPI, stored as EMU in the picture's
+   * `<a:ext>` and, without `anchor.to`, in the `oneCellAnchor`'s own
+   * `<xdr:ext>`, which is what sets the size there. Absent on write means
+   * the writer's own default size, which is then what the reader reports —
+   * a file records a size either way. With `anchor.to`, Excel and
+   * LibreOffice size the image from the cells instead (#598).
    */
   width?: number
   height?: number
@@ -1524,6 +1578,7 @@ export type SheetFilter = (info: SheetFilterInfo, index: number) => boolean
  * | ------------ | ---- | --- | ---- | --- |
  * | `sheets`     | yes  | yes | no   | no  |
  * | `dateSystem` | yes  | no  | yes  | yes |
+ * | `dates`      | yes  | no  | yes  | yes |
  * | `readStyles` | yes  | yes | no   | no  |
  * | `password`   | yes  | no  | yes  | no  |
  * | `maxRows`    | yes  | no  | no   | no  |
@@ -1549,6 +1604,34 @@ export interface ReadOptions {
   sheets?: Array<number | string> | SheetFilter
   /** Date system override. Default: auto-detect from file */
   dateSystem?: "1900" | "1904" | "auto"
+  /**
+   * How a date-formatted number is returned. Default: `"date"`.
+   *
+   * - `"date"` — a JS `Date`, with `type: "date"`.
+   * - `"serial"` — the number the file holds, with `type: "number"`.
+   *
+   * A `Date` cannot always be turned back into what the cell held. The
+   * conversion rounds to the millisecond, so 45306.123456789 comes back
+   * through `dateToSerial` as 45306.123456794; serial 60, the Lotus
+   * phantom 29 February 1900, reads as the same `Date` as 59; and a
+   * time-only format yields a `Date` on the epoch day when the cell holds
+   * a fraction of a day. `"serial"` is for callers who want the number —
+   * to compare, do arithmetic, or format it themselves. See #600.
+   *
+   * The number format is still on the style (with `readStyles`), so
+   * `isDateFormat(cell.style.numFmt)` says which numbers were dates. A
+   * stored serial is returned as is, so it counts from the workbook's
+   * own epoch, 1900 or 1904 (`readXlsx` reports which in
+   * `Workbook.dateSystem`).
+   *
+   * A `t="d"` XLSX cell, which stores ISO text rather than a serial, is
+   * converted with `dateToSerial` against that same epoch (or the
+   * {@link dateSystem} override), so every date in a workbook reads the
+   * same way whichever form the producer wrote. ODS stores dates only as
+   * ISO text, so the option does not apply there and it always returns a
+   * `Date`.
+   */
+  dates?: "date" | "serial"
   /**
    * Whether to read styles. Default: false (faster without).
    *
@@ -1677,6 +1760,16 @@ export interface WriteOptions {
   sheets: WriteSheet[]
   properties?: WorkbookProperties
   namedRanges?: NamedRange[]
+  /**
+   * Default font for the workbook, written as `fonts[0]`. Default:
+   * Calibri 11.
+   *
+   * A cell's font does not layer on it in the file, so a cell font that
+   * leaves out `name` or `size` is written with this font's. A name taken
+   * from here brings its `family`, `charset` and `scheme` along; colour and
+   * the other parts are not inherited. Conditional formatting styles are
+   * written as given. See #594.
+   */
   defaultFont?: FontStyle
   dateSystem?: "1900" | "1904"
   /** Active sheet index (0-based). Default: 0 */
@@ -1690,6 +1783,8 @@ export interface WriteOptions {
   /** String storage mode. Default: "shared"
    *  - "shared": shared string table (smaller files with repeated strings)
    *  - "inline": inline strings per cell (faster write, larger files)
+   *
+   *  Rich text follows the same choice (#602).
    */
   stringMode?: "shared" | "inline"
   /** VBA project binary (vbaProject.bin) to embed. Output becomes macro-enabled (.xlsm). */

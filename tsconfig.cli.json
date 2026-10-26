@@ -32,7 +32,8 @@
     "test/indexed-color-palette.test.ts",
     "test/ods-column-default-style.test.ts",
     "test/write-model.test.ts",
-    "test/builder-coverage.test.ts"
+    "test/builder-coverage.test.ts",
+    "test/read-dates-serial.test.ts"
   ],
   "exclude": []
 }

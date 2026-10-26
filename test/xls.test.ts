@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest"
 import { writeCfb } from "../src/xlsx/crypto/cfb"
 import { readXls } from "../src/xls/reader"
+import { streamXlsRows } from "../src/xls/stream-reader"
 import { read } from "../src/defter"
+import { ParseError } from "../src/errors"
+import { expectStreamMatchesReadXls, streamed } from "./_xls-stream"
 
 // ── Minimal BIFF8 .xls builder (test-only) ───────────────────────────
 
@@ -39,6 +42,7 @@ const rkInt = (v: number): number[] => u32(((v << 2) | 2) >>> 0)
 const SID = {
   FORMULA: 0x0006,
   EOF: 0x000a,
+  CONTINUE: 0x003c,
   DATEMODE: 0x0022,
   FORMAT: 0x041e,
   NUMBER: 0x0203,
@@ -51,6 +55,7 @@ const SID = {
   XF: 0x00e0,
   BOUNDSHEET: 0x0085,
   MERGECELLS: 0x00e5,
+  BLANK: 0x0201,
   BOF: 0x0809,
 }
 
@@ -228,6 +233,113 @@ describe("XLS (BIFF8) reader", () => {
     const stream = concat([bof3, eof()])
     const data = writeCfb([{ name: "Workbook", data: stream }])
     await expect(readXls(data)).rejects.toThrow(/BIFF 0x300/)
+  })
+})
+
+// ── Strings decoded a run at a time ──────────────────────────────────
+// Text is decoded a record's worth of characters at a time, not one by
+// one. Excel splits a long shared string wherever its record fills, and
+// each CONTINUE that resumes one restarts with its own flag byte, so a
+// string can change width mid-way and a surrogate pair can be cut in two.
+// These pass on main as well: they pin what the faster path must keep.
+
+const latin = (s: string): number[] => [...s].map((c) => c.charCodeAt(0))
+function utf16(s: string): number[] {
+  const out: number[] = []
+  for (let i = 0; i < s.length; i++) out.push(...u16(s.charCodeAt(i)))
+  return out
+}
+const generalXf = (): number[] =>
+  record(SID.XF, [...u16(0), ...u16(0), ...Array.from({ length: 16 }, () => 0)])
+
+/** One sheet after the given globals records, its BOUNDSHEET pointing at it. */
+function oneSheetXls(globals: number[][], sheet: number[][], sheetName = "Sheet1"): Uint8Array {
+  const makeGlobals = (sheetPos: number): Uint8Array =>
+    concat([
+      bof(0x0005),
+      ...globals,
+      record(SID.BOUNDSHEET, [...u32(sheetPos), 0, 0, ...shortStr(sheetName)]),
+      eof(),
+    ])
+  const globalsStream = makeGlobals(makeGlobals(0).length)
+  return writeCfb([
+    { name: "Workbook", data: concat([globalsStream, bof(0x0010), ...sheet, eof()]) },
+  ])
+}
+
+describe("XLS (BIFF8) strings", () => {
+  it("joins a shared string's runs across CONTINUE records, whatever their width", async () => {
+    // 100 one-byte characters in the SST record, a CONTINUE record full of
+    // them (more than one String.fromCharCode call takes), then a switch
+    // to UTF-16 for the rest. The next string's surrogate pair straddles
+    // the following boundary.
+    const head = "A".repeat(100)
+    const middle = "B".repeat(8223)
+    const tail = "Ж".repeat(1677)
+    const emoji = "ab😀cd"
+    const xls = oneSheetXls(
+      [
+        generalXf(),
+        record(SID.SST, [...u32(3), ...u32(3), ...u16(10_000), 0, ...latin(head)]),
+        record(SID.CONTINUE, [0, ...latin(middle)]),
+        record(SID.CONTINUE, [
+          1,
+          ...utf16(tail),
+          ...u16(emoji.length),
+          1,
+          ...utf16(emoji.slice(0, 3)),
+        ]),
+        record(SID.CONTINUE, [1, ...utf16(emoji.slice(3)), ...u16(3), 0, ...latin("end")]),
+      ],
+      [0, 1, 2].map((i) => record(SID.LABELSST, [...u16(0), ...u16(i), ...u16(0), ...u32(i)])),
+    )
+
+    const wb = await readXls(xls)
+
+    expect(wb.sheets[0].rows[0]).toEqual([head + middle + tail, emoji, "end"])
+  })
+
+  it("reads inline text in either width, longer than one String.fromCharCode call takes", async () => {
+    const long = "x".repeat(8200)
+    const xls = oneSheetXls(
+      [generalXf()],
+      [
+        record(SID.LABEL, [...u16(0), ...u16(0), ...u16(0), ...xlStr(long)]),
+        record(SID.LABEL, [...u16(0), ...u16(1), ...u16(0), ...u16(5), 1, ...utf16("Ωmega")]),
+      ],
+    )
+
+    const wb = await readXls(xls)
+
+    expect(wb.sheets[0].rows[0]).toEqual([long, "Ωmega"])
+  })
+})
+
+describe("XLS (BIFF8) sheet offsets", () => {
+  it("reads a sheet whose BOUNDSHEET offset misses a record boundary as empty", async () => {
+    // The offset is the only link from a BOUNDSHEET to its sheet. Records
+    // are walked in place now rather than indexed by offset, and one that
+    // lands inside a record still means no rows, not records out of phase.
+    const makeGlobals = (sheetPos: number): Uint8Array =>
+      concat([
+        bof(0x0005),
+        generalXf(),
+        record(SID.BOUNDSHEET, [...u32(sheetPos), 0, 0, ...shortStr("Good")]),
+        record(SID.BOUNDSHEET, [...u32(sheetPos + 2), 0, 0, ...shortStr("Off")]),
+        eof(),
+      ])
+    const globals = makeGlobals(makeGlobals(0).length)
+    const sheet = concat([
+      bof(0x0010),
+      record(SID.LABEL, [...u16(0), ...u16(0), ...u16(0), ...xlStr("Hi")]),
+      eof(),
+    ])
+
+    const wb = await readXls(writeCfb([{ name: "Workbook", data: concat([globals, sheet]) }]))
+
+    expect(wb.sheets.map((s) => s.name)).toEqual(["Good", "Off"])
+    expect(wb.sheets[0].rows).toEqual([["Hi"]])
+    expect(wb.sheets[1].rows).toEqual([])
   })
 })
 
@@ -425,5 +537,173 @@ describe("XLS (BIFF5) reader", () => {
     const wb = await read(buildXls5({ codepage: 1251 }))
 
     expect(wb.sheets[0].rows[0][0]).toBe("Видаткова накладна")
+  })
+})
+
+// ── streamXlsRows ────────────────────────────────────────────────────
+// The stream decodes values with readXls's own code, so most of what
+// follows is about shape: which sheet, which rows, in what order, and
+// when it stops reading.
+
+const label = (row: number, col: number, text: string): number[] =>
+  record(SID.LABEL, [...u16(row), ...u16(col), ...u16(0), ...xlStr(text)])
+
+/** Two sheets, each holding its own name in A1. */
+function twoSheetXls(): Uint8Array {
+  const sheets = ["First", "Second"].map((name) => concat([bof(0x0010), label(0, 0, name), eof()]))
+  const makeGlobals = (firstPos: number): Uint8Array =>
+    concat([
+      bof(0x0005),
+      generalXf(),
+      record(SID.BOUNDSHEET, [...u32(firstPos), 0, 0, ...shortStr("First")]),
+      record(SID.BOUNDSHEET, [...u32(firstPos + sheets[0].length), 0, 0, ...shortStr("Second")]),
+      eof(),
+    ])
+  const globals = makeGlobals(makeGlobals(0).length)
+  return writeCfb([{ name: "Workbook", data: concat([globals, ...sheets]) }])
+}
+
+/** Rows 0–4, the cell in column c of row r reading `${r}${c}`; rows 1 and 2 four columns wide. */
+const gridRecords = (): number[][] => [
+  label(0, 0, "00"),
+  ...[0, 1, 2, 3].map((c) => label(1, c, `1${c}`)),
+  ...[0, 1, 2, 3].map((c) => label(2, c, `2${c}`)),
+  label(3, 0, "30"),
+  label(4, 0, "40"),
+]
+
+/** A LABEL record cut off after its row — malformed wherever it sits. */
+const truncatedLabel = (row: number): number[] => record(SID.LABEL, u16(row))
+
+describe("streamXlsRows", () => {
+  describe("streams what readXls reads", () => {
+    it("BIFF8: SST labels, RK, MULRK, numbers, bools, errors and dates", async () => {
+      await expectStreamMatchesReadXls(buildXls())
+    })
+
+    it("BIFF8: a FORMAT record that redefines a built-in id", async () => {
+      await expectStreamMatchesReadXls(
+        buildXls({ dateFmtId: 50, fmtCodes: [[50, "000000000000"]], value: 81227827687 }),
+      )
+    })
+
+    it("BIFF8: the 1904 date system, when asked for", async () => {
+      await expectStreamMatchesReadXls(buildXls(), { dateSystem: "1904" })
+    })
+
+    it("BIFF5: code-page text, RSTRING, and a string formula's STRING record", async () => {
+      await expectStreamMatchesReadXls(buildXls5({ codepage: 1251 }))
+      await expectStreamMatchesReadXls(buildXls5(), { codepage: 1251 })
+    })
+  })
+
+  it("streams the first sheet, or the one named by index or by name", async () => {
+    const xls = twoSheetXls()
+
+    expect(await streamed(xls)).toEqual([{ index: 0, values: ["First"] }])
+    expect(await streamed(xls, { sheet: 1 })).toEqual([{ index: 0, values: ["Second"] }])
+    expect(await streamed(xls, { sheet: "Second" })).toEqual([{ index: 0, values: ["Second"] }])
+  })
+
+  it("yields nothing for a sheet that is not there", async () => {
+    const xls = twoSheetXls()
+
+    expect(await streamed(xls, { sheet: 2 })).toEqual([])
+    expect(await streamed(xls, { sheet: "Third" })).toEqual([])
+  })
+
+  it("skips an empty row and keeps each row's own index", async () => {
+    // Row 1 carries only a BLANK — formatting, no value — and row 2 nothing at all.
+    const xls = oneSheetXls(
+      [generalXf()],
+      [label(0, 0, "a"), record(SID.BLANK, [...u16(1), ...u16(0), ...u16(0)]), label(3, 2, "d")],
+    )
+
+    expect(await streamed(xls)).toEqual([
+      { index: 0, values: ["a"] },
+      { index: 3, values: [null, null, "d"] },
+    ])
+  })
+
+  it("applies range as streamXlsxRows does: rows outside skipped, columns outside masked", async () => {
+    const xls = oneSheetXls([generalXf()], gridRecords())
+
+    expect(await streamed(xls, { range: "B2:C3" })).toEqual([
+      { index: 1, values: [null, "11", "12", null] },
+      { index: 2, values: [null, "21", "22", null] },
+    ])
+  })
+
+  it("stops reading once range or maxRows can emit nothing more", async () => {
+    // Everything after row 4 is damaged: reading that far is an error, so
+    // a read that succeeds is one that stopped before it.
+    const xls = oneSheetXls([generalXf()], [...gridRecords(), truncatedLabel(5)])
+
+    await expect(streamed(xls)).rejects.toThrow(ParseError)
+    expect((await streamed(xls, { range: "A1:D3" })).map((row) => row.index)).toEqual([0, 1, 2])
+    expect((await streamed(xls, { maxRows: 2 })).map((row) => row.index)).toEqual([0, 1])
+  })
+
+  it("buffers a sheet whose cells go back a row, and yields each row once, in order", async () => {
+    // Streaming such a sheet would have to yield row 0 twice, or split it.
+    const xls = oneSheetXls(
+      [generalXf()],
+      [label(2, 0, "c"), label(0, 0, "a"), label(1, 0, "b"), label(0, 1, "a2")],
+    )
+
+    expect(await streamed(xls)).toEqual([
+      { index: 0, values: ["a", "a2"] },
+      { index: 1, values: ["b"] },
+      { index: 2, values: ["c"] },
+    ])
+    await expectStreamMatchesReadXls(xls)
+  })
+
+  it("bounds a buffered sheet by maxTotalCells as readXls bounds it, and a streamed one not at all", async () => {
+    const backwards = oneSheetXls([generalXf()], [label(2, 1, "c"), label(0, 0, "a")])
+    const forwards = oneSheetXls([generalXf()], [label(0, 0, "a"), label(2, 1, "c")])
+
+    await expect(readXls(backwards, { maxTotalCells: 4 })).rejects.toThrow(/maxTotalCells/)
+    await expect(streamed(backwards, { maxTotalCells: 4 })).rejects.toThrow(/maxTotalCells/)
+    // Nothing is held while streaming, so there is nothing for the bound to bound.
+    expect(await streamed(forwards, { maxTotalCells: 4 })).toHaveLength(2)
+  })
+
+  it("reports damage as a ParseError, before the first row and mid-sheet alike", async () => {
+    await expect(streamed(new Uint8Array([1, 2, 3, 4]))).rejects.toThrow(ParseError)
+    const xls = oneSheetXls([generalXf()], [label(0, 0, "a"), truncatedLabel(1)])
+    await expect(streamed(xls)).rejects.toThrow(ParseError)
+  })
+
+  it("refuses a column past the sheet's bounds, as readXls does", async () => {
+    const xls = oneSheetXls([generalXf()], [label(0, 20_000, "far")])
+
+    await expect(readXls(xls)).rejects.toThrow(/outside the supported sheet bounds/)
+    await expect(streamed(xls)).rejects.toThrow(/outside the supported sheet bounds/)
+  })
+
+  it("takes a ReadableStream, as the other readers do, bounded by maxInputBytes", async () => {
+    const bytes = buildXls()
+    const input = (): ReadableStream<Uint8Array> =>
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(bytes)
+          controller.close()
+        },
+      })
+    const rows = []
+    for await (const row of streamXlsRows(input())) rows.push(row)
+
+    expect(rows).toEqual(await streamed(bytes))
+    await expect(readXls(input(), { maxInputBytes: 64 })).rejects.toThrow(ParseError)
+    await expect(streamXlsRows(input(), { maxInputBytes: 64 }).next()).rejects.toThrow(ParseError)
+  })
+
+  it("can be abandoned after its first row", async () => {
+    const rows = streamXlsRows(buildXls())
+
+    expect((await rows.next()).value).toEqual({ index: 0, values: ["Name", "Score"] })
+    expect(await rows.return(undefined)).toEqual({ done: true, value: undefined })
+    expect(await rows.next()).toEqual({ done: true, value: undefined })
   })
 })
