@@ -271,7 +271,9 @@ export interface ColumnDef {
   /**
    * Default style for every cell in the column. Applies whether the rows
    * come from {@link WriteSheet.data} or {@link WriteSheet.rows} — on the
-   * `data[]` path the generated header row gets it too.
+   * `data[]` path the generated header row gets it too. A row's
+   * {@link RowDef.style} takes its place, `numFmt` included, on the cells
+   * of that row (#601).
    */
   style?: CellStyle
   /** Number format. Folded into {@link style}; an explicit `style.numFmt` wins. */
@@ -630,8 +632,8 @@ export interface Sparkline {
 export interface SheetTextBox {
   text: string
   anchor: {
-    from: { row: number; col: number }
-    to?: { row: number; col: number }
+    from: { row: number; col: number; colOff?: number; rowOff?: number }
+    to?: { row: number; col: number; colOff?: number; rowOff?: number }
   }
   width?: number
   height?: number
@@ -710,10 +712,20 @@ export interface SheetImage {
    * it, the image is written as a `oneCellAnchor` at `from`, sized by
    * `width` / `height` ("Move but don't size with cells"), and reads back
    * without a `to`. See #598.
+   *
+   * `from` and `to` take optional `colOff` / `rowOff`: a sub-cell offset in
+   * pixels (96 DPI, like `width` / `height`) from the cell's top-left
+   * corner, written as `xdr:colOff` / `xdr:rowOff` (EMU = pixels x 9525).
+   * Absent means 0, and the output is then unchanged. This is what lets two
+   * images sit side by side in one cell (#567). Offsets read back in pixels
+   * and are omitted when 0; an offset that is not a whole number of pixels
+   * stays fractional rather than being rounded. The same fields exist on
+   * `SheetTextBox.anchor` and `SheetChart.anchor`. A shape moves with its
+   * anchor when rows or columns are inserted or deleted, offset included.
    */
   anchor: {
-    from: { row: number; col: number }
-    to?: { row: number; col: number }
+    from: { row: number; col: number; colOff?: number; rowOff?: number }
+    to?: { row: number; col: number; colOff?: number; rowOff?: number }
   }
   /**
    * Rendered size in pixels at 96 DPI, stored as EMU in the picture's
@@ -908,6 +920,15 @@ export interface RowDef {
   outlineLevel?: number
   /** Whether this outline group is collapsed */
   collapsed?: boolean
+  /**
+   * Default style for the whole row — `<row s="N" customFormat="1">`. On
+   * write it also applies to every cell in the row that has no style of
+   * its own, and wins over {@link ColumnDef.style} there. Read back only
+   * with `readStyles`. A cell the file left at the default format inside
+   * such a row reads back with `style: {}`, so writing it again keeps it
+   * unformatted rather than filling it from the row. See #601.
+   */
+  style?: CellStyle
 }
 
 // ── Sheet ──────────────────────────────────────────────────────────

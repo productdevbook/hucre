@@ -85,10 +85,10 @@ printing, copies, DPI and printer defaults; the exception is `r:id`,
 which points at a binary printer-settings part and has no portable
 meaning — headers and footers, sheet views
 and tab colours, hidden and very-hidden sheets, tables, row and column
-definitions, manual page breaks, outline properties, sparklines, text
-boxes, background images, images, document properties, named ranges, the
-1904 date system, workbook protection, theme colours, Excel 2024
-checkboxes, and encryption.
+definitions (a row or column format included), manual page breaks,
+outline properties, sparklines, text boxes, background images, images,
+document properties, named ranges, the 1904 date system, workbook
+protection, theme colours, Excel 2024 checkboxes, and encryption.
 
 ### Formula results are write-only in practice
 
@@ -96,7 +96,7 @@ checkboxes, and encryption.
 value is genuinely in the file. But hucre has no formula engine, so it
 cannot know whether that cached value still matches the formula — and a
 stale `<v>` is a workbook that shows the wrong number. Every workbook
-hucre writes therefore carries `calcPr fullCalcOnLoad="1"`, which tells
+hucre writes therefore carries `calcPr calcId="191029" fullCalcOnLoad="1"` (a non-zero `calcId`, because Excel for the web ignores `fullCalcOnLoad` when it is 0), which tells
 Excel to recalculate everything on open and discard the cached results.
 
 The practical consequence: **`formulaResult` survives a hucre round-trip
@@ -250,6 +250,17 @@ Only the **trailing** box shrinks. Interior positions are untouched: a
 value at D1 still sits at index 3 behind three nulls, and an empty row
 between two populated ones is still there.
 
+### A row format and the cells already in it
+
+A row's format (`<row s customFormat>`) is the format of the cells that
+are not in the row (ECMA-376 Part 1 §18.3.1.73). A cell that is present
+keeps its own `s`, and that includes `s="0"` or no `s` at all. With
+`readStyles`, such a cell inside a formatted row reads back with
+`style: {}`. That says the file chose the default format, and the writer
+keeps it at `s="0"` instead of giving it the row's format, as it does
+for a cell the caller left without a style. Without the `{}`, read →
+write moved the row's format onto it. Found in review of #612.
+
 ### `Sheet.rows` is a dense rectangle
 
 Every row is an array, every row is the same length, and no element is
@@ -326,6 +337,12 @@ written back as text. `writeXlsxStream` has no way to say a streamed
 formula's result is an error, so it still writes string results as
 `t="str"`.
 
+The flag is honoured only when the cached string is a known error token
+(the standard seven plus `#GETTING_DATA`, `#SPILL!`, `#CALC!`, `#FIELD!`,
+`#BLOCKED!`, `#CONNECT!`, `#UNKNOWN!`, `#BUSY!`, `#PYTHON!`). A `t="e"` cell
+whose token is outside both sets is therefore rewritten as `t="str"`: the
+text survives, its error type does not.
+
 ### ISO-8601 date cells
 
 `ST_CellType` (§18.18.11) has seven members and the reader's switch had
@@ -384,6 +401,27 @@ and `WriteOptions` in a register typed over `keyof Required<…>`. Adding a
 field to either interface fails `tsc` until it is registered — as a probe
 that round-trips, or as a one-way entry with its reason. That register,
 not this list, is the thing that stays current.
+
+### Drawing anchors carry a sub-cell offset, in pixels
+
+The `from` / `to` corners of `SheetImage.anchor`, `SheetTextBox.anchor` and
+`SheetChart.anchor` (and the read-side `ChartAnchor`) take an optional
+`colOff` / `rowOff`: pixels at 96 DPI from the cell's top-left corner, the
+same unit as `width` / `height`. They are written as `xdr:colOff` /
+`xdr:rowOff` in EMU (pixels x 9525) and read back the same way, so two
+images can share one cell (#567). Absent means 0 and the output is
+byte-identical to what was written before the fields existed.
+
+Two small losses, both deliberate: a zero offset reads back as absent, and
+an offset that is not a whole number of pixels (EMU not divisible by 9525)
+reads back fractional, not rounded, so writing it again restores the exact
+EMU. A negative offset is carried through in both directions (the schema
+allows it), so a round trip does not change bytes; a non-finite one is
+written as 0.
+
+Images are an `.xlsx` feature only. `XlsxStreamWriter`, the ODS writer and
+reader, and the XLS and XLSB readers neither write nor read images, text
+boxes or chart anchors at all, so these offsets do not exist on those paths.
 
 ### Newer functions read back with their `_xlfn.` prefix
 
@@ -548,6 +586,33 @@ one as zero wide, which hid the column: `columns: [{ style }]` produced a
 column the user could not see. Excel itself always writes a width, even
 for a column that only has a format. Fixed in #603.
 
+**`customWidth` is not read, so a round trip sets it.** `ColumnDef` has a
+`width` and no flag for whether that width was chosen, so the reader keeps
+the width and drops `customWidth`. Every `<col>` with a width is written
+back with `customWidth="1"` — including the defaulted one above and any
+column Excel wrote with a width but without the flag. Reading the file
+`readXlsx` → `writeXlsx` or `openXlsx` → `saveXlsx` therefore turns "this
+is the default width" into "the user set this width". The width itself is
+exact; what is lost is only which of the two it was, and Excel shows the
+column the same either way. Dropping `customWidth` when the width equals
+the default would fix only the columns hucre defaulted, not the ones Excel
+did, so it is not done; the real fix is a field on `ColumnDef`.
+
+### A cell's own style replaces its row's and its column's
+
+A cell resolves to the first style present of its own, its row's, then its
+column's, and that style is used whole. It is never layered over the next:
+a cell given `{ font: { bold: true } }` in a column with `numFmt: "0.00"`
+is bold with the General format, not bold and `0.00`. This is how Excel
+stores it, since a cell's `xf` is complete and self-contained; to get both,
+give the cell both. `writeXlsx` has always behaved this way.
+`writeXlsxStream` and `XlsxStreamWriter` used to add the column's `numFmt`
+to a cell style that had none, so the same input produced a different
+workbook; they no longer do, which changes the number format of any
+streamed styled cell that relied on it. They also now write the column's
+format on `<col style>`, as `writeXlsx` does, so it reads back on the
+column and applies to cells typed there later. Fixed in #616.
+
 ### Losses inside fields that otherwise round-trip
 
 Three cases where a field is carried but a particular _value_ is not.
@@ -614,11 +679,11 @@ document properties (six fields), and six style facets — bold, italic,
 font size, font colour, background colour, number format.
 
 Not modelled in **either** direction: borders, alignment, font name,
-underline, strikethrough, column widths, row heights, hidden rows and
-columns, freeze and split panes, data validation, conditional formatting,
-auto-filter, tables, images, page setup, sheet protection, tab colour,
-hidden sheets, and `time` cells (which read back as the raw ISO duration
-string).
+underline, strikethrough, column widths, row heights, row formats, hidden
+rows and columns, freeze and split panes, data validation, conditional
+formatting, auto-filter, tables, images, page setup, sheet protection,
+tab colour, hidden sheets, and `time` cells (which read back as the raw
+ISO duration string).
 
 Named ranges left that list: `<table:named-expressions>` carries them
 both ways. Only workbook-level ones — ODF scopes a name to a sheet by

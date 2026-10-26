@@ -275,7 +275,6 @@ const REVIEWED = new Map(
     // Out of scope by design.
     filterPrivacy: "privacy flag, no data — not modelled",
     pivotButton: "pivot UI affordance — pivots are round-trip only",
-    customFormat: "restates that the row has a style, which the style says",
     outlineLevelCol: "summary of the per-column outline levels hucre reads",
     outlineLevelRow: "summary of the per-row outline levels hucre reads",
 

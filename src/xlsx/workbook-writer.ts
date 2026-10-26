@@ -148,7 +148,10 @@ export function writeWorkbookXml(
   }
 
   // ── calcPr — tells Excel to recalculate all formulas on open ──
-  parts.push(xmlSelfClose("calcPr", { calcId: 0, fullCalcOnLoad: 1 }))
+  // calcId must be non-zero: Excel for the web ignores fullCalcOnLoad when
+  // calcId is 0, so formulas never compute (#621). 191029 is what current
+  // desktop Excel writes.
+  parts.push(xmlSelfClose("calcPr", { calcId: 191029, fullCalcOnLoad: 1 }))
 
   // ── pivotCaches — wires cacheId values to workbook-rel rIds. ECMA-376
   // §18.2.18 puts this block after calcPr; Excel won't recognise pivot

@@ -126,7 +126,8 @@ export function colToLetter(col: number): string {
  */
 export function rowAttributes(
   rowIndex: number,
-  rowDef?: RowDef,
+  rowDef: RowDef | undefined,
+  styles: StylesCollector,
 ): Record<string, string | number | boolean> {
   const attrs: Record<string, string | number | boolean> = { r: rowIndex + 1 }
   if (rowDef?.height !== undefined) {
@@ -136,6 +137,16 @@ export function rowAttributes(
   if (rowDef?.hidden) attrs["hidden"] = 1
   if (rowDef?.outlineLevel) attrs["outlineLevel"] = rowDef.outlineLevel
   if (rowDef?.collapsed) attrs["collapsed"] = 1
+  // §18.3.1.73: `s` is the row's format only when `customFormat` is 1 —
+  // without it Excel ignores `s`. Index 0 is the default xf and needs
+  // neither, as on `<col style>`; a row with no style is unchanged. See #601.
+  if (rowDef?.style) {
+    const styleId = styles.addStyle(rowDef.style)
+    if (styleId !== 0) {
+      attrs["s"] = styleId
+      attrs["customFormat"] = 1
+    }
+  }
   return attrs
 }
 
@@ -146,7 +157,8 @@ export function hasRowAttributes(rowDef?: RowDef): boolean {
     (rowDef.height !== undefined ||
       Boolean(rowDef.hidden) ||
       Boolean(rowDef.outlineLevel) ||
-      Boolean(rowDef.collapsed))
+      Boolean(rowDef.collapsed) ||
+      rowDef.style !== undefined)
   )
 }
 
@@ -328,6 +340,22 @@ const EXCEL_ERRORS = new Set([
   "#GETTING_DATA",
   "#SPILL!",
   "#CALC!",
+])
+
+/**
+ * Error tokens Excel stores with `t="e"` in a formula's cached result but
+ * that are not in `EXCEL_ERRORS`. That set also decides whether a plain
+ * string *value* is an error, so widening it would turn a cell holding the
+ * text "#FIELD!" into an error cell; a cached result is already known to be
+ * an error by `formulaResultType`, so it only needs the token to be valid.
+ */
+const EXTRA_CACHED_ERRORS = new Set([
+  "#FIELD!",
+  "#BLOCKED!",
+  "#CONNECT!",
+  "#UNKNOWN!",
+  "#BUSY!",
+  "#PYTHON!",
 ])
 
 // ── Worksheet Writer ───────────────────────────────────────────────
@@ -561,9 +589,7 @@ export function writeWorksheetXml(
   for (let r = 0; r < rowCount; r++) {
     const row = resolvedRows[r]
     const rowDef = sheet.rowDefs?.get(r)
-    const hasRowDef =
-      rowDef &&
-      (rowDef.height !== undefined || rowDef.hidden || rowDef.outlineLevel || rowDef.collapsed)
+    const hasRowDef = hasRowAttributes(rowDef)
 
     if ((!row || row.length === 0) && !hasRowDef) continue
 
@@ -600,12 +626,26 @@ export function writeWorksheetXml(
       // floor. The cell fast path below it pays because there are 1.2M
       // cells to a sheet's 100k rows — a twelfth of the allocations is a
       // twelfth of the prize. See #472.
-      const rowAttrs = rowAttributes(r, rowDef)
+      const rowAttrs = rowAttributes(r, rowDef, styles)
       if (hasAnyCells) {
         rowElements.push(xmlElement("row", rowAttrs, cellElements))
       } else {
         rowElements.push(xmlSelfClose("row", rowAttrs))
       }
+    }
+  }
+
+  // A row definition past the last row of data — a formatted row below a
+  // table, or a sheet with only `rowDefs` — has no cells to carry it, and
+  // the loop above stops at the data. It still needs its `<row>`, or its
+  // format, height or hidden flag never reaches the file. Only the
+  // definitions are visited, so a far-away row costs nothing in between.
+  if (sheet.rowDefs) {
+    const trailing = [...sheet.rowDefs.keys()]
+      .filter((r) => r >= rowCount && hasRowAttributes(sheet.rowDefs!.get(r)))
+      .sort((a, b) => a - b)
+    for (const r of trailing) {
+      rowElements.push(xmlSelfClose("row", rowAttributes(r, sheet.rowDefs.get(r), styles)))
     }
   }
 
@@ -813,8 +853,16 @@ export function writeWorksheetXml(
  * The default cell style a column contributes to every cell beneath it.
  * `numFmt` is folded into the style object, but an explicit
  * `style.numFmt` wins — it is the more specific of the two spellings.
+ *
+ * A cell's own style *replaces* this (and a row's) as a whole; it is never
+ * layered over it. In a file a cell's `xf` is complete and self-contained,
+ * so a bold cell in a currency column is a third xf that holds both, and a
+ * caller who wants both says both. `writeXlsx` and `writeXlsxStream` both
+ * resolve a cell as own, else row, else this, so one input gives one xf in
+ * either. The stream writer used to graft the column's `numFmt` onto an
+ * own style that had none. See #616.
  */
-function columnCellStyle(col: ColumnDef | undefined): CellStyle | undefined {
+export function columnCellStyle(col: ColumnDef | undefined): CellStyle | undefined {
   if (!col) return undefined
   if (col.numFmt && !col.style?.numFmt) return { ...col.style, numFmt: col.numFmt }
   return col.style
@@ -822,6 +870,17 @@ function columnCellStyle(col: ColumnDef | undefined): CellStyle | undefined {
 
 function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
   const resolved: Array<Array<ResolvedCell | null>> = []
+
+  // A row format goes on the cells as well as on `<row s>`, the way a
+  // column format does — Excel writes the row's `s` onto every cell
+  // already in it, and a reader that looks only at the cells should see
+  // the format too. It wins over the column's where both cover a cell
+  // that has no style of its own, `numFmt` included: a cell's own format
+  // first, then its row's, then its column's. Excel for Mac showed the
+  // same order for an empty cell where a formatted row crosses a formatted
+  // column. A cell read back with `style: {}` was left at the default
+  // format by the file, and keeps it: `{}` is its own style. See #601.
+  const rowStyle = (r: number): CellStyle | undefined => sheet.rowDefs?.get(r)?.style
 
   if (sheet.data && sheet.columns) {
     // Object-based data with column keys
@@ -831,11 +890,12 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
     const hasHeaders = sheet.columns.some((col) => col.header)
     if (hasHeaders) {
       const headerRow: Array<ResolvedCell | null> = []
+      const rowFormat = rowStyle(0)
       for (let c = 0; c < sheet.columns.length; c++) {
         const col = sheet.columns[c]
         headerRow.push({
           value: col.header ?? col.key ?? null,
-          style: col.style,
+          style: rowFormat ?? col.style,
         })
       }
       resolved.push(headerRow)
@@ -843,12 +903,13 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
 
     for (const obj of sheet.data) {
       const row: Array<ResolvedCell | null> = []
+      const rowFormat = rowStyle(resolved.length)
       for (let c = 0; c < keys.length; c++) {
         const key = keys[c]
         const raw = key !== undefined ? (obj[key] ?? null) : null
         const cell: ResolvedCell = {
           value: isHyperlinkValue(raw) ? raw.text : raw,
-          style: columnCellStyle(sheet.columns[c]),
+          style: rowFormat ?? columnCellStyle(sheet.columns[c]),
         }
         if (isHyperlinkValue(raw)) cell.hyperlink = toHyperlink(raw)
         row.push(cell)
@@ -864,13 +925,14 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
     // exempt — hucre cannot tell which of the caller's rows is one.
     for (const row of sheet.rows) {
       const resolvedRow: Array<ResolvedCell | null> = []
+      const rowFormat = rowStyle(resolved.length)
       for (let c = 0; c < row.length; c++) {
         // `writeXlsx` lifts an inline cell object into `cells` before this
         // runs, so the entry is a value by then. Reading it through
         // `toCellValue` keeps `resolveRows` correct for a caller that
         // reached it another way, rather than emitting `[object Object]`.
         const value = toCellValue(row[c]!)
-        const style = sheet.columns ? columnCellStyle(sheet.columns[c]) : undefined
+        const style = rowFormat ?? (sheet.columns ? columnCellStyle(sheet.columns[c]) : undefined)
         resolvedRow.push(style ? { value, style } : { value })
       }
       resolved.push(resolvedRow)
@@ -896,7 +958,7 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
       const existing = row[c]
       row[c] = {
         value: cellOverride.value ?? existing?.value ?? null,
-        style: cellOverride.style ?? existing?.style,
+        style: cellOverride.style ?? existing?.style ?? rowStyle(r),
         checkbox: cellOverride.checkbox ?? existing?.checkbox,
         formula: cellOverride.formula ?? existing?.formula,
         formulaResult: cellOverride.formulaResult ?? existing?.formulaResult,
@@ -1098,7 +1160,15 @@ export function serializeCell(
         // became a formula that returned that *text* (#599). Which one
         // it is comes from `formulaResultType`, never from the token: a
         // formula can return the text "#DIV/0!" as well.
-        cellAttrs["t"] = formulaResultType === "error" ? "e" : "str"
+        //
+        // The flag is honoured only for a string that is an error token.
+        // It survives an edit: a cell read with a cached `#N/A` and then
+        // given `formulaResult: "hello"` would otherwise be written as
+        // `<c t="e"><v>hello</v>`, which is not a valid error value.
+        const isError =
+          formulaResultType === "error" &&
+          (EXCEL_ERRORS.has(formulaResult) || EXTRA_CACHED_ERRORS.has(formulaResult))
+        cellAttrs["t"] = isError ? "e" : "str"
         children.push(xmlElement("v", undefined, xmlEscape(formulaResult)))
       } else if (typeof formulaResult === "boolean") {
         cellAttrs["t"] = "b"
@@ -1762,6 +1832,19 @@ export function serializeConditionalFormatting(
   return elements
 }
 
+/**
+ * Attributes of a `<cfvo>`. A `formula` threshold is formula text like the
+ * `<formula>` child, so it takes the same stored form: `_xlfn.` on newer
+ * functions (#597). The other types hold a number or a percentage.
+ */
+function cfvoAttributes(cfvo: { type: string; value?: string }): Record<string, string> {
+  const attrs: Record<string, string> = { type: cfvo.type }
+  if (cfvo.value !== undefined) {
+    attrs["val"] = cfvo.type === "formula" ? addFuturePrefixes(cfvo.value) : cfvo.value
+  }
+  return attrs
+}
+
 /** Serialize a single `<cfRule>` element */
 function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string {
   const attrs: Record<string, string | number | boolean> = {
@@ -1802,9 +1885,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
   if (rule.type === "colorScale" && rule.colorScale) {
     const csChildren: string[] = []
     for (const cfvo of rule.colorScale.cfvo) {
-      const cfvoAttrs: Record<string, string> = { type: cfvo.type }
-      if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
-      csChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
+      csChildren.push(xmlSelfClose("cfvo", cfvoAttributes(cfvo)))
     }
     // Colour scale and data bar colours used to be written as given, so a
     // 6-digit value — which every other colour field accepts — went out as
@@ -1819,9 +1900,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
   if (rule.type === "dataBar" && rule.dataBar) {
     const dbChildren: string[] = []
     for (const cfvo of rule.dataBar.cfvo) {
-      const cfvoAttrs: Record<string, string> = { type: cfvo.type }
-      if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
-      dbChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
+      dbChildren.push(xmlSelfClose("cfvo", cfvoAttributes(cfvo)))
     }
     dbChildren.push(xmlSelfClose("color", { rgb: toArgb(rule.dataBar.color) }))
     children.push(xmlElement("dataBar", undefined, dbChildren))
@@ -1837,9 +1916,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
 
     const isChildren: string[] = []
     for (const cfvo of rule.iconSet.cfvo) {
-      const cfvoAttrs: Record<string, string> = { type: cfvo.type }
-      if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
-      isChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
+      isChildren.push(xmlSelfClose("cfvo", cfvoAttributes(cfvo)))
     }
     children.push(xmlElement("iconSet", isAttrs, isChildren))
   }

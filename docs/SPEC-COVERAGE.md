@@ -10,7 +10,7 @@ Corpus under `test/fixtures`: 35 OOXML workbooks (455 element names, 245 attribu
 
 ## SpreadsheetML (ECMA-376 Part 1)
 
-360 complex types. **31** names appear in the corpus and are _nowhere_ in `src/`; 6 appear in the corpus and occur in `src/` only inside a longer string, which usually means a writer emits them in a template; 644 the source switches on directly; 494 it knows but the corpus does not use; 917 are in neither.
+360 complex types. **30** names appear in the corpus and are _nowhere_ in `src/`; 6 appear in the corpus and occur in `src/` only inside a longer string, which usually means a writer emits them in a template; 645 the source switches on directly; 494 it knows but the corpus does not use; 917 are in neither.
 
 ### Not yet looked at
 
@@ -38,7 +38,6 @@ Corpus under `test/fixtures`: 35 OOXML workbooks (455 element names, 245 attribu
 | `lowestEdited`           | attribute | writer provenance — not modelled                                                                                                                                                                                                                                                                 |
 | `rupBuild`               | attribute | writer provenance — not modelled                                                                                                                                                                                                                                                                 |
 | `quotePrefix`            | attribute | measured, inert — marks a cell forced to text by a leading apostrophe. The value is already a string in the file, so `rows` is unaffected. Every occurrence in the corpus is `"0"`: openpyxl writes it explicitly false, Excel omits it. Nothing observed to carry                               |
-| `customFormat`           | attribute | restates that the row has a style, which the style says                                                                                                                                                                                                                                          |
 | `spans`                  | attribute | a hint at which columns a row uses. hucre derives that from the cells themselves, which is the authority — Excel treats a wrong `spans` as advisory too                                                                                                                                          |
 | `activeCell`             | attribute | view state — not modelled                                                                                                                                                                                                                                                                        |
 | `baseColWidth`           | attribute | measured, inert — the base every column width is relative to. Deriving `defaultColWidth` from it needs the normal font's maximum digit width, which hucre cannot measure. Every occurrence in the corpus is `8`, the schema default, and Excel omits it entirely — so nothing real is lost today |

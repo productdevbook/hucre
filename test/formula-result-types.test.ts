@@ -275,3 +275,62 @@ describe("a shared formula's error result", () => {
     )
   })
 })
+
+describe("an edited cached error", () => {
+  it('writes a text result as `t="str"` once it is no longer an error token', async () => {
+    // A cell read with a cached error keeps `formulaResultType: "error"`;
+    // editing `formulaResult` to text and leaving the flag in place used to
+    // write `<c t="e"><v>hello</v>`, which is not a valid error value.
+    const out = await writeXlsx({
+      sheets: [
+        {
+          name: "S",
+          cells: new Map([
+            ["0,0", { formula: "A2", formulaResult: "hello", formulaResultType: "error" }],
+            ["0,1", { formula: "A2", formulaResult: "#FIELD!", formulaResultType: "error" }],
+            ["0,2", { formula: "A2", formulaResult: "#NOPE!", formulaResultType: "error" }],
+          ]),
+        },
+      ],
+    })
+    const sheetXml = await sheetXmlOf(out)
+
+    expect(sheetXml).toContain('<c r="A1" t="str"><f>A2</f><v>hello</v></c>')
+    expect(sheetXml).toContain('<c r="B1" t="e"><f>A2</f><v>#FIELD!</v></c>')
+    expect(sheetXml).toContain('<c r="C1" t="str"><f>A2</f><v>#NOPE!</v></c>')
+  })
+})
+
+describe("a shared formula's non-error results", () => {
+  // The same `formula: ""` slave as above, for the other cached types: the
+  // "str", "b", "n" and "d" arms tested `if (formula)` and read these as
+  // plain values, so the result was lost and the writer emitted `<f>` with
+  // no `<v>`.
+  const ROW =
+    '<c r="A1" t="str"><f t="shared" ref="A1:B1" si="0">"x"</f><v>x</v></c>' +
+    '<c r="B1" t="str"><f t="shared" si="0"/><v>x</v></c>' +
+    '<c r="C1" t="b"><f t="shared" ref="C1:D1" si="1">TRUE</f><v>1</v></c>' +
+    '<c r="D1" t="b"><f t="shared" si="1"/><v>1</v></c>' +
+    '<c r="E1"><f t="shared" ref="E1:F1" si="2">1+1</f><v>2</v></c>' +
+    '<c r="F1"><f t="shared" si="2"/><v>2</v></c>'
+
+  it("reads the covered cell's cached result", async () => {
+    const cells = await cellsOf(ROW)
+
+    expect(cells.get("0,1")).toMatchObject({ type: "formula", formula: "", formulaResult: "x" })
+    expect(cells.get("0,3")).toMatchObject({ type: "formula", formula: "", formulaResult: true })
+    expect(cells.get("0,5")).toMatchObject({ type: "formula", formula: "", formulaResult: 2 })
+  })
+
+  it("keeps them through a rewrite", async () => {
+    const first = await readXlsx(await withCells(ROW))
+    const rewritten = await writeXlsx({
+      sheets: first.sheets.map((s) => ({ name: s.name, rows: s.rows, cells: s.cells })),
+    })
+    const sheetXml = await sheetXmlOf(rewritten)
+
+    expect(sheetXml).toContain('<c r="B1" t="str"><f t="shared" si="0"/><v>x</v></c>')
+    expect(sheetXml).toContain('<c r="D1" t="b"><f t="shared" si="1"/><v>1</v></c>')
+    expect(sheetXml).toContain('<c r="F1"><f t="shared" si="2"/><v>2</v></c>')
+  })
+})

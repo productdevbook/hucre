@@ -55,6 +55,8 @@
     "test/ods-column-default-style.test.ts",
     "test/builder-coverage.test.ts",
     // Reads the .xls and .xlsb fixtures off disk.
-    "test/read-dates-serial.test.ts"
+    "test/read-dates-serial.test.ts",
+    // Walks src/ with `node:fs` to scan for regex lookbehind. See #591.
+    "test/no-regex-lookbehind.test.ts"
   ]
 }
