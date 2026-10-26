@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { ZipWriter } from "../src/zip/writer"
 import { readXlsx } from "../src/xlsx/reader"
+import { writeXlsx } from "../src/xlsx/writer"
+import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip"
+import { ZipReader } from "../src/zip/reader"
 import { MAX_COL_INDEX } from "../src/limits"
 
 const enc = new TextEncoder()
@@ -115,4 +118,51 @@ describe("<col> range bounds", () => {
     // The shared array stays capped no matter how many elements ask for more.
     expect(workbook.sheets[0].columns!.length).toBeLessThanOrEqual(MAX_COL_INDEX + 1)
   }, 20_000)
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+// The reader expands a range into one ColumnDef per column; the writer
+// used to emit one <col> per entry, so a range out to the last column
+// came back as 16,384 elements.
+// ═══════════════════════════════════════════════════════════════════════
+
+async function writtenCols(data: Uint8Array): Promise<string[]> {
+  const xml = new TextDecoder().decode(
+    await new ZipReader(data).extract("xl/worksheets/sheet1.xml"),
+  )
+  return xml.match(/<col [^>]*\/>/g) ?? []
+}
+
+describe("<col> ranges on write", () => {
+  it("writes a range read from the file back as one <col>", async () => {
+    const buf = await workbookWithCols('<col min="2" max="16384" width="12" customWidth="1"/>')
+    expect(await writtenCols(await saveXlsx(await openXlsx(buf)))).toEqual([
+      '<col min="2" max="16384" width="12" customWidth="true"/>',
+    ])
+  })
+
+  it("merges only adjacent columns that agree", async () => {
+    const data = await writeXlsx({
+      sheets: [
+        {
+          name: "S",
+          rows: [["x"]],
+          columns: [
+            { width: 10 },
+            { width: 10 },
+            { width: 20 },
+            {},
+            { width: 20 },
+            { width: 20, hidden: true },
+          ],
+        },
+      ],
+    })
+    expect(await writtenCols(data)).toEqual([
+      '<col min="1" max="2" width="10" customWidth="true"/>',
+      '<col min="3" max="3" width="20" customWidth="true"/>',
+      '<col min="5" max="5" width="20" customWidth="true"/>',
+      '<col min="6" max="6" width="20" customWidth="true" hidden="true"/>',
+    ])
+  })
 })

@@ -485,7 +485,7 @@ export function writeWorksheetXml(
 
   // ── Columns ──
   if (sheet.columns && sheet.columns.length > 0) {
-    const colElements: string[] = []
+    const colElements: Array<Record<string, string | number | boolean>> = []
     for (let i = 0; i < sheet.columns.length; i++) {
       const col = sheet.columns[i]
 
@@ -546,11 +546,25 @@ export function writeWorksheetXml(
         if (col.collapsed) {
           colAttrs["collapsed"] = true
         }
-        colElements.push(xmlSelfClose("col", colAttrs))
+        // The reader expands `<col min max>` into one entry per column, so
+        // a range styled out to the last column came back as 16,384
+        // elements. Adjacent columns that agree are written as one range.
+        const prev = colElements[colElements.length - 1]
+        if (prev && prev["max"] === i && sameColAttrs(prev, colAttrs)) {
+          prev["max"] = i + 1
+        } else {
+          colElements.push(colAttrs)
+        }
       }
     }
     if (colElements.length > 0) {
-      parts.push(xmlElement("cols", undefined, colElements))
+      parts.push(
+        xmlElement(
+          "cols",
+          undefined,
+          colElements.map((attrs) => xmlSelfClose("col", attrs)),
+        ),
+      )
     }
   }
 
@@ -1238,6 +1252,15 @@ function serializeSheetProtection(protection: SheetProtection): string {
   }
 
   return xmlSelfClose("sheetProtection", attrs)
+}
+
+/** Whether two `<col>` attribute sets agree on everything but min/max. */
+function sameColAttrs(
+  a: Record<string, string | number | boolean>,
+  b: Record<string, string | number | boolean>,
+): boolean {
+  const keys = Object.keys(a).filter((k) => k !== "min" && k !== "max")
+  return keys.length === Object.keys(b).length - 2 && keys.every((k) => a[k] === b[k])
 }
 
 // ── Data Validation Serialization ─────────────────────────────────
