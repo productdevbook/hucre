@@ -91,3 +91,44 @@ describe("password digests survive open -> save (#622)", () => {
     expect(xml).toMatch(/password="[0-9A-F]{4}"/)
   })
 })
+
+describe("protection flags that default differently from the writer (#622)", () => {
+  async function withSheetProt(attrs: string): Promise<Uint8Array> {
+    const base = await writeXlsx({ sheets: [{ name: "S", rows: [["x"]] }] })
+    return rewrite(base, "xl/worksheets/sheet1.xml", (x) =>
+      x.replace("<sheetData>", `<sheetProtection ${attrs}/><sheetData>`),
+    )
+  }
+
+  it("does not lock a sheet that was not locked, digest or not", async () => {
+    for (const attrs of ['password="CC3D" objects="1"', 'password="CC3D" sheet="0" objects="1"']) {
+      const wb = await openXlsx(await withSheetProt(attrs))
+      expect(wb.sheets[0]!.protection?.sheet).toBe(false)
+      const xml = await part(await saveXlsx(wb), "xl/worksheets/sheet1.xml")
+      expect(xml).toMatch(/<sheetProtection [^>]*password="CC3D"/)
+      expect(xml).not.toMatch(/<sheetProtection [^>]*\ssheet=/)
+      expect(xml).toMatch(/<sheetProtection [^>]*objects="1"/)
+    }
+  })
+
+  it("still reads sheet=1 as locked", async () => {
+    const wb = await readXlsx(await withSheetProt('password="CC3D" sheet="1"'))
+    expect(wb.sheets[0]!.protection?.sheet).toBe(true)
+  })
+
+  it("keeps lockRevision and the password character sets", async () => {
+    const base = await writeXlsx({ sheets: [{ name: "S", rows: [["x"]] }] })
+    const bytes = await rewrite(base, "xl/workbook.xml", (x) =>
+      x.replace(
+        "<bookViews>",
+        '<workbookProtection lockRevision="1" workbookPassword="CC3D" workbookPasswordCharacterSet="1252" revisionsPassword="ABCD" revisionsPasswordCharacterSet="1251"/><bookViews>',
+      ),
+    )
+    const wb = await openXlsx(bytes)
+    expect(wb.workbookProtection?.lockRevision).toBe(true)
+    const xml = await part(await saveXlsx(wb), "xl/workbook.xml")
+    expect(xml).toContain('lockRevision="1"')
+    expect(xml).toContain('workbookPasswordCharacterSet="1252"')
+    expect(xml).toContain('revisionsPasswordCharacterSet="1251"')
+  })
+})

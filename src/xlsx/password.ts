@@ -40,6 +40,7 @@ function digestNames(prefix: string) {
     hashValue: prefix + c("hashValue"),
     saltValue: prefix + c("saltValue"),
     spinCount: prefix + c("spinCount"),
+    characterSet: prefix + "PasswordCharacterSet",
   }
 }
 
@@ -54,6 +55,8 @@ export function readPasswordDigest(
   if (attrs[n.algorithmName]) d.algorithmName = attrs[n.algorithmName]
   if (attrs[n.hashValue]) d.hashValue = attrs[n.hashValue]
   if (attrs[n.saltValue]) d.saltValue = attrs[n.saltValue]
+  // <sheetProtection> has no character-set attribute.
+  if (prefix && attrs[n.characterSet]) d.characterSet = attrs[n.characterSet]
   const spin = Number(attrs[n.spinCount])
   if (attrs[n.spinCount] && Number.isInteger(spin) && spin >= 0) d.spinCount = spin
   return Object.keys(d).length > 0 ? d : undefined
@@ -82,4 +85,5 @@ export function writePasswordDigest(
   if (digest.hashValue) attrs[n.hashValue] = digest.hashValue
   if (digest.saltValue) attrs[n.saltValue] = digest.saltValue
   if (digest.spinCount !== undefined) attrs[n.spinCount] = digest.spinCount
+  if (prefix && digest.characterSet) attrs[n.characterSet] = digest.characterSet
 }

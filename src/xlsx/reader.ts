@@ -1634,10 +1634,15 @@ function parseWorkbookXml(
       // password-protected template on open -> save (#622).
       const digest = readPasswordDigest(child.attrs, "workbook")
       const revisionsDigest = readPasswordDigest(child.attrs, "revisions")
-      if (lockStructure || lockWindows || digest || revisionsDigest) {
+      // lockRevision pairs with revisionsPassword: carrying the password
+      // without it leaves the digest guarding nothing (#622).
+      const lockRevision =
+        child.attrs["lockRevision"] === "1" || child.attrs["lockRevision"] === "true"
+      if (lockStructure || lockWindows || lockRevision || digest || revisionsDigest) {
         wbProtection = {}
         if (lockStructure) wbProtection.lockStructure = true
         if (lockWindows) wbProtection.lockWindows = true
+        if (lockRevision) wbProtection.lockRevision = true
         if (digest) wbProtection.digest = digest
         if (revisionsDigest) wbProtection.revisionsDigest = revisionsDigest
       }

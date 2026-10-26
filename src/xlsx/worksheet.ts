@@ -1510,9 +1510,11 @@ function parseSheetProtectionAttrs(attrs: Record<string, string>): SheetProtecti
   const digest = readPasswordDigest(attrs, "")
   if (digest) prot.digest = digest
 
-  if (attrs["sheet"] === "1" || attrs["sheet"] === "true") {
-    prot.sheet = true
-  }
+  // `sheet` defaults to false (§18.3.1.85) and the writer treats an absent
+  // `sheet` as true, so an element without sheet="1" has to read as false.
+  // Left undefined, a digest-only <sheetProtection password objects="1"/>
+  // came back out locked under the original password (#622).
+  prot.sheet = attrs["sheet"] === "1" || attrs["sheet"] === "true"
   if (attrs["objects"] === "1" || attrs["objects"] === "true") {
     prot.objects = true
   }

@@ -844,6 +844,8 @@ export interface PasswordDigest {
   /** Base64 salt. */
   saltValue?: string
   spinCount?: number
+  /** `workbookPasswordCharacterSet` / `revisionsPasswordCharacterSet`; workbook-level digests only. */
+  characterSet?: string
 }
 
 export interface SheetProtection {
@@ -1493,6 +1495,8 @@ export interface Workbook {
   workbookProtection?: {
     lockStructure?: boolean
     lockWindows?: boolean
+    /** Lock the shared-workbook revision tracking; pairs with `revisionsDigest`. */
+    lockRevision?: boolean
     /** Structure/windows password digest as read from the file. */
     digest?: PasswordDigest
     /** Shared-workbook revisions password digest as read from the file. */
@@ -1794,6 +1798,7 @@ export interface WriteOptions {
   workbookProtection?: {
     lockStructure?: boolean
     lockWindows?: boolean
+    lockRevision?: boolean
     /** Plaintext, hashed on write. Wins over `digest`. */
     password?: string
     /** Digest carried through from a read workbook. */

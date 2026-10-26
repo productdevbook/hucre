@@ -76,6 +76,7 @@ export function writeWorkbookXml(
     const protAttrs: Record<string, string | number> = {}
     if (workbookProtection.lockStructure) protAttrs["lockStructure"] = 1
     if (workbookProtection.lockWindows) protAttrs["lockWindows"] = 1
+    if (workbookProtection.lockRevision) protAttrs["lockRevision"] = 1
     // Plaintext wins over a digest carried from a read file (#622).
     writePasswordDigest(
       protAttrs,
