@@ -156,8 +156,9 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
   // seconds before this counter existed.
   let gridCells = 0
 
-  function spend(): void {
-    if (++gridCells > MAX_TOTAL_CELLS) {
+  function spend(slots = 1): void {
+    gridCells += slots
+    if (gridCells > MAX_TOTAL_CELLS) {
       throw new ParseError(`HTML table spans over ${MAX_TOTAL_CELLS} cells`)
     }
   }
@@ -223,19 +224,29 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
     // earlier row's rowspan (occupied) are skipped correctly — the old
     // arithmetic drifted as nulls were pushed.
     //
-    // `occupied.size` goes first because the probe builds a string key per
-    // slot: a table with no rowspan reached the cell budget only after 20
-    // million of them, about 7 seconds under Node against a few hundred
-    // milliseconds without the probe.
-    for (let c = 1; c < currentCellColspan; c++) {
-      while (
-        occupied.size > 0 &&
-        currentRowCells.length <= MAX_COL_INDEX &&
-        occupied.has(`${currentRow},${currentRowCells.length}`)
-      ) {
+    // With nothing reserved the padding is plain nulls up to the last
+    // column, so it is spent and filled in one step. Slot by slot, a table
+    // that reaches the cell budget through colspans alone paid 20 million
+    // probes and pushes: seconds under Node, and past a test timeout under
+    // coverage instrumentation.
+    if (occupied.size === 0) {
+      const pad = Math.min(currentCellColspan - 1, MAX_COL_INDEX + 1 - currentRowCells.length)
+      if (pad > 0) {
+        spend(pad)
+        const start = currentRowCells.length
+        currentRowCells.length = start + pad
+        currentRowCells.fill(null, start)
+      }
+    } else {
+      for (let c = 1; c < currentCellColspan; c++) {
+        while (
+          currentRowCells.length <= MAX_COL_INDEX &&
+          occupied.has(`${currentRow},${currentRowCells.length}`)
+        ) {
+          pushSlot(null)
+        }
         pushSlot(null)
       }
-      pushSlot(null)
     }
 
     // Record merge if colspan > 1 or rowspan > 1
