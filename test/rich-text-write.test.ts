@@ -20,10 +20,13 @@ function getElementText(el: { children: Array<unknown> }): string {
   return el.children.filter((c: unknown) => typeof c === "string").join("")
 }
 
+// Inline mode, so the runs can be read off the cell's `<is>`. The shared
+// form writes the same runs into an `<si>` — see
+// rich-text-shared-strings.test.ts (#602).
 function writeXml(sheet: WriteSheet): string {
   const styles = createStylesCollector()
   const ss = createSharedStrings()
-  const result = writeWorksheetXml(sheet, styles, ss)
+  const result = writeWorksheetXml(sheet, styles, ss, undefined, undefined, true)
   return result.xml
 }
 
@@ -308,7 +311,9 @@ describe("rich text write — mixed sheet", () => {
       cells,
     }
 
-    const xml = writeXml(sheet)
+    // Shared mode, the default: both strings go to the table (#602).
+    const ss = createSharedStrings()
+    const xml = writeWorksheetXml(sheet, createStylesCollector(), ss).xml
     const doc = parseSheet(xml)
     const sheetData = findChild(doc, "sheetData")
     const rows = findChildren(sheetData, "row")
@@ -317,9 +322,13 @@ describe("rich text write — mixed sheet", () => {
     const c1 = findChild(rows[0], "c")
     expect(c1.attrs["t"]).toBe("s")
 
-    // Row 2: rich text (inlineStr)
+    // Row 2: rich text, a separate shared string carrying its runs
     const c2 = findChild(rows[1], "c")
-    expect(c2.attrs["t"]).toBe("inlineStr")
+    expect(c2.attrs["t"]).toBe("s")
+    expect(getElementText(findChild(c2, "v"))).toBe("1")
+    expect(ss.getAll()).toEqual(["Plain string", "Bold text"])
+    expect(ss.getRich().get(0)).toBeUndefined()
+    expect(ss.getRich().get(1)).toContain("<r><rPr><b/></rPr><t>Bold</t></r>")
 
     // Row 3: number
     const c3 = findChild(rows[2], "c")

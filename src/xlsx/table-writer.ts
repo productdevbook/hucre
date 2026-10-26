@@ -2,7 +2,9 @@
 // Generates xl/tables/tableN.xml for Excel Table (ListObject) support.
 
 import type { TableDefinition } from "../_types"
+import { parseRange } from "../cell-utils"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
+import { addFuturePrefixes } from "./formula-prefix"
 
 const NS_SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
@@ -76,9 +78,14 @@ export function writeTable(
       colAttrs["totalsRowLabel"] = col.totalLabel
     }
 
-    // Custom formula in total row
+    // Custom formula in total row, in the stored form a cell formula
+    // takes: `_xlfn.` on newer functions (#597).
     if (showTotalRow && col.totalFunction === "custom" && col.totalFormula) {
-      const formulaChild = xmlElement("totalsRowFormula", undefined, xmlEscape(col.totalFormula))
+      const formulaChild = xmlElement(
+        "totalsRowFormula",
+        undefined,
+        xmlEscape(addFuturePrefixes(col.totalFormula)),
+      )
       colElements.push(xmlElement("tableColumn", colAttrs, [formulaChild]))
     } else {
       colElements.push(xmlSelfClose("tableColumn", colAttrs))
@@ -105,6 +112,74 @@ export function writeTable(
   const tableXml = xmlDocument("table", tableAttrs, children)
 
   return { tableXml, tableId }
+}
+
+// ── Total Row Cells ──────────────────────────────────────────────────
+
+/**
+ * `SUBTOTAL` function numbers for each `totalsRowFunction`, as Excel
+ * writes them. The 10x forms skip rows hidden by the table's filter.
+ */
+const SUBTOTAL_FUNCTION_NUM: Record<string, number> = {
+  average: 101,
+  countNums: 102,
+  count: 103,
+  max: 104,
+  min: 105,
+  stdDev: 107,
+  sum: 109,
+  var: 110,
+}
+
+/** One cell of a table's total row, 0-based. */
+export interface TotalRowCell {
+  row: number
+  col: number
+  value?: string
+  formula?: string
+}
+
+/**
+ * The cells a table's total row needs on the sheet.
+ *
+ * `totalsRowFunction`, `totalsRowFormula` and `totalsRowLabel` in the
+ * table part do not put anything in the grid. Excel writes the total row
+ * twice, once in the table part and once as ordinary cells, and reads the
+ * cells. Without them a built-in function shows an empty total row, and
+ * a custom formula with no matching cell makes Excel repair the file.
+ *
+ * The formulas copy what Excel writes. They use the table's
+ * `displayName`, the name formulas see, and escape `[ ] # '` in the
+ * column name with a `'`, so `a[b]` is written `Table1[a'[b']]`.
+ * See #604.
+ */
+export function totalRowCells(table: TableDefinition, range: string): TotalRowCell[] {
+  if (table.showTotalRow !== true) return []
+  const { startCol, endRow } = parseRange(range)
+  const displayName = table.displayName ?? table.name
+  const cells: TotalRowCell[] = []
+
+  for (let i = 0; i < table.columns.length; i++) {
+    const col = table.columns[i]!
+    const fn = col.totalFunction
+    const at = { row: endRow, col: startCol + i }
+
+    if (fn === "custom") {
+      if (col.totalFormula) cells.push({ ...at, formula: col.totalFormula })
+    } else if (fn !== undefined && Object.hasOwn(SUBTOTAL_FUNCTION_NUM, fn)) {
+      const ref = `${displayName}[${escapeStructuredRefColumn(col.name)}]`
+      cells.push({ ...at, formula: `SUBTOTAL(${SUBTOTAL_FUNCTION_NUM[fn]},${ref})` })
+    } else if (col.totalLabel) {
+      cells.push({ ...at, value: col.totalLabel })
+    }
+  }
+
+  return cells
+}
+
+/** Escape a column name for use inside a structured reference's brackets. */
+function escapeStructuredRefColumn(name: string): string {
+  return name.replace(/[[\]#']/g, "'$&")
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────

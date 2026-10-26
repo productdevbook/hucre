@@ -14,6 +14,9 @@ const SIG = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]
 const ENDOFCHAIN = 0xfffffffe
 const FREESECT = 0xffffffff
 const FATSECT = 0xfffffffd
+const DIFSECT = 0xfffffffc
+/** FAT sector locations the header itself holds; the rest go in DIFAT sectors. */
+const HEADER_DIFAT_ENTRIES = 109
 const MINI_CUTOFF = 4096
 const MINI_SECTOR = 64
 
@@ -273,16 +276,29 @@ export function writeCfb(inputs: StreamInput[]): Uint8Array {
 
   // 3. FAT sizing: total payload sectors so far + the FAT sectors we are
   // about to add. Solve for FAT sector count (self-referential).
+  //
+  // The header names only 109 FAT sectors — 109 × 128 sectors of 512 bytes,
+  // just under 7 MB. A larger container lists the rest of its FAT in DIFAT
+  // sectors, 127 locations and a link to the next each, and the FAT has to
+  // cover those too, so the two counts are solved together. Without them
+  // everything past the first ~7 MB was unreachable: a large encrypted
+  // workbook read back cut short and would not open at all.
   const payloadSectors = cursor
+  const difatPerSector = perSector - 1
   let numFatSectors = 1
+  let numDifatSectors = 0
   for (;;) {
-    const totalSectors = payloadSectors + numFatSectors
-    const need = Math.ceil(totalSectors / perSector)
-    if (need <= numFatSectors) break
-    numFatSectors = need
+    const totalSectors = payloadSectors + numFatSectors + numDifatSectors
+    const fatNeed = Math.ceil(totalSectors / perSector)
+    const difatNeed = Math.ceil(Math.max(0, fatNeed - HEADER_DIFAT_ENTRIES) / difatPerSector)
+    if (fatNeed <= numFatSectors && difatNeed <= numDifatSectors) break
+    numFatSectors = Math.max(numFatSectors, fatNeed)
+    numDifatSectors = Math.max(numDifatSectors, difatNeed)
   }
   const fatRegion = { startSector: cursor, sectorCount: numFatSectors }
   cursor += numFatSectors
+  const difatRegion = { startSector: cursor, sectorCount: numDifatSectors }
+  cursor += numDifatSectors
   const totalSectors = cursor
 
   // 4. Build the FAT.
@@ -298,6 +314,7 @@ export function writeCfb(inputs: StreamInput[]): Uint8Array {
   if (miniFatRegion) chainRegion(miniFatRegion)
   chainRegion(dirRegion)
   for (let i = 0; i < numFatSectors; i++) fat[fatRegion.startSector + i] = FATSECT
+  for (let i = 0; i < numDifatSectors; i++) fat[difatRegion.startSector + i] = DIFSECT
 
   // 5. Directory bytes.
   const dir = new Uint8Array(dirBytesLen)
@@ -380,9 +397,10 @@ export function writeCfb(inputs: StreamInput[]): Uint8Array {
   fileView.setUint32(56, MINI_CUTOFF, true)
   fileView.setUint32(60, miniFatRegion ? miniFatRegion.startSector : ENDOFCHAIN, true)
   fileView.setUint32(64, miniFatRegion ? miniFatRegion.sectorCount : 0, true)
-  fileView.setUint32(68, ENDOFCHAIN, true) // first DIFAT sector
-  fileView.setUint32(72, 0, true) // num DIFAT sectors
-  for (let i = 0; i < 109; i++) {
+  // first DIFAT sector
+  fileView.setUint32(68, numDifatSectors > 0 ? difatRegion.startSector : ENDOFCHAIN, true)
+  fileView.setUint32(72, numDifatSectors, true) // num DIFAT sectors
+  for (let i = 0; i < HEADER_DIFAT_ENTRIES; i++) {
     fileView.setUint32(76 + i * 4, i < numFatSectors ? fatRegion.startSector + i : FREESECT, true)
   }
 
@@ -399,6 +417,24 @@ export function writeCfb(inputs: StreamInput[]): Uint8Array {
     const off = sectorAt(fatRegion.startSector)
     const dv = new DataView(file.buffer, off, numFatSectors * sectorSize)
     for (let i = 0; i < fat.length; i++) dv.setUint32(i * 4, fat[i], true)
+  }
+  // DIFAT: the FAT sector locations past the header's 109, each sector
+  // ending in the next one's location (ENDOFCHAIN on the last).
+  if (numDifatSectors > 0) {
+    const off = sectorAt(difatRegion.startSector)
+    const dv = new DataView(file.buffer, off, numDifatSectors * sectorSize)
+    for (let k = 0; k < numDifatSectors; k++) {
+      for (let j = 0; j < difatPerSector; j++) {
+        const n = HEADER_DIFAT_ENTRIES + k * difatPerSector + j
+        dv.setUint32(
+          (k * perSector + j) * 4,
+          n < numFatSectors ? fatRegion.startSector + n : FREESECT,
+          true,
+        )
+      }
+      const next = k + 1 < numDifatSectors ? difatRegion.startSector + k + 1 : ENDOFCHAIN
+      dv.setUint32((k * perSector + difatPerSector) * 4, next, true)
+    }
   }
   return file
 }

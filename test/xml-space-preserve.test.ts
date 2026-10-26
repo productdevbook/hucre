@@ -64,11 +64,18 @@ describe("xml:space=preserve on every <t> that needs it", () => {
 
   it("declares it on a rich-text run", async () => {
     const cells = new Map([["0,0", { richText: [{ text: PADDED, font: { bold: true } }] }]])
-    const bytes = await writeXlsx({ sheets: [{ name: "S", rows: [[null]], cells }] })
+    const sheets = [{ name: "S", rows: [[null]], cells }]
 
-    const xml = await part(bytes, "xl/worksheets/sheet1.xml")
-
-    expect(xml).toContain(`<t xml:space="preserve">${PADDED}</t>`)
+    // Shared mode puts the runs in the string table (#602), inline mode
+    // in the cell.
+    const shared = await writeXlsx({ sheets })
+    expect(await part(shared, "xl/sharedStrings.xml")).toContain(
+      `<t xml:space="preserve">${PADDED}</t>`,
+    )
+    const inline = await writeXlsx({ stringMode: "inline", sheets })
+    expect(await part(inline, "xl/worksheets/sheet1.xml")).toContain(
+      `<t xml:space="preserve">${PADDED}</t>`,
+    )
   })
 
   it("declares it on a streamed inline string", async () => {

@@ -5,6 +5,7 @@ import type { WriteSheet, NamedRange } from "../_types"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
 import { hashSheetPassword } from "./password"
 import { METADATA_REL_TYPE } from "./metadata"
+import { addFuturePrefixes } from "./formula-prefix"
 import { FPB_REL_TYPE } from "./feature-property-bag"
 
 const NS_SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -138,7 +139,9 @@ export function writeWorkbookXml(
         attrs["comment"] = nr.comment
       }
 
-      dnElements.push(xmlElement("definedName", attrs, xmlEscape(nr.range)))
+      // A defined name holds a formula, not only a range — a named LAMBDA
+      // is one — so newer functions get their `_xlfn.` here too (#597).
+      dnElements.push(xmlElement("definedName", attrs, xmlEscape(addFuturePrefixes(nr.range))))
     }
 
     parts.push(xmlElement("definedNames", undefined, dnElements))

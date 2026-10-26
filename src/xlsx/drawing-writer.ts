@@ -129,23 +129,13 @@ export function writeDrawing(
     const widthEmu = img.width ? img.width * EMU_PER_PIXEL : DEFAULT_WIDTH_EMU
     const heightEmu = img.height ? img.height * EMU_PER_PIXEL : DEFAULT_HEIGHT_EMU
 
-    // Build twoCellAnchor element
     const fromCol = img.anchor.from.col
     const fromRow = img.anchor.from.row
-    const toCol = img.anchor.to?.col ?? fromCol + 3
-    const toRow = img.anchor.to?.row ?? fromRow + 5
 
     const fromElement = xmlElement("xdr:from", undefined, [
       xmlElement("xdr:col", undefined, String(fromCol)),
       xmlElement("xdr:colOff", undefined, "0"),
       xmlElement("xdr:row", undefined, String(fromRow)),
-      xmlElement("xdr:rowOff", undefined, "0"),
-    ])
-
-    const toElement = xmlElement("xdr:to", undefined, [
-      xmlElement("xdr:col", undefined, String(toCol)),
-      xmlElement("xdr:colOff", undefined, "0"),
-      xmlElement("xdr:row", undefined, String(toRow)),
       xmlElement("xdr:rowOff", undefined, "0"),
     ])
 
@@ -176,12 +166,34 @@ export function writeDrawing(
 
     const pic = xmlElement("xdr:pic", undefined, [nvPicPr, blipFill, spPr])
 
-    const anchor = xmlElement("xdr:twoCellAnchor", undefined, [
-      fromElement,
-      toElement,
-      pic,
-      xmlSelfClose("xdr:clientData"),
-    ])
+    let anchor: string
+    if (img.anchor.to) {
+      const toElement = xmlElement("xdr:to", undefined, [
+        xmlElement("xdr:col", undefined, String(img.anchor.to.col)),
+        xmlElement("xdr:colOff", undefined, "0"),
+        xmlElement("xdr:row", undefined, String(img.anchor.to.row)),
+        xmlElement("xdr:rowOff", undefined, "0"),
+      ])
+      anchor = xmlElement("xdr:twoCellAnchor", undefined, [
+        fromElement,
+        toElement,
+        pic,
+        xmlSelfClose("xdr:clientData"),
+      ])
+    } else {
+      // No `to` means the size comes from width/height, and only a
+      // oneCellAnchor can say that: under a twoCellAnchor Excel and
+      // LibreOffice size the picture from the from/to cells and ignore
+      // `a:ext`, so the invented `to` this used to write (from + 3 columns,
+      // + 5 rows) stretched every such image over that box. The anchor-level
+      // `xdr:ext` is what the reader reports back. See #598.
+      anchor = xmlElement("xdr:oneCellAnchor", undefined, [
+        fromElement,
+        xmlSelfClose("xdr:ext", { cx: widthEmu, cy: heightEmu }),
+        pic,
+        xmlSelfClose("xdr:clientData"),
+      ])
+    }
 
     anchorElements.push(anchor)
   }

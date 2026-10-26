@@ -19,6 +19,7 @@ import type {
   ConditionalRule,
   FreezePane,
   MergeRange,
+  OutlineProperties,
   RowDef,
   SpreadsheetStreamWriter,
 } from "../_types"
@@ -28,7 +29,7 @@ import { zipStream, type ZipStreamEntry } from "../zip/stream-writer"
 import { writeContentTypes } from "./content-types-writer"
 import { writeRootRels, writeWorkbookRels } from "./workbook-writer"
 import { createStylesCollector, type StylesCollector } from "./styles-writer"
-import { createSharedStrings, writeSharedStringsXml } from "./worksheet-writer"
+import { createSharedStrings, DEFAULT_COL_WIDTH, writeSharedStringsXml } from "./worksheet-writer"
 import {
   cellRef,
   hasRowAttributes,
@@ -58,6 +59,8 @@ export interface StreamWriterOptions {
   columns?: ColumnDef[]
   /** Freeze pane */
   freezePane?: FreezePane
+  /** Outline summary placement, preserved on every rollover sheet. */
+  outlineProperties?: OutlineProperties
   /** Date system. Default: "1900" */
   dateSystem?: "1900" | "1904"
   /**
@@ -205,6 +208,8 @@ export interface XlsxStreamSheet {
   columns?: ColumnDef[]
   /** Freeze pane for this sheet. */
   freezePane?: FreezePane
+  /** Outline summary placement for this sheet, including its rollover sheets. */
+  outlineProperties?: OutlineProperties
   /** Row-level properties for this sheet; see {@link StreamWriterOptions.rowDefs}. */
   rowDefs?: Map<number, RowDef>
   /** Merged ranges for this sheet; see {@link StreamWriterOptions.merges}. */
@@ -223,7 +228,7 @@ export interface XlsxStreamSheet {
  * Workbook-wide options for {@link writeXlsxStreamSheets}.
  *
  * The per-sheet half of {@link XlsxWriteStreamOptions} — `name`,
- * `columns`, `freezePane`, `rowDefs`, `merges`, `autoFilter`,
+ * `columns`, `freezePane`, `outlineProperties`, `rowDefs`, `merges`, `autoFilter`,
  * `conditionalRules` — moves to
  * {@link XlsxStreamSheet}, since a multi-sheet workbook has one of each
  * *per sheet*. What is left is what
@@ -367,9 +372,26 @@ class RowSerializer {
 
 // ── Shared Sheet Scaffolding ────────────────────────────────────────
 
-/** Build sheetView + sheetFormatPr + cols (same on every emitted sheet). */
-function buildSheetPrelude(columns: ColumnDef[] | undefined, freezePane: FreezePane | undefined) {
+/** Build sheetPr + sheetViews + sheetFormatPr + cols (same on every emitted sheet). */
+function buildSheetPrelude(
+  columns: ColumnDef[] | undefined,
+  freezePane: FreezePane | undefined,
+  outlineProperties: OutlineProperties | undefined,
+) {
   const parts: string[] = []
+
+  // Row outline levels alone cannot express parent-first trees (#592).
+  // Match the buffered writer, placing sheetPr before sheetViews per OOXML.
+  if (outlineProperties) {
+    const attrs: Record<string, number> = {}
+    if (outlineProperties.summaryBelow !== undefined) {
+      attrs["summaryBelow"] = outlineProperties.summaryBelow ? 1 : 0
+    }
+    if (outlineProperties.summaryRight !== undefined) {
+      attrs["summaryRight"] = outlineProperties.summaryRight ? 1 : 0
+    }
+    parts.push(xmlElement("sheetPr", undefined, [xmlSelfClose("outlinePr", attrs)]))
+  }
 
   // SheetViews (freeze panes)
   const sheetViewParts: string[] = []
@@ -412,6 +434,9 @@ function buildSheetPrelude(columns: ColumnDef[] | undefined, freezePane: FreezeP
         if (col.width !== undefined) {
           colAttrs["width"] = col.width
           colAttrs["customWidth"] = true
+        } else {
+          // Excel shows a `<col>` without a width zero wide. See #603.
+          colAttrs["width"] = DEFAULT_COL_WIDTH
         }
         if (col.hidden) colAttrs["hidden"] = true
         if (col.outlineLevel) colAttrs["outlineLevel"] = col.outlineLevel
@@ -525,6 +550,7 @@ export class XlsxStreamWriter implements SpreadsheetStreamWriter {
   private sheetName: string
   private columns: ColumnDef[] | undefined
   private freezePane: FreezePane | undefined
+  private outlineProperties: OutlineProperties | undefined
   private dateSystem: "1900" | "1904"
   private rowDefs: Map<number, RowDef> | undefined
   private merges: Array<MergeRange | string> | undefined
@@ -548,6 +574,7 @@ export class XlsxStreamWriter implements SpreadsheetStreamWriter {
     this.sheetName = options.name
     this.columns = options.columns
     this.freezePane = options.freezePane
+    this.outlineProperties = options.outlineProperties
     this.dateSystem = options.dateSystem ?? "1900"
     this.maxRowsPerSheet = options.maxRowsPerSheet ?? XLSX_MAX_ROWS_PER_SHEET
     this.repeatHeaders = options.repeatHeaders ?? true
@@ -644,7 +671,7 @@ export class XlsxStreamWriter implements SpreadsheetStreamWriter {
     const sheetCount = this.sheetFragments.length
 
     // Build the same view/columns prelude for every emitted sheet.
-    const sheetPrelude = buildSheetPrelude(this.columns, this.freezePane)
+    const sheetPrelude = buildSheetPrelude(this.columns, this.freezePane, this.outlineProperties)
 
     // Build ZIP archive
     const zip = new ZipWriter()
@@ -771,11 +798,32 @@ export function writeXlsxStream(
   rows: AsyncIterable<XlsxStreamRow> | Iterable<XlsxStreamRow>,
   options: XlsxWriteStreamOptions,
 ): ReadableStream<Uint8Array> {
-  const { name, columns, freezePane, rowDefs, merges, autoFilter, conditionalRules, ...workbook } =
-    options
+  const {
+    name,
+    columns,
+    freezePane,
+    outlineProperties,
+    rowDefs,
+    merges,
+    autoFilter,
+    conditionalRules,
+    ...workbook
+  } = options
 
   return writeXlsxStreamSheets(
-    [{ name, rows, columns, freezePane, rowDefs, merges, autoFilter, conditionalRules }],
+    [
+      {
+        name,
+        rows,
+        columns,
+        freezePane,
+        outlineProperties,
+        rowDefs,
+        merges,
+        autoFilter,
+        conditionalRules,
+      },
+    ],
     workbook,
   )
 }
@@ -862,7 +910,11 @@ async function* xlsxStreamEntries(
       styles,
       sharedStrings,
     })
-    const prelude = buildSheetPrelude(sheet.columns, sheet.freezePane).join("")
+    const prelude = buildSheetPrelude(
+      sheet.columns,
+      sheet.freezePane,
+      sheet.outlineProperties,
+    ).join("")
     const cursor = createRowCursor(sheet.rows)
 
     let headerRow: Array<CellValue | StreamStyledCell> | null = headerFromColumns(sheet.columns)

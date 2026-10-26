@@ -151,6 +151,49 @@ describe("page setup — writing", () => {
     expect(findChild(sheetPr, "pageSetUpPr").attrs["fitToPage"]).toBe("1")
   })
 
+  it("turns on fit to page when only the page counts are given", () => {
+    // The counts used to be dropped without `fitToPage: true`, so the
+    // sheet printed at 100%. See #596.
+    const doc = parseSheet(
+      writeXml({ name: "Test", rows: [["Data"]], pageSetup: { fitToWidth: 1, fitToHeight: 0 } }),
+    )
+
+    const ps = findChild(doc, "pageSetup")
+    expect(ps).toBeDefined()
+    expect(ps.attrs["fitToWidth"]).toBe("1")
+    expect(ps.attrs["fitToHeight"]).toBe("0")
+    const sheetPr = findChild(doc, "sheetPr")
+    expect(sheetPr).toBeDefined()
+    expect(findChild(sheetPr, "pageSetUpPr").attrs["fitToPage"]).toBe("1")
+  })
+
+  it("turns on fit to page when only fitToHeight is given", () => {
+    const doc = parseSheet(
+      writeXml({ name: "Test", rows: [["Data"]], pageSetup: { fitToHeight: 2 } }),
+    )
+
+    const ps = findChild(doc, "pageSetup")
+    expect(ps).toBeDefined()
+    expect(ps.attrs["fitToHeight"]).toBe("2")
+    expect(ps.attrs["fitToWidth"]).toBeUndefined()
+    const sheetPr = findChild(doc, "sheetPr")
+    expect(sheetPr).toBeDefined()
+    expect(findChild(sheetPr, "pageSetUpPr").attrs["fitToPage"]).toBe("1")
+  })
+
+  it("lets an explicit fitToPage: false override the page counts", () => {
+    const doc = parseSheet(
+      writeXml({
+        name: "Test",
+        rows: [["Data"]],
+        pageSetup: { fitToPage: false, fitToWidth: 1, fitToHeight: 0 },
+      }),
+    )
+
+    expect(findChild(doc, "sheetPr")).toBeUndefined()
+    expect(findChild(doc, "pageSetup")).toBeUndefined()
+  })
+
   it("writes all paper sizes correctly", () => {
     const paperSizes: Array<[string, string]> = [
       ["letter", "1"],
@@ -456,6 +499,17 @@ describe("page setup — round-trip", () => {
     expect(ps!.fitToPage).toBe(true)
     expect(ps!.fitToWidth).toBeUndefined()
     expect(ps!.fitToHeight).toBeUndefined()
+  })
+
+  it("round-trips the page counts without fitToPage (#596)", async () => {
+    const data = await writeXlsx({
+      sheets: [{ name: "Sheet1", rows: [["Data"]], pageSetup: { fitToWidth: 1, fitToHeight: 0 } }],
+    })
+
+    const ps = (await readXlsx(data)).sheets[0].pageSetup
+    expect(ps!.fitToPage).toBe(true)
+    expect(ps!.fitToWidth).toBe(1)
+    expect(ps!.fitToHeight).toBe(0)
   })
 
   it("round-trips all paper sizes", async () => {

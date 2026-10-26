@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { readFileSync } from "node:fs"
 import { read, readXls, readXlsb, readXlsx, streamXlsxRows } from "../src/index"
 import type { Cell, CellStyle, ReadOptions, Sheet, Workbook } from "../src/_types"
+import { expectStreamMatchesReadXls } from "./_xls-stream"
 
 // ═══════════════════════════════════════════════════════════════════════
 // #464 — files hucre did not write.
@@ -372,6 +373,29 @@ describe("workbooks written by Excel, not by this test suite", () => {
   // leaking into the model. PARITY.md already says XLS and XLSB carry
   // less than XLSX — styles, dimensions, properties — so the comparison
   // is limited to the values, which all three do claim to carry.
+  // streamXlsRows decodes with readXls's code but walks the records its
+  // own way — a row at a time, ending each row when the next one starts —
+  // so files from two producers check it agrees with readXls on every
+  // value, every row and every sheet.
+  describe("streamXlsRows streams what readXls reads", () => {
+    const files = [
+      ...FIXTURES.filter((f) => f.reader === readXls).map((f) => f.file),
+      ...[
+        "sheetjs-dates.xls",
+        "sheetjs-shared-strings.xls",
+        "sheetjs-sparse.xls",
+        "sheetjs-unicode.xls",
+        "sheetjs-values.xls",
+        "sheetjs-wide.xls",
+      ].map((file) => `third-party/${file}`),
+    ]
+    for (const file of files) {
+      it(file, async () => {
+        await expectStreamMatchesReadXls(bytes(file))
+      })
+    }
+  })
+
   describe("one sheet, three containers", () => {
     const rowsOf = async (file: string, reader: typeof readXlsx): Promise<Flat[][]> =>
       (await modelOf(file, reader)).sheets[0]?.rows ?? []

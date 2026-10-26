@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
+import { writeXlsxStream } from "../src/xlsx/stream-writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { ZipReader } from "../src/zip/reader"
 import { ZipWriter } from "../src/zip/writer"
@@ -173,5 +174,87 @@ describe("sheet format defaults reach the file", () => {
     const bytes = await writeXlsx({ sheets: [{ name: "S", rows: [[1]] }] })
 
     expect((await readXlsx(bytes)).sheets[0]!.defaultRowHeight).toBeUndefined()
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+// A `<col>` with no `width` is a column Excel shows zero wide — hidden.
+// The schema lets `width` be left out, but Excel always writes one itself,
+// even for a column that only has a format, and reads a missing one as 0.
+// So `columns: [{ style }]` used to produce a column that Excel hid, along
+// with any column given only an outline level. Checked in Excel for Mac. See #603.
+// ═══════════════════════════════════════════════════════════════════════
+
+/** The attributes of the `<col>` covering 1-based column `n`. */
+function colAttrs(xml: string, n: number): Record<string, string> {
+  const tag = xml.match(new RegExp(`<col min="${n}" max="${n}"[^>]*/>`))
+  if (!tag) throw new Error(`no <col> for column ${n} in ${xml}`)
+  return Object.fromEntries([...tag[0].matchAll(/(\w+)="([^"]*)"/g)].map((m) => [m[1], m[2]]))
+}
+
+describe("a <col> without a width is not written zero wide", () => {
+  it("gives a styled column Excel's default width", async () => {
+    const bytes = await writeXlsx({
+      sheets: [{ name: "S", rows: [["a", "b"]], columns: [{}, { style: CURRENCY }] }],
+    })
+
+    const col = colAttrs(await part(bytes, "xl/worksheets/sheet1.xml"), 2)
+
+    expect(col.width).toBe("9.140625")
+    expect(col.style).toBeDefined()
+    // It is the default, not a width the author chose.
+    expect(col.customWidth).toBeUndefined()
+  })
+
+  it("gives a column with only an outline level the default width", async () => {
+    const bytes = await writeXlsx({
+      sheets: [{ name: "S", rows: [["a"]], columns: [{ outlineLevel: 1 }] }],
+    })
+
+    expect(colAttrs(await part(bytes, "xl/worksheets/sheet1.xml"), 1).width).toBe("9.140625")
+  })
+
+  it("uses the sheet's own default column width when it has one", async () => {
+    const bytes = await writeXlsx({
+      sheets: [{ name: "S", rows: [["a"]], defaultColWidth: 18, columns: [{ style: CURRENCY }] }],
+    })
+
+    expect(colAttrs(await part(bytes, "xl/worksheets/sheet1.xml"), 1).width).toBe("18")
+  })
+
+  it("leaves a width the author set alone", async () => {
+    const bytes = await writeXlsx({
+      sheets: [{ name: "S", rows: [["a"]], columns: [{ width: 12, style: CURRENCY }] }],
+    })
+
+    const col = colAttrs(await part(bytes, "xl/worksheets/sheet1.xml"), 1)
+
+    expect(col.width).toBe("12")
+    expect(col.customWidth).toBe("true")
+  })
+
+  it("keeps the column style through a round trip", async () => {
+    const bytes = await writeXlsx({
+      sheets: [{ name: "S", rows: [["a"]], columns: [{ style: CURRENCY }] }],
+    })
+
+    const back = (await readXlsx(bytes, { readStyles: true })).sheets[0]!.columns![0]!
+
+    expect(back.style!.numFmt).toBe('"$"#,##0.00')
+    expect(back.hidden).toBeUndefined()
+  })
+
+  it("does the same in the stream writer", async () => {
+    const stream = writeXlsxStream([["a"]], { name: "S", columns: [{ outlineLevel: 1 }] })
+    const chunks: Uint8Array[] = []
+    for await (const chunk of stream) chunks.push(chunk)
+    const bytes = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0))
+    let offset = 0
+    for (const c of chunks) {
+      bytes.set(c, offset)
+      offset += c.length
+    }
+
+    expect(colAttrs(await part(bytes, "xl/worksheets/sheet1.xml"), 1).width).toBe("9.140625")
   })
 })

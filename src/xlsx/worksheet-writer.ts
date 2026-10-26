@@ -30,9 +30,25 @@ import { isHyperlinkValue } from "./hyperlink"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape, xmlTextElement } from "../xml/writer"
 import { calculateColumnWidth } from "./auto-width"
 import { DYNAMIC_ARRAY_CM } from "./metadata"
+import { addFuturePrefixes } from "./formula-prefix"
 import { hashSheetPassword } from "./password"
 import { validateColumnIndex } from "../_validate"
 import { toCellValue } from "../_inline-cells"
+import { computeTableRange } from "./derived-ranges"
+import { totalRowCells } from "./table-writer"
+
+// ── Column Width ──────────────────────────────────────────────────
+
+/**
+ * The `<col width>` for a column that has a `<col>` but no width of its
+ * own: Windows Excel's default for Calibri 11, 8.43 characters shown.
+ *
+ * `width` is optional in the schema, but Excel reads a `<col>` without it
+ * as zero wide, so a column given only a style or an outline level came
+ * out hidden. Excel itself always writes one, even for a column that only
+ * has a format. See #603.
+ */
+export const DEFAULT_COL_WIDTH = 9.140625
 
 // ── Hyperlink Relationship ────────────────────────────────────────
 
@@ -153,8 +169,12 @@ export function rangeRef(
 export interface SharedStringsCollector {
   /** Get or add a string, return its index */
   add(value: string): number
-  /** Get all strings in order */
+  /** Get or add a rich string, return its index */
+  addRich(runs: RichTextRun[]): number
+  /** Get all strings in order. A rich string is its runs' text joined. */
   getAll(): string[]
+  /** The `<r>` runs of each rich string, by index */
+  getRich(): ReadonlyMap<number, string>
   /** Get count */
   count(): number
 }
@@ -162,6 +182,11 @@ export interface SharedStringsCollector {
 export function createSharedStrings(): SharedStringsCollector {
   const strings: string[] = []
   const indexMap = new Map<string, number>()
+  // Rich strings are keyed by their serialized runs, in a map of their
+  // own: "Bold normal" in bold and the plain "Bold normal" are different
+  // entries, while two cells with equal runs share one. See #602.
+  const richIndexMap = new Map<string, number>()
+  const richXml = new Map<number, string>()
 
   function add(value: string): number {
     const existing = indexMap.get(value)
@@ -173,15 +198,31 @@ export function createSharedStrings(): SharedStringsCollector {
     return idx
   }
 
+  function addRich(runs: RichTextRun[]): number {
+    const xml = serializeRichTextRuns(runs).join("")
+    const existing = richIndexMap.get(xml)
+    if (existing !== undefined) return existing
+
+    const idx = strings.length
+    strings.push(runs.map((run) => run.text).join(""))
+    richIndexMap.set(xml, idx)
+    richXml.set(idx, xml)
+    return idx
+  }
+
   function getAll(): string[] {
     return strings
+  }
+
+  function getRich(): ReadonlyMap<number, string> {
+    return richXml
   }
 
   function count(): number {
     return strings.length
   }
 
-  return { add, getAll, count }
+  return { add, addRich, getAll, getRich, count }
 }
 
 /** Generate xl/sharedStrings.xml */
@@ -193,9 +234,13 @@ export function writeSharedStringsXml(sharedStrings: SharedStringsCollector): st
     return xmlDocument("sst", { xmlns: NS_SPREADSHEET, count: 0, uniqueCount: 0 }, "")
   }
 
+  const rich = sharedStrings.getRich()
   const children: string[] = []
-  for (const str of strings) {
-    children.push(xmlElement("si", undefined, [xmlTextElement(str)]))
+  for (let i = 0; i < count; i++) {
+    // A rich `<si>` holds the same `<r>` runs as an inline `<is>`
+    // (§18.4.8, §18.3.1.53).
+    const runs = rich.get(i)
+    children.push(xmlElement("si", undefined, runs ?? [xmlTextElement(strings[i])]))
   }
 
   return xmlDocument("sst", { xmlns: NS_SPREADSHEET, count, uniqueCount: count }, children)
@@ -215,6 +260,7 @@ export interface ResolvedCell {
   checkbox?: boolean
   formula?: string
   formulaResult?: CellValue
+  formulaResultType?: "error"
   formulaType?: "shared" | "array"
   formulaSharedIndex?: number
   formulaRef?: string
@@ -332,8 +378,9 @@ export function writeWorksheetXml(
     // `<pageSetup fitToWidth>` alone does nothing in Excel — the scaling
     // mode is switched by this flag, and the fit counts are read only
     // once it is on. It also carries `fitToPage: true` on its own, which
-    // previously emitted no XML whatsoever. See #407.
-    if (sheet.pageSetup?.fitToPage) {
+    // previously emitted no XML whatsoever. See #407. Either count also
+    // implies the flag; see `isFitToPage` (#596).
+    if (sheet.pageSetup && isFitToPage(sheet.pageSetup)) {
       sheetPrChildren.push(xmlSelfClose("pageSetUpPr", { fitToPage: 1 }))
     }
     if (sheetPrChildren.length > 0) {
@@ -484,6 +531,8 @@ export function writeWorksheetXml(
         if (effectiveWidth !== undefined) {
           colAttrs["width"] = effectiveWidth
           colAttrs["customWidth"] = true
+        } else {
+          colAttrs["width"] = sheet.defaultColWidth ?? DEFAULT_COL_WIDTH
         }
         if (columnStyleId !== 0) {
           colAttrs["style"] = columnStyleId
@@ -851,12 +900,36 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
         checkbox: cellOverride.checkbox ?? existing?.checkbox,
         formula: cellOverride.formula ?? existing?.formula,
         formulaResult: cellOverride.formulaResult ?? existing?.formulaResult,
+        formulaResultType: cellOverride.formulaResultType ?? existing?.formulaResultType,
         formulaType: cellOverride.formulaType ?? existing?.formulaType,
         formulaSharedIndex: cellOverride.formulaSharedIndex ?? existing?.formulaSharedIndex,
         formulaRef: cellOverride.formulaRef ?? existing?.formulaRef,
         formulaDynamic: cellOverride.formulaDynamic ?? existing?.formulaDynamic,
         richText: cellOverride.richText ?? existing?.richText,
         hyperlink: cellOverride.hyperlink ?? existing?.hyperlink,
+      }
+    }
+  }
+
+  // Table total rows. The table part only describes them; Excel reads the
+  // label and the SUBTOTAL from cells. A cell the caller already filled is
+  // theirs: a workbook read back from Excel carries these cells with their
+  // cached results, and rewriting them would only lose those. See #604.
+  if (sheet.tables) {
+    for (const table of sheet.tables) {
+      const range = table.range ?? computeTableRange(table, sheet)
+      for (const total of totalRowCells(table, range)) {
+        while (resolved.length <= total.row) resolved.push([])
+        const row = resolved[total.row]!
+        while (row.length <= total.col) row.push(null)
+        const existing = row[total.col]
+        if (
+          existing &&
+          (existing.value != null || existing.formula !== undefined || existing.richText)
+        ) {
+          continue
+        }
+        row[total.col] = { ...existing, value: total.value ?? null, formula: total.formula }
       }
     }
   }
@@ -920,6 +993,7 @@ export function serializeCell(
     style,
     formula,
     formulaResult,
+    formulaResultType,
     formulaType,
     formulaSharedIndex,
     formulaRef,
@@ -961,8 +1035,13 @@ export function serializeCell(
 
   const ref = cellRef(row, col)
 
-  // Rich text cell (inline string)
+  // Rich text cell. It follows `stringMode` like plain text: it used to be
+  // inline whatever the mode, so tools that only read the shared string
+  // table never saw it, and Excel itself puts rich text there. See #602.
   if (richText && richText.length > 0) {
+    if (!inlineStrings) {
+      return simpleCell(ref, styleIdx, "s", String(sharedStrings.addRich(richText)))
+    }
     const cellAttrs: Record<string, string | number> = { r: ref, t: "inlineStr" }
     if (styleIdx !== 0) cellAttrs["s"] = styleIdx
     const isContent = serializeRichTextRuns(richText)
@@ -980,6 +1059,11 @@ export function serializeCell(
     // cellMetadata collection; see ./metadata.ts for the part itself.
     if (formulaDynamic) cellAttrs["cm"] = DYNAMIC_ARRAY_CM
 
+    // Functions newer than Excel 2007 are stored as `_xlfn.XLOOKUP` and
+    // the like; written bare they compute `#NAME?` (#597). The streaming
+    // writers come through here too.
+    const fText = xmlEscape(addFuturePrefixes(formula))
+
     // Build <f> element with appropriate attributes
     let fElement: string
     if (formulaType === "shared") {
@@ -990,18 +1074,18 @@ export function serializeCell(
       if (formula === "") {
         fElement = xmlSelfClose("f", fAttrs)
       } else {
-        fElement = xmlElement("f", fAttrs, xmlEscape(formula))
+        fElement = xmlElement("f", fAttrs, fText)
       }
     } else if (formulaType === "array") {
       const fAttrs: Record<string, string | number> = { t: "array" }
       if (formulaRef) fAttrs["ref"] = formulaRef
-      fElement = xmlElement("f", fAttrs, xmlEscape(formula))
+      fElement = xmlElement("f", fAttrs, fText)
     } else {
       // Normal formula. `formulaDynamic` used to be honoured only inside
       // the `t="array"` branch above, so a spilling function written
       // without `formulaType: "array"` silently lost the flag (#407); it
       // now lands on `<c>` for both shapes.
-      fElement = xmlElement("f", undefined, xmlEscape(formula))
+      fElement = xmlElement("f", undefined, fText)
     }
 
     const children: string[] = [fElement]
@@ -1010,7 +1094,11 @@ export function serializeCell(
     // and booleans need their `t`.
     if (formulaResult !== undefined && formulaResult !== null) {
       if (typeof formulaResult === "string") {
-        cellAttrs["t"] = "str"
+        // An error result is a string too, and written as `t="str"` it
+        // became a formula that returned that *text* (#599). Which one
+        // it is comes from `formulaResultType`, never from the token: a
+        // formula can return the text "#DIV/0!" as well.
+        cellAttrs["t"] = formulaResultType === "error" ? "e" : "str"
         children.push(xmlElement("v", undefined, xmlEscape(formulaResult)))
       } else if (typeof formulaResult === "boolean") {
         cellAttrs["t"] = "b"
@@ -1198,11 +1286,12 @@ function serializeDataValidations(validations: DataValidation[]): string {
       const quotedList = `"${dv.values.join(",")}"`
       children.push(xmlElement("formula1", undefined, xmlEscape(quotedList)))
     } else if (dv.formula1 !== undefined) {
-      children.push(xmlElement("formula1", undefined, xmlEscape(dv.formula1)))
+      // Same stored form as a cell formula: `_xlfn.` on newer functions (#597).
+      children.push(xmlElement("formula1", undefined, xmlEscape(addFuturePrefixes(dv.formula1))))
     }
 
     if (dv.formula2 !== undefined) {
-      children.push(xmlElement("formula2", undefined, xmlEscape(dv.formula2)))
+      children.push(xmlElement("formula2", undefined, xmlEscape(addFuturePrefixes(dv.formula2))))
     }
 
     if (children.length > 0) {
@@ -1398,6 +1487,17 @@ function serializePrintOptions(ps: PageSetup | undefined): string {
 
 // ── Page Setup Serialization ─────────────────────────────────────────
 
+/**
+ * Whether the sheet prints in fit-to-page mode. The page counts do nothing
+ * without the mode, so writing them without it would be a field that looks
+ * set and prints at 100% — the counts imply the mode unless the caller
+ * says otherwise. The reader already treats either count as turning it on.
+ * See #596.
+ */
+function isFitToPage(ps: PageSetup): boolean {
+  return ps.fitToPage ?? (ps.fitToWidth !== undefined || ps.fitToHeight !== undefined)
+}
+
 function serializePageSetup(ps: PageSetup): string {
   const attrs: Record<string, string | number> = {}
 
@@ -1416,7 +1516,7 @@ function serializePageSetup(ps: PageSetup): string {
     attrs["scale"] = ps.scale
   }
 
-  if (ps.fitToPage) {
+  if (isFitToPage(ps)) {
     if (ps.fitToWidth !== undefined) {
       attrs["fitToWidth"] = ps.fitToWidth
     }
@@ -1505,13 +1605,19 @@ function serializeHeaderFooter(hf: HeaderFooter): string {
 
 // ── Color Attribute Serialization ──────────────────────────────────────
 
+/**
+ * XLSX expects ARGB (8 hex digits); a 6-digit RGB gets an opaque "FF"
+ * alpha prefix. Anything else is passed through as given.
+ */
+function toArgb(rgb: string): string {
+  return rgb.length === 6 ? `FF${rgb}` : rgb
+}
+
 /** Serialize a Color object into XML attributes for a color element */
 function serializeColorAttrs(color: Color): Record<string, string | number> {
   const attrs: Record<string, string | number> = {}
   if (color.rgb !== undefined) {
-    // XLSX expects ARGB format (8 chars), add "FF" alpha prefix if only 6 chars
-    const rgb = color.rgb
-    attrs["rgb"] = rgb.length === 6 ? `FF${rgb}` : rgb
+    attrs["rgb"] = toArgb(color.rgb)
   }
   if (color.theme !== undefined) {
     attrs["theme"] = color.theme
@@ -1527,7 +1633,7 @@ function serializeColorAttrs(color: Color): Record<string, string | number> {
 
 // ── Rich Text Serialization ──────────────────────────────────────────
 
-/** Serialize an array of RichTextRun into XML elements for an <is> (inline string) block */
+/** Serialize an array of RichTextRun into the `<r>` elements of an `<is>` or a shared `<si>` */
 function serializeRichTextRuns(runs: RichTextRun[]): string[] {
   const elements: string[] = []
 
@@ -1686,8 +1792,9 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
   // Formulas
   if (rule.formula !== undefined) {
     const formulas = Array.isArray(rule.formula) ? rule.formula : [rule.formula]
+    // Same stored form as a cell formula: `_xlfn.` on newer functions (#597).
     for (const f of formulas) {
-      children.push(xmlElement("formula", undefined, xmlEscape(f)))
+      children.push(xmlElement("formula", undefined, xmlEscape(addFuturePrefixes(f))))
     }
   }
 
@@ -1699,8 +1806,11 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
       if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
       csChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
     }
+    // Colour scale and data bar colours used to be written as given, so a
+    // 6-digit value — which every other colour field accepts — went out as
+    // an invalid `rgb` (CT_Color/@rgb is four bytes). See #595.
     for (const color of rule.colorScale.colors) {
-      csChildren.push(xmlSelfClose("color", { rgb: color }))
+      csChildren.push(xmlSelfClose("color", { rgb: toArgb(color) }))
     }
     children.push(xmlElement("colorScale", undefined, csChildren))
   }
@@ -1713,7 +1823,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
       if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
       dbChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
     }
-    dbChildren.push(xmlSelfClose("color", { rgb: rule.dataBar.color }))
+    dbChildren.push(xmlSelfClose("color", { rgb: toArgb(rule.dataBar.color) }))
     children.push(xmlElement("dataBar", undefined, dbChildren))
   }
 
@@ -1779,8 +1889,7 @@ function serializeSparklines(sparklines: Sparkline[]): string {
 
     // Color series
     const color = sp.color ?? "376092"
-    const colorRgb = color.length === 6 ? `FF${color}` : color
-    groupChildren.push(xmlSelfClose("x14:colorSeries", { rgb: colorRgb }))
+    groupChildren.push(xmlSelfClose("x14:colorSeries", { rgb: toArgb(color) }))
 
     // Sparkline element
     const sparklineEl = xmlElement("x14:sparkline", undefined, [

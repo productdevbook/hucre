@@ -317,6 +317,15 @@ cannot be right. `value` still holds the error token, so spotting an
 error by its value is unaffected, and a _hard-coded_ error cell — one
 with no formula — still reports `"error"`.
 
+An error result and a text result are told apart. Both hold a string in
+`formulaResult`, and a formula can return the text `"#DIV/0!"` as well as
+the error, so the token alone cannot say which it is. A cached `t="e"`
+result now reads with `formulaResultType: "error"`, and the writer emits
+`t="e"` for it rather than `t="str"`; before #599 every error result was
+written back as text. `writeXlsxStream` has no way to say a streamed
+formula's result is an error, so it still writes string results as
+`t="str"`.
+
 ### ISO-8601 date cells
 
 `ST_CellType` (§18.18.11) has seven members and the reader's switch had
@@ -376,6 +385,30 @@ field to either interface fails `tsc` until it is registered — as a probe
 that round-trips, or as a one-way entry with its reason. That register,
 not this list, is the thing that stays current.
 
+### Newer functions read back with their `_xlfn.` prefix
+
+Functions added after Excel 2007 are stored under a prefixed name —
+`_xlfn.XLOOKUP`, `_xlfn.IFS`, `_xlfn._xlws.FILTER` — that Excel hides in
+the formula bar. The writer adds the prefix to cell, conditional
+formatting, data validation, table total and defined name formulas, and
+the reader keeps formula text as the file has it. So a formula written as
+`XLOOKUP(…)` reads back as `_xlfn.XLOOKUP(…)`: the same formula, but a
+strict equality check on a round trip sees the difference. Writing the
+prefixed form again does not prefix it twice (#597).
+
+The names LET and LAMBDA bind get theirs too: `LET(x,2,x*3)` is written
+`_xlfn.LET(_xlpm.x,2,_xlpm.x*3)`, and an optional `[b]` is bound as
+`_xlop.b`. A use of a bound name is written in the spelling of its
+binding, as Excel writes it, so `LET(Ab,2,aB)` reads back as
+`_xlfn.LET(_xlpm.Ab,2,_xlpm.Ab)`.
+
+One prefix is not added: a function passed as an argument rather than
+called, as in `GROUPBY(A2:A3,B2:B3,SUM)`, is stored `_xleta.SUM`. hucre
+writes it as given, and Excel computes `#NAME?` for it. Telling such a
+name from a defined name of the same spelling needs Excel's whole
+function list. Pass a LAMBDA instead — `GROUPBY(A2:A3,B2:B3,LAMBDA(x,SUM(x)))`
+— which is written in its stored form.
+
 ### Styles read out of a file are shared, not copied
 
 `readXlsx(…, { readStyles: true })` gives every cell its own `CellStyle`
@@ -404,6 +437,20 @@ cell.style = mine
 
 The same holds for a conditional rule's `style`, which is the workbook's
 `<dxf>` record shared by every rule pointing at it.
+
+### A cell font comes back whole
+
+A cell's `<font>` is complete in itself and does not layer on the
+workbook's default. So a cell font that names no face or size, such as
+`{ bold: true }`, is written with the `name` and `size` of `defaultFont`
+(Calibri 11 when there is none) and reads back with them:
+`{ bold: true, size: 10, name: "Arial" }`. When the face is inherited,
+the default's `family`, `charset` and `scheme` come with it. Colour and
+the other parts do not. See #594.
+
+A conditional rule's `style` is a differential format, where a part left
+out means "keep the cell's own", so it is written and read back exactly
+as given.
 
 ### Read and round-trip only — no authoring API
 
@@ -453,6 +500,19 @@ pre-computed value cells; Excel computes them on open.
 the workbook-level caches, and has no write counterpart because
 `WritePivotTable` builds its own cache from the source range.
 
+### A table's total row comes back as cells
+
+A table with `showTotalRow: true` is written with its total row filled
+in: the `totalLabel` as a string, a built-in `totalFunction` as
+`SUBTOTAL(109,Table1[Qty])` and the like, a custom one as its
+`totalFormula`. Read back, those are ordinary cells in `rows` and
+`cells`, on a row the caller may not have written. A total-row cell the
+caller did fill is kept as it is.
+
+The table part describes the total row, but Excel reads it from the
+cells. Without them a built-in total showed an empty row, and a custom
+total made Excel repair the file and drop the row. Fixed in #604.
+
 ### Write-only, by design
 
 | field                                                     | why                                                                                                                                                                        |
@@ -463,6 +523,19 @@ the workbook-level caches, and has no write counterpart because
 | `WriteSheet.data`                                         | the object form of `rows`; comes back as `rows`                                                                                                                            |
 | `WriteSheet.a11y`                                         | authoring metadata. `a11y.summary` is promoted to `properties.description` and does survive; `a11y.headerRow` has no cell to live in                                       |
 | `SheetProtection.password`, `workbookProtection.password` | the file holds a one-way digest, never the password. The digest is read; the password cannot be                                                                            |
+
+### A column with no width comes back with one
+
+A `ColumnDef` that sets a `style`, an outline level or `hidden` but no
+`width` is written with the sheet's `defaultColWidth`, or 9.140625 —
+Excel's default, 8.43 characters shown — when the sheet has none, and
+reads back with that `width`. `customWidth` is not set, so the file still
+says it is the default.
+
+The schema lets `width` be left out, but Excel reads a `<col>` without
+one as zero wide, which hid the column: `columns: [{ style }]` produced a
+column the user could not see. Excel itself always writes a width, even
+for a column that only has a format. Fixed in #603.
 
 ### Losses inside fields that otherwise round-trip
 
@@ -615,16 +688,25 @@ Code that walks a sheet generically — `sheetToObjects`, `toHtml`,
 `row[i] ?? null` rather than assume a slot exists. That is what they all
 do; it is written down here because nothing said so.
 
-The streaming readers _do_ agree: `streamXlsxRows` and `streamOdsRows`
-both skip an entirely empty row and keep the true index on `StreamRow`,
-so a gap in the indexes is the signal.
+The streaming readers _do_ agree: `streamXlsxRows`, `streamXlsRows` and
+`streamOdsRows` all skip an entirely empty row and keep the true index on
+`StreamRow`, so a gap in the indexes is the signal.
 
-They do **not** agree on how many sheets they walk. `streamXlsxRows`
-yields one sheet — the first, unless `sheet` names another —
+They do **not** agree on how many sheets they walk. `streamXlsxRows` and
+`streamXlsRows` yield one sheet — the first, unless `sheet` names another —
 while `streamOdsRows` walks every sheet in the document and tags each row
 with `sheetIndex`. So the same loop over a three-sheet workbook gives you
-one sheet of it as `.xlsx` and all three as `.ods`, silently. Pass
-`sheet` when you mean one, and read `row.sheetIndex` when you mean all.
+one sheet of it as `.xlsx` or `.xls` and all three as `.ods`, silently.
+Pass `sheet` when you mean one, and read `row.sheetIndex` when you mean all.
+
+`streamXlsRows` reads the `.xls` itself whole, since a CFB container needs
+random access, and streams the sheet out of it, so its memory follows the
+file and its shared strings rather than the sheet. To stream, the cells
+have to come in row order — the order BIFF lays its row blocks out in,
+and the one Excel writes.
+A sheet whose records go back a row is buffered and yielded in order
+instead, holding its cells as `readXls` would, under the same
+`maxTotalCells` bound.
 
 ### `streamXmlRows` gives you a row's own keys, not a rectangle
 

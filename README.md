@@ -326,6 +326,7 @@ Process large files row-by-row without loading everything into memory:
 
 ```ts
 import {
+  streamXlsRows,
   streamXlsxRows,
   writeXlsxStream,
   writeXlsxStreamSheets,
@@ -362,6 +363,15 @@ for await (const row of streamXlsxRows(buffer, { maxRows: 100 })) {
 for await (const row of streamXlsxRows(buffer, { range: "B2:D1000" })) {
   // row.values[0] === null (column A is outside)
   // row.values[1..3] carry B/C/D
+}
+
+// Legacy .xls streams the same way, with the same `sheet`, `range` and
+// `maxRows`. The file is read whole — a CFB container needs random
+// access — and a sheet whose cells come in row order is never held
+// whole; one whose records go back a row is buffered, under
+// `maxTotalCells`, and yielded in order.
+for await (const row of streamXlsRows(xlsBytes, { sheet: "Data" })) {
+  console.log(row.index, row.values)
 }
 
 // Stream write — the workbook is emitted as bytes while rows are pulled
@@ -720,6 +730,9 @@ const cyrillic = await readXls(bytes, { codepage: 1251 })
 Decodes the shared-string table (with CONTINUE spanning), RK / MULRK /
 number / boolean / error cells, labels, cached formula values, dates, and
 merged cells. Read-only.
+
+For a sheet too large to hold as a workbook, `streamXlsRows` yields the
+same values a row at a time — see [Streaming](#streaming).
 
 Both legacy readers surface sheet names, cell values, and merges — and
 nothing else. Formulas arrive as their **cached value**, never as formula
@@ -2044,6 +2057,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `openXlsx(input, options?)`        | Open for round-trip (preserves unknown parts)                                           |
 | `saveXlsx(workbook)`               | Save round-trip workbook back to XLSX                                                   |
 | `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time                                              |
+| `streamXlsRows(input, options?)`   | The same for a legacy `.xls` sheet (BIFF5/BIFF8)                                        |
 | `writeXlsxStream(rows, options)`   | Constant-memory XLSX writing — returns a `ReadableStream<Uint8Array>`                   |
 | `toWriteOptions(workbook, opts?)`  | Convert a read `Workbook` into `WriteOptions`; `onDrop` reports what it could not carry |
 | `XlsxStreamWriter`                 | Incremental XLSX writing (`addRow`/`addObject`); auto-splits past `maxRowsPerSheet`     |

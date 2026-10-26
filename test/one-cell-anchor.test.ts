@@ -3,11 +3,26 @@ import { ZipReader } from "../src/zip/reader"
 import { ZipWriter } from "../src/zip/writer"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
+import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip"
+import { writeDrawing } from "../src/xlsx/drawing-writer"
+import { parseXml } from "../src/xml/parser"
 import type { WriteSheet } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
 const encoder = new TextEncoder()
+const decoder = new TextDecoder()
+
+async function drawingXmlOf(xlsx: Uint8Array): Promise<string> {
+  return decoder.decode(await new ZipReader(xlsx).extract("xl/drawings/drawing1.xml"))
+}
+
+/** Local names of an element's child elements, in document order. */
+function childNames(el: { children: Array<unknown> }): string[] {
+  return el.children
+    .filter((c): c is { local?: string; tag: string } => typeof c !== "string")
+    .map((c) => c.local || c.tag)
+}
 
 /** Create a simple fake PNG-like image */
 function fakePng(size = 64): Uint8Array {
@@ -280,5 +295,148 @@ describe("mixed anchor types", () => {
     // 1905000 / 9525 = 200, 952500 / 9525 = 100
     expect(img2.width).toBe(200)
     expect(img2.height).toBe(100)
+  })
+})
+
+// ── oneCellAnchor writing (#598) ─────────────────────────────────────
+
+describe("image without anchor.to is written as oneCellAnchor (#598)", () => {
+  // The issue's reproduction: a 200×40 px logo anchored at B2 with no `to`.
+  const logoSheet = (): WriteSheet => ({
+    name: "Sheet1",
+    rows: [["x"]],
+    images: [
+      {
+        data: fakePng(),
+        type: "png",
+        anchor: { from: { row: 1, col: 1 } },
+        width: 200,
+        height: 40,
+      },
+    ],
+  })
+
+  it("emits oneCellAnchor with from, ext, pic, clientData and no to", async () => {
+    const xml = await drawingXmlOf(await writeXlsx({ sheets: [logoSheet()] }))
+
+    expect(xml).not.toContain("twoCellAnchor")
+    expect(xml).not.toContain("<xdr:to>")
+    const doc = parseXml(xml)
+    expect(childNames(doc)).toEqual(["oneCellAnchor"])
+    const anchor = doc.children.find((c) => typeof c !== "string") as { children: Array<unknown> }
+    // CT_OneCellAnchor is a sequence: from, ext, object, clientData.
+    expect(childNames(anchor)).toEqual(["from", "ext", "pic", "clientData"])
+    // 200 px × 9525 EMU/px, 40 px × 9525 EMU/px
+    expect(xml).toContain('<xdr:ext cx="1905000" cy="381000"/>')
+  })
+
+  it("reads back with only `from` and the written size", async () => {
+    const wb = await readXlsx(await writeXlsx({ sheets: [logoSheet()] }))
+    const img = wb.sheets[0].images![0]
+    expect(img.anchor).toEqual({ from: { row: 1, col: 1 } })
+    expect(img.width).toBe(200)
+    expect(img.height).toBe(40)
+  })
+
+  it("uses the default size for ext when width/height are absent", async () => {
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [["x"]],
+          images: [{ data: fakePng(), type: "png", anchor: { from: { row: 0, col: 0 } } }],
+        },
+      ],
+    })
+    const xml = await drawingXmlOf(xlsx)
+    expect(xml).toContain("<xdr:oneCellAnchor>")
+    expect(xml).toContain('<xdr:ext cx="3000000" cy="2000000"/>')
+
+    // The default is what the reader reports, as SheetImage documents.
+    const img = (await readXlsx(xlsx)).sheets[0].images![0]
+    expect(img.anchor).toEqual({ from: { row: 0, col: 0 } })
+    expect(img.width).toBe(315)
+    expect(img.height).toBe(210)
+  })
+
+  it("keeps altText and title on the picture", async () => {
+    const sheet = logoSheet()
+    sheet.images![0].altText = "Company logo"
+    sheet.images![0].title = "Logo"
+    const xlsx = await writeXlsx({ sheets: [sheet] })
+
+    const xml = await drawingXmlOf(xlsx)
+    expect(xml).toContain("<xdr:oneCellAnchor>")
+    expect(xml).toContain('<xdr:cNvPr id="2" name="Picture 1" title="Logo" descr="Company logo"/>')
+    const img = (await readXlsx(xlsx)).sheets[0].images![0]
+    expect(img.altText).toBe("Company logo")
+    expect(img.title).toBe("Logo")
+  })
+
+  it("still writes twoCellAnchor, unchanged, when `to` is given", () => {
+    const result = writeDrawing(
+      [
+        {
+          data: fakePng(),
+          type: "png",
+          anchor: { from: { row: 1, col: 1 }, to: { row: 5, col: 3 } },
+          width: 200,
+          height: 40,
+          altText: "a<b",
+          title: "T",
+        },
+      ],
+      1,
+    )
+    // Byte-for-byte what the writer produced before #598.
+    expect(result.drawingXml).toContain(
+      "<xdr:twoCellAnchor>" +
+        "<xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>1</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>" +
+        "<xdr:to><xdr:col>3</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>5</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>" +
+        '<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="2" name="Picture 1" title="T" descr="a&lt;b"/>' +
+        '<xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr>' +
+        '<xdr:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>' +
+        '<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1905000" cy="381000"/></a:xfrm>' +
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic>' +
+        "<xdr:clientData/></xdr:twoCellAnchor>",
+    )
+    expect(result.drawingXml).not.toContain("oneCellAnchor")
+  })
+
+  it("mixes both anchor kinds on one sheet in declaration order", async () => {
+    const a = fakePng(70)
+    const b = fakePng(90)
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [["x"]],
+          images: [
+            { data: a, type: "png", anchor: { from: { row: 0, col: 0 }, to: { row: 4, col: 2 } } },
+            { data: b, type: "png", anchor: { from: { row: 6, col: 3 } }, width: 64, height: 32 },
+          ],
+        },
+      ],
+    })
+    expect(childNames(parseXml(await drawingXmlOf(xlsx)))).toEqual([
+      "twoCellAnchor",
+      "oneCellAnchor",
+    ])
+
+    const images = (await readXlsx(xlsx)).sheets[0].images!
+    expect(images.map((i) => i.data)).toEqual([a, b])
+    expect(images[0].anchor).toEqual({ from: { row: 0, col: 0 }, to: { row: 4, col: 2 } })
+    expect(images[1].anchor).toEqual({ from: { row: 6, col: 3 } })
+    expect(images[1].width).toBe(64)
+    expect(images[1].height).toBe(32)
+  })
+
+  it("stays a oneCellAnchor through openXlsx / saveXlsx", async () => {
+    const saved = await saveXlsx(await openXlsx(await writeXlsx({ sheets: [logoSheet()] })))
+    expect(await drawingXmlOf(saved)).toContain('<xdr:ext cx="1905000" cy="381000"/>')
+    const img = (await readXlsx(saved)).sheets[0].images![0]
+    expect(img.anchor).toEqual({ from: { row: 1, col: 1 } })
+    expect(img.width).toBe(200)
+    expect(img.height).toBe(40)
   })
 })

@@ -1855,6 +1855,7 @@ function processCell(
   let cellType: Cell["type"] = "empty"
   let formula: string | undefined
   let formulaResult: CellValue | undefined
+  let formulaResultType: Cell["formulaResultType"]
   let richText: RichTextRun[] | undefined
 
   // Handle formula (including shared formula slave cells with no text)
@@ -1937,9 +1938,22 @@ function processCell(
       // `value` still holds the error token either way, so spotting an
       // error by its value is unaffected; a *hard-coded* error cell,
       // which carries no formula, still reports `"error"`. See #497.
+      //
+      // The cached result is still a plain string, and so is the result
+      // of a formula that returned the *text* "#DIV/0!" (`t="str"`), so
+      // `formulaResultType` is what keeps the two apart — on the way in
+      // and, through the writer, on the way back out. See #599.
+      //
+      // `!== undefined`, not truthiness: a cell a shared formula covers
+      // has `formula: ""`, and its cached error is no less an error. Read
+      // as a bare error it lost the result, and the writer then emitted
+      // the shared formula with no `<v>`.
       value = valueText
-      cellType = formula ? "formula" : "error"
-      if (formula) formulaResult = value
+      cellType = formula !== undefined ? "formula" : "error"
+      if (formula !== undefined) {
+        formulaResult = value
+        formulaResultType = "error"
+      }
       break
     }
     case "d": {
@@ -2058,6 +2072,9 @@ function processCell(
       cell.formula = formula
       if (formulaResult !== undefined) {
         cell.formulaResult = formulaResult
+      }
+      if (formulaResultType !== undefined) {
+        cell.formulaResultType = formulaResultType
       }
       // Store formula type metadata
       if (formulaType === "shared") {

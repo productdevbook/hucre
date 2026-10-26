@@ -127,7 +127,15 @@ describe("#89: Rich text writing", () => {
       ]),
     }
 
-    const xml = writeXml(sheet)
+    // The inline form; rich text in the shared string table is #602.
+    const xml = writeWorksheetXml(
+      sheet,
+      createStylesCollector(),
+      createSharedStrings(),
+      undefined,
+      undefined,
+      true,
+    ).xml
     const doc = parseXml(xml)
 
     const sheetData = findChild(doc, "sheetData")
