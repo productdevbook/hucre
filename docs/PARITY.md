@@ -402,12 +402,17 @@ The names LET and LAMBDA bind get theirs too: `LET(x,2,x*3)` is written
 binding, as Excel writes it, so `LET(Ab,2,aB)` reads back as
 `_xlfn.LET(_xlpm.Ab,2,_xlpm.Ab)`.
 
-One prefix is not added: a function passed as an argument rather than
-called, as in `GROUPBY(A2:A3,B2:B3,SUM)`, is stored `_xleta.SUM`. hucre
-writes it as given, and Excel computes `#NAME?` for it. Telling such a
-name from a defined name of the same spelling needs Excel's whole
-function list. Pass a LAMBDA instead — `GROUPBY(A2:A3,B2:B3,LAMBDA(x,SUM(x)))`
-— which is written in its stored form.
+A built-in function passed as an argument rather than called, as in
+`GROUPBY(A2:A3,B2:B3,SUM)`, is written `_xleta.SUM` (#617). That is done
+only for the argument of GROUPBY, PIVOTBY, BYROW, BYCOL, MAP, REDUCE, SCAN
+and MAKEARRAY that takes a function, and only when it is a lone name from
+hucre's list of Excel's function names that no LET or LAMBDA binds. A
+future function gets only `_xleta.` (`_xleta.PERCENTOF`). The limits: a
+function missing from the list, or a defined name that spells a listed
+function and sits in such a slot, is not what Excel would store. A named
+LAMBDA (`MAP(B2:B3,MyLambda)`) is left bare. This was written from
+Excel 16.114 for Mac's output for the nine forms in the issue, not
+checked against other helpers or versions.
 
 ### Styles read out of a file are shared, not copied
 
