@@ -674,7 +674,7 @@ const buf = await writer.finish()
 
 Read and write password-protected XLSX workbooks (ECMA-376 **Agile**
 encryption — the Excel 2010+ scheme). Encryption is built on the
-platform's WebCrypto, so it stays zero-dependency and runs in Node, Deno,
+platform's WebCrypto, so it stays zero-dependency and runs in Node,
 Bun, Cloudflare Workers, and browsers.
 
 ```ts
@@ -1739,7 +1739,7 @@ const restored = jsonToWorkbook(json)
 // `rowsAt`, or use `jsonToWorkbook` for all of them.
 parseJson(workbookToJson(wb), { rowsAt: "Sheet2" })
 
-// Streaming write — works in Cloudflare Workers / Deno / Node 18+
+// Streaming write — works in Cloudflare Workers / Bun / Node 24+
 const writer = new NdjsonStreamWriter()
 for await (const row of source) writer.addObject(row)
 writer.finish() // `write()` / `end()` still work as deprecated aliases
@@ -2011,7 +2011,6 @@ hucre works everywhere — no Node.js APIs (`fs`, `crypto`, `Buffer`) in core.
 | Runtime               | Status       |
 | --------------------- | ------------ |
 | Node.js 24+           | Full support |
-| Deno                  | Full support |
 | Bun                   | Full support |
 | Modern browsers       | Full support |
 | Cloudflare Workers    | Full support |

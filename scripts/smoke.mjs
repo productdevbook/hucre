@@ -1,6 +1,6 @@
 // ── Cross-runtime smoke test ─────────────────────────────────────────
 //
-// The package advertises Deno, Bun, browsers, Workers and Edge, and the
+// The package advertises Bun, browsers, Workers and Edge, and the
 // core is written to Web APIs only for exactly that reason — but nothing
 // ever ran it anywhere but Node on Linux. This is the smallest thing that
 // would have caught a runtime-specific break: load the built ESM and run

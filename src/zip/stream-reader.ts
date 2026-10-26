@@ -231,7 +231,7 @@ export class ZipStreamReader {
     // consumer that accumulates what it is given (`parseSaxStream` does
     // `buf += decoder.decode(chunk)`) would otherwise rebuild the very
     // string the streaming path exists to avoid, and this is the branch
-    // the Deno/browser/Workers claims rest on. Same reason as the twin
+    // the browser/Workers claims rest on. Same reason as the twin
     // paths in `reader.ts`. See #503.
     return new ReadableStream<Uint8Array>({
       async start(controller) {

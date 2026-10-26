@@ -5,7 +5,7 @@ import { InvalidArgumentError } from "./errors"
  * Decode a base64 string to a `Uint8Array`.
  *
  * `atob` is a Web API and is in every runtime this library claims —
- * Node 24, Deno, Bun, browsers, Workers. This used to prefer
+ * Node 24, Bun, browsers, Workers. This used to prefer
  * `globalThis.Buffer` when it was there, reached through an `any` cast,
  * which was the one place in `src/` outside the CLI that touched a Node
  * API. `tsconfig.json` sets `"types": []` so that reaching for one is a

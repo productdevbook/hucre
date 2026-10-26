@@ -1,5 +1,5 @@
 // ── NDJSON Streaming ─────────────────────────────────────────────────
-// CF Workers / Deno / Node 18+ compatible: uses WHATWG ReadableStream only.
+// CF Workers / Bun / Node 24+ compatible: uses WHATWG ReadableStream only.
 
 import type { CellValue, SpreadsheetStreamWriter } from "../_types"
 import { InvalidArgumentError, ParseError } from "../errors"

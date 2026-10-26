@@ -553,7 +553,7 @@ describe("the command tree", () => {
 describe("the node-builtin boundary", () => {
   it("is crossed by the CLI and nothing else in src/", async () => {
     // The library is platform-neutral: Web APIs only, so it runs the same
-    // in a browser, a worker and Deno. tsconfig.json enforces that by
+    // in a browser, a worker and Bun. tsconfig.json enforces that by
     // declaring no ambient types, which makes `process` and `Buffer` type
     // errors — but an `import ... from "node:fs"` would still resolve at
     // run time in Node, so check the imports directly too.

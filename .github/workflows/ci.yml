@@ -96,14 +96,15 @@ jobs:
     # Does the *shipped* artifact run where the README says it does?
     #
     # Separate from `build` because what users install is dist/, not the
-    # dev setup — and because Bun and Deno are advertised and were never
-    # exercised. Node itself is covered by the matrix above.
+    # dev setup — and because Bun is advertised and was never exercised.
+    # Node itself is covered by the matrix above. Deno was dropped from
+    # the supported runtimes, and with it from this matrix.
     runs-on: ubuntu-latest
     name: runtime ${{ matrix.runtime }}
     strategy:
       fail-fast: false
       matrix:
-        runtime: [bun, deno]
+        runtime: [bun]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v6
@@ -115,14 +116,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run build
 
-      - if: matrix.runtime == 'deno'
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
       # A smoke test, not the suite: vitest is a Node harness, and the
       # question here is whether dist/ loads and works on this runtime.
       - if: matrix.runtime == 'bun'
         run: bun scripts/smoke.mjs
-      - if: matrix.runtime == 'deno'
-        run: deno run --allow-read scripts/smoke.mjs

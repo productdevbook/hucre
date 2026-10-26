@@ -24,7 +24,7 @@ APIs only** — no `node:` imports, no `process`, no `Buffer`.
 `tsconfig.json` sets `"types": []` so reaching for one is a compile error
 rather than something that quietly works on your machine.
 
-That is what makes the Deno, Bun, browser and Workers claims true. The
+That is what makes the Bun, browser and Workers claims true. The
 CLI is the exception and is checked by `tsconfig.cli.json`; tests that
 read from disk belong in that project's include list.
 
