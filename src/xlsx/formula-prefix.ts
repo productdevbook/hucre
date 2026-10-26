@@ -233,6 +233,421 @@ const FUTURE_FUNCTION_PREFIXES: ReadonlyMap<string, string> = new Map([
   ["SORT", XLWS],
 ])
 
+// ── Functions passed as values: _xleta. ─────────────────────────────
+//
+// The LAMBDA helpers take a function where they would take a LAMBDA, and
+// a built-in function can stand in for it: `GROUPBY(A2:A3,B2:B3,SUM)`.
+// Excel stores that bare name as `_xleta.SUM`, and a file with `SUM`
+// there computes `#NAME?` (#617). What Excel 16.114 for Mac saved when
+// the bare forms were typed in:
+// `_xlfn.GROUPBY(A2:A3,B2:B3,_xleta.SUM)`, `_xlfn.MAP(B2:B3,_xleta.ABS)`,
+// `_xlfn.MAKEARRAY(2,2,_xleta.PRODUCT)`. A future function gets only the
+// `_xleta.`, never `_xlfn.` as well: `GROUPBY(B2:B3,B2:B3,_xleta.PERCENTOF)`.
+//
+// `SUM` cannot be told from a defined name by its spelling, so three
+// things must all hold before a name is prefixed:
+// 1. Position. It is the whole argument, in the slot where the helper
+//    expects a function (ETA_ARGUMENT below). `MAP(B2:B3,Total)` with
+//    Total a named LAMBDA stays as it is, and a defined name anywhere
+//    else is never looked at: only a helper's own arguments are.
+// 2. Not bound. A LET or LAMBDA name that spells a function,
+//    `LET(sum,LAMBDA(x,x),MAP(B2:B3,sum))`, is `_xlpm.sum`, not eta.
+// 3. Spelling. It is in ETA_FUNCTIONS: the classic Excel function names
+//    plus every future function above. Some list is unavoidable, since
+//    `MyLambda` and `SUM` look alike; the position rule keeps it from
+//    having to be perfect. A name missing from it costs one unprefixed
+//    argument, and the list is not consulted for names outside a
+//    function slot, so it cannot prefix a defined name elsewhere.
+// Excel is not known to refuse a defined name that spells a function
+// (`SUM` may be accepted; only cell-like spellings and R/C are refused),
+// and this was not checked against Excel, so rules 1 and 2 are not
+// optional. A defined name that is in the list and sits in a function
+// slot is the one case this gets wrong.
+// Left out of the list on purpose: names that read as cells (`ATAN2` is
+// column ATA, row 2), `TRUE`/`FALSE`/`NA`, which are values bare, and the
+// single letters `N` and `T`, likelier a defined name than a function.
+const ETA = "_xleta."
+
+const CLASSIC_NAMES = [
+  "ABS",
+  "ACCRINT",
+  "ACCRINTM",
+  "ACOS",
+  "ACOSH",
+  "ADDRESS",
+  "AMORDEGRC",
+  "AMORLINC",
+  "AND",
+  "AREAS",
+  "ASC",
+  "ASIN",
+  "ASINH",
+  "ATAN",
+  "ATANH",
+  "AVEDEV",
+  "AVERAGE",
+  "AVERAGEA",
+  "AVERAGEIF",
+  "AVERAGEIFS",
+  "BAHTTEXT",
+  "BESSELI",
+  "BESSELJ",
+  "BESSELK",
+  "BESSELY",
+  "BETADIST",
+  "BETAINV",
+  "BIN2DEC",
+  "BIN2HEX",
+  "BIN2OCT",
+  "BINOMDIST",
+  "CEILING",
+  "CELL",
+  "CHAR",
+  "CHIDIST",
+  "CHIINV",
+  "CHITEST",
+  "CHOOSE",
+  "CLEAN",
+  "CODE",
+  "COLUMN",
+  "COLUMNS",
+  "COMBIN",
+  "COMPLEX",
+  "CONCATENATE",
+  "CONFIDENCE",
+  "CONVERT",
+  "CORREL",
+  "COS",
+  "COSH",
+  "COUNT",
+  "COUNTA",
+  "COUNTBLANK",
+  "COUNTIF",
+  "COUNTIFS",
+  "COUPDAYBS",
+  "COUPDAYS",
+  "COUPDAYSNC",
+  "COUPNCD",
+  "COUPNUM",
+  "COUPPCD",
+  "COVAR",
+  "CRITBINOM",
+  "CUBEKPIMEMBER",
+  "CUBEMEMBER",
+  "CUBEMEMBERPROPERTY",
+  "CUBERANKEDMEMBER",
+  "CUBESET",
+  "CUBESETCOUNT",
+  "CUBEVALUE",
+  "CUMIPMT",
+  "CUMPRINC",
+  "DATE",
+  "DATEDIF",
+  "DATEVALUE",
+  "DAVERAGE",
+  "DAY",
+  "DAYS360",
+  "DB",
+  "DBCS",
+  "DCOUNT",
+  "DCOUNTA",
+  "DDB",
+  "DEC2BIN",
+  "DEC2HEX",
+  "DEC2OCT",
+  "DEGREES",
+  "DELTA",
+  "DEVSQ",
+  "DGET",
+  "DISC",
+  "DMAX",
+  "DMIN",
+  "DOLLAR",
+  "DOLLARDE",
+  "DOLLARFR",
+  "DPRODUCT",
+  "DSTDEV",
+  "DSTDEVP",
+  "DSUM",
+  "DURATION",
+  "DVAR",
+  "DVARP",
+  "ECMA.CEILING",
+  "EDATE",
+  "EFFECT",
+  "ENCODEURL",
+  "EOMONTH",
+  "ERF",
+  "ERFC",
+  "ERROR.TYPE",
+  "EUROCONVERT",
+  "EVEN",
+  "EXACT",
+  "EXP",
+  "EXPONDIST",
+  "FACT",
+  "FACTDOUBLE",
+  "FDIST",
+  "FILTER",
+  "FIND",
+  "FINDB",
+  "FINV",
+  "FISHER",
+  "FISHERINV",
+  "FIXED",
+  "FLOOR",
+  "FORECAST",
+  "FREQUENCY",
+  "FTEST",
+  "FV",
+  "FVSCHEDULE",
+  "GAMMADIST",
+  "GAMMAINV",
+  "GAMMALN",
+  "GCD",
+  "GEOMEAN",
+  "GESTEP",
+  "GETPIVOTDATA",
+  "GROWTH",
+  "HARMEAN",
+  "HEX2BIN",
+  "HEX2DEC",
+  "HEX2OCT",
+  "HLOOKUP",
+  "HOUR",
+  "HYPERLINK",
+  "HYPGEOMDIST",
+  "IF",
+  "IFERROR",
+  "IMABS",
+  "IMAGINARY",
+  "IMARGUMENT",
+  "IMCONJUGATE",
+  "IMCOS",
+  "IMDIV",
+  "IMEXP",
+  "IMLN",
+  "IMLOG10",
+  "IMLOG2",
+  "IMPOWER",
+  "IMPRODUCT",
+  "IMREAL",
+  "IMSIN",
+  "IMSQRT",
+  "IMSUB",
+  "IMSUM",
+  "INDEX",
+  "INDIRECT",
+  "INFO",
+  "INT",
+  "INTERCEPT",
+  "INTRATE",
+  "IPMT",
+  "IRR",
+  "ISBLANK",
+  "ISERR",
+  "ISERROR",
+  "ISEVEN",
+  "ISLOGICAL",
+  "ISNA",
+  "ISNONTEXT",
+  "ISNUMBER",
+  "ISO.CEILING",
+  "ISODD",
+  "ISPMT",
+  "ISREF",
+  "ISTEXT",
+  "JIS",
+  "KURT",
+  "LARGE",
+  "LCM",
+  "LEFT",
+  "LEFTB",
+  "LEN",
+  "LENB",
+  "LINEST",
+  "LN",
+  "LOG",
+  "LOGEST",
+  "LOGINV",
+  "LOGNORMDIST",
+  "LOOKUP",
+  "LOWER",
+  "MATCH",
+  "MAX",
+  "MAXA",
+  "MDETERM",
+  "MDURATION",
+  "MEDIAN",
+  "MID",
+  "MIDB",
+  "MIN",
+  "MINA",
+  "MINUTE",
+  "MINVERSE",
+  "MIRR",
+  "MMULT",
+  "MOD",
+  "MODE",
+  "MONTH",
+  "MROUND",
+  "MULTINOMIAL",
+  "NEGBINOMDIST",
+  "NETWORKDAYS",
+  "NETWORKDAYS.INTL",
+  "NOMINAL",
+  "NORMDIST",
+  "NORMINV",
+  "NORMSDIST",
+  "NORMSINV",
+  "NOT",
+  "NOW",
+  "NPER",
+  "NPV",
+  "OCT2BIN",
+  "OCT2DEC",
+  "OCT2HEX",
+  "ODD",
+  "ODDFPRICE",
+  "ODDFYIELD",
+  "ODDLPRICE",
+  "ODDLYIELD",
+  "OFFSET",
+  "OR",
+  "PEARSON",
+  "PERCENTILE",
+  "PERCENTRANK",
+  "PERMUT",
+  "PHONETIC",
+  "PI",
+  "PMT",
+  "POISSON",
+  "POWER",
+  "PPMT",
+  "PRICE",
+  "PRICEDISC",
+  "PRICEMAT",
+  "PROB",
+  "PRODUCT",
+  "PROPER",
+  "PV",
+  "QUARTILE",
+  "QUOTIENT",
+  "RADIANS",
+  "RAND",
+  "RANDBETWEEN",
+  "RANK",
+  "RATE",
+  "RECEIVED",
+  "REPLACE",
+  "REPLACEB",
+  "REPT",
+  "RIGHT",
+  "RIGHTB",
+  "ROMAN",
+  "ROUND",
+  "ROUNDDOWN",
+  "ROUNDUP",
+  "ROW",
+  "ROWS",
+  "RSQ",
+  "RTD",
+  "SEARCH",
+  "SEARCHB",
+  "SECOND",
+  "SERIESSUM",
+  "SIGN",
+  "SIN",
+  "SINH",
+  "SKEW",
+  "SLN",
+  "SLOPE",
+  "SMALL",
+  "SORT",
+  "SQRT",
+  "SQRTPI",
+  "STANDARDIZE",
+  "STDEV",
+  "STDEVA",
+  "STDEVP",
+  "STDEVPA",
+  "STEYX",
+  "SUBSTITUTE",
+  "SUBTOTAL",
+  "SUM",
+  "SUMIF",
+  "SUMIFS",
+  "SUMPRODUCT",
+  "SUMSQ",
+  "SUMX2MY2",
+  "SUMX2PY2",
+  "SUMXMY2",
+  "SYD",
+  "TAN",
+  "TANH",
+  "TBILLEQ",
+  "TBILLPRICE",
+  "TBILLYIELD",
+  "TDIST",
+  "TEXT",
+  "TIME",
+  "TIMEVALUE",
+  "TINV",
+  "TOCOL",
+  "TODAY",
+  "TRANSPOSE",
+  "TREND",
+  "TRIM",
+  "TRIMMEAN",
+  "TRUNC",
+  "TTEST",
+  "TYPE",
+  "UPPER",
+  "VALUE",
+  "VAR",
+  "VARA",
+  "VARP",
+  "VARPA",
+  "VDB",
+  "VLOOKUP",
+  "WEEKDAY",
+  "WEEKNUM",
+  "WEIBULL",
+  "WORKDAY",
+  "WORKDAY.INTL",
+  "XIRR",
+  "XNPV",
+  "YEAR",
+  "YEARFRAC",
+  "YIELD",
+  "YIELDDISC",
+  "YIELDMAT",
+  "ZTEST",
+]
+
+/** Upper-case function names that can be passed as a value. */
+const ETA_FUNCTIONS: ReadonlySet<string> = new Set([
+  ...CLASSIC_NAMES,
+  ...XLFN_NAMES,
+  "FILTER",
+  "SORT",
+])
+
+/**
+ * Upper-case helper → the index of the argument that takes a function.
+ * `-1` is the last one: MAP takes any number of arrays before it.
+ */
+const ETA_ARGUMENT: ReadonlyMap<string, number> = new Map([
+  ["GROUPBY", 2],
+  ["PIVOTBY", 3],
+  ["BYROW", 1],
+  ["BYCOL", 1],
+  ["REDUCE", 2],
+  ["SCAN", 2],
+  ["MAKEARRAY", 2],
+  ["MAP", -1],
+])
+
 /**
  * A character that can be part of a function or defined name. Dots are in
  * (`STDEV.S`, `_xlfn.IFS`) so a prefixed name scans as one token, and
@@ -285,8 +700,11 @@ function skipBracket(formula: string, i: number): number {
   return i + 1
 }
 
-/** `LET(` or `LAMBDA(`, prefixed or not; a false hit only costs the slow path. */
-const BINDS_NAMES = /(?:LET|LAMBDA)\(/i
+/**
+ * `LET(`, `LAMBDA(` or a LAMBDA helper (which may take `_xleta.`), prefixed
+ * or not; a false hit only costs the slow path.
+ */
+const BINDS_NAMES = /(?:LET|LAMBDA|GROUPBY|PIVOTBY|BYROW|BYCOL|MAP|REDUCE|SCAN|MAKEARRAY)\(/i
 
 /**
  * Add the stored prefixes to `formula`: `_xlfn.` (or `_xlfn._xlws.`) on
@@ -362,9 +780,34 @@ interface Edit extends Span {
 /** Upper-case name → the spelling it was bound with. */
 type Scope = ReadonlyMap<string, string>
 
+/**
+ * How deep the scoped path will nest before it gives up. Excel allows 64
+ * levels of nesting, so a real formula is nowhere near this; the cap is for
+ * text like `"(".repeat(100000) + "1" + ")".repeat(100000) + "+LET(x,1,x)"`,
+ * where `parseList`, `resolve` and `call` recurse once per level and the
+ * stack runs out first. That used to surface as a RangeError out of
+ * `writeXlsx`.
+ */
+const MAX_DEPTH = 1024
+
+/** Thrown past `MAX_DEPTH`; never leaves this module. */
+const TOO_DEEP = Symbol("formula too deep")
+
 function addScopedPrefixes(formula: string): string {
+  try {
+    return scopedPrefixes(formula)
+  } catch (e) {
+    // Past the cap the formula is not one Excel could have made, so it is
+    // written as given rather than failing the whole workbook over a
+    // prefix. Anything that is not our own signal is not ours to swallow.
+    if (e === TOO_DEEP) return formula
+    throw e
+  }
+}
+
+function scopedPrefixes(formula: string): string {
   const edits: Edit[] = []
-  const [top] = parseList(formula, 0, false)
+  const [top] = parseList(formula, 0, false, 0)
   resolve(formula, top[0], new Map(), edits)
   if (edits.length === 0) return formula
   // Each edit is at a different token, so in source order they never overlap.
@@ -384,7 +827,8 @@ function addScopedPrefixes(formula: string): string {
  * and the index after the `)`. A stray `)` at the top level, or a missing
  * one at the end, is tolerated: this is a writer, not a validator.
  */
-function parseList(formula: string, i: number, inCall: boolean): [Item[][], number] {
+function parseList(formula: string, i: number, inCall: boolean, depth: number): [Item[][], number] {
+  if (depth > MAX_DEPTH) throw TOO_DEEP
   const n = formula.length
   const args: Item[][] = [[]]
   let current = args[0]
@@ -414,7 +858,7 @@ function parseList(formula: string, i: number, inCall: boolean): [Item[][], numb
         current.pop()
         callee = prev.span
       }
-      const [sub, next] = parseList(formula, i + 1, true)
+      const [sub, next] = parseList(formula, i + 1, true, depth + 1)
       current.push({ kind: "call", callee, args: sub })
       i = next
     } else if (ch === 0x29 /* ) */ && inCall) {
@@ -500,8 +944,26 @@ function call(
     }
     resolve(formula, args[body], inner, edits)
   } else {
-    for (const arg of args) resolve(formula, arg, scope, edits)
+    const slot = ETA_ARGUMENT.get(fn)
+    const eta = slot === -1 ? args.length - 1 : slot
+    for (let k = 0; k < args.length; k++) {
+      if (k === eta) etaArgument(formula, args[k], scope, edits)
+      resolve(formula, args[k], scope, edits)
+    }
   }
+}
+
+/**
+ * `_xleta.` on `arg` when it is a lone built-in function name that no LET
+ * or LAMBDA around it binds; see the rules above ETA_FUNCTIONS.
+ */
+function etaArgument(formula: string, arg: Item[], scope: Scope, edits: Edit[]): void {
+  if (arg.length !== 1 || arg[0].kind !== "name") return
+  const { span } = arg[0]
+  if (!standsAlone(formula, span)) return
+  const upper = formula.slice(span.start, span.end).toUpperCase()
+  if (scope.has(upper) || !ETA_FUNCTIONS.has(upper)) return
+  edits.push({ start: span.start, end: span.start, text: ETA })
 }
 
 /**

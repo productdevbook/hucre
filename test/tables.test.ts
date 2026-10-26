@@ -1069,3 +1069,44 @@ describe("table round-trip", () => {
     expect(workbook.sheets[0].tables![1].name).toBe("Right")
   })
 })
+
+describe("a total-row table whose range is not a table reference", () => {
+  const sheetWith = (range: string): WriteSheet => ({
+    name: "Sheet1",
+    rows: [
+      ["a", "b"],
+      [1, 2],
+      [3, 4],
+      [5, 6],
+      [7, 8],
+    ],
+    tables: [
+      {
+        name: "T",
+        range,
+        showTotalRow: true,
+        columns: [{ name: "a", totalFunction: "sum" }, { name: "b" }],
+      },
+    ],
+  })
+
+  it.each(["$A$1:$B$5", "Sheet1!A1:B5", "A:B", "A1"])(
+    "names the table and the range for %s",
+    async (range) => {
+      // These used to surface as "Cannot read properties of undefined
+      // (reading 'length')" or "Column index 8826682 is not a valid 0-based
+      // column", with nothing pointing at the table.
+      await expect(writeXlsx({ sheets: [sheetWith(range)] })).rejects.toThrow(
+        `Table "T" has range "${range}"`,
+      )
+    },
+  )
+
+  it("still accepts a plain range", async () => {
+    await expect(writeXlsx({ sheets: [sheetWith("A1:B5")] })).resolves.toBeInstanceOf(Uint8Array)
+  })
+
+  it.each(["a1:b5", "A01:B5"])("accepts %s, which parseCellRef reads the same", async (range) => {
+    await expect(writeXlsx({ sheets: [sheetWith(range)] })).resolves.toBeInstanceOf(Uint8Array)
+  })
+})

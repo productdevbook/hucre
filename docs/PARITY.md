@@ -337,6 +337,12 @@ written back as text. `writeXlsxStream` has no way to say a streamed
 formula's result is an error, so it still writes string results as
 `t="str"`.
 
+The flag is honoured only when the cached string is a known error token
+(the standard seven plus `#GETTING_DATA`, `#SPILL!`, `#CALC!`, `#FIELD!`,
+`#BLOCKED!`, `#CONNECT!`, `#UNKNOWN!`, `#BUSY!`, `#PYTHON!`). A `t="e"` cell
+whose token is outside both sets is therefore rewritten as `t="str"`: the
+text survives, its error type does not.
+
 ### ISO-8601 date cells
 
 `ST_CellType` (§18.18.11) has seven members and the reader's switch had
@@ -396,6 +402,27 @@ field to either interface fails `tsc` until it is registered — as a probe
 that round-trips, or as a one-way entry with its reason. That register,
 not this list, is the thing that stays current.
 
+### Drawing anchors carry a sub-cell offset, in pixels
+
+The `from` / `to` corners of `SheetImage.anchor`, `SheetTextBox.anchor` and
+`SheetChart.anchor` (and the read-side `ChartAnchor`) take an optional
+`colOff` / `rowOff`: pixels at 96 DPI from the cell's top-left corner, the
+same unit as `width` / `height`. They are written as `xdr:colOff` /
+`xdr:rowOff` in EMU (pixels x 9525) and read back the same way, so two
+images can share one cell (#567). Absent means 0 and the output is
+byte-identical to what was written before the fields existed.
+
+Two small losses, both deliberate: a zero offset reads back as absent, and
+an offset that is not a whole number of pixels (EMU not divisible by 9525)
+reads back fractional, not rounded, so writing it again restores the exact
+EMU. A negative offset is carried through in both directions (the schema
+allows it), so a round trip does not change bytes; a non-finite one is
+written as 0.
+
+Images are an `.xlsx` feature only. `XlsxStreamWriter`, the ODS writer and
+reader, and the XLS and XLSB readers neither write nor read images, text
+boxes or chart anchors at all, so these offsets do not exist on those paths.
+
 ### Newer functions read back with their `_xlfn.` prefix
 
 Functions added after Excel 2007 are stored under a prefixed name —
@@ -413,12 +440,23 @@ The names LET and LAMBDA bind get theirs too: `LET(x,2,x*3)` is written
 binding, as Excel writes it, so `LET(Ab,2,aB)` reads back as
 `_xlfn.LET(_xlpm.Ab,2,_xlpm.Ab)`.
 
-One prefix is not added: a function passed as an argument rather than
-called, as in `GROUPBY(A2:A3,B2:B3,SUM)`, is stored `_xleta.SUM`. hucre
-writes it as given, and Excel computes `#NAME?` for it. Telling such a
-name from a defined name of the same spelling needs Excel's whole
-function list. Pass a LAMBDA instead — `GROUPBY(A2:A3,B2:B3,LAMBDA(x,SUM(x)))`
-— which is written in its stored form.
+A built-in function passed as an argument rather than called, as in
+`GROUPBY(A2:A3,B2:B3,SUM)`, is written `_xleta.SUM` (#617). That is done
+only for the argument of GROUPBY, PIVOTBY, BYROW, BYCOL, MAP, REDUCE, SCAN
+and MAKEARRAY that takes a function, and only when it is a lone name from
+hucre's list of Excel's function names that no LET or LAMBDA binds. A
+future function gets only `_xleta.` (`_xleta.PERCENTOF`). The limits: a
+function missing from the list, or a defined name that spells a listed
+function and sits in such a slot, is not what Excel would store. A named
+LAMBDA (`MAP(B2:B3,MyLambda)`) is left bare, unless its name is in the
+function list: a defined name `Rate` passed in a function slot is
+wrongly written `_xleta.Rate`. `LOG10` and `ATAN2` read as cell
+references, so they are left out of the list and stay bare in a function
+slot: `BYROW(A1:B2,LOG10)` still computes `#NAME?`. A function passed
+through a LET (`LET(f,SUM,BYROW(A1:B2,f))`) or to anything other than
+the eight helpers is also left bare. This was written from
+Excel 16.114 for Mac's output for the nine forms in the issue, not
+checked against other helpers or versions.
 
 ### Styles read out of a file are shared, not copied
 
@@ -547,6 +585,18 @@ The schema lets `width` be left out, but Excel reads a `<col>` without
 one as zero wide, which hid the column: `columns: [{ style }]` produced a
 column the user could not see. Excel itself always writes a width, even
 for a column that only has a format. Fixed in #603.
+
+**`customWidth` is not read, so a round trip sets it.** `ColumnDef` has a
+`width` and no flag for whether that width was chosen, so the reader keeps
+the width and drops `customWidth`. Every `<col>` with a width is written
+back with `customWidth="1"` — including the defaulted one above and any
+column Excel wrote with a width but without the flag. Reading the file
+`readXlsx` → `writeXlsx` or `openXlsx` → `saveXlsx` therefore turns "this
+is the default width" into "the user set this width". The width itself is
+exact; what is lost is only which of the two it was, and Excel shows the
+column the same either way. Dropping `customWidth` when the width equals
+the default would fix only the columns hucre defaulted, not the ones Excel
+did, so it is not done; the real fix is a field on `ColumnDef`.
 
 ### A `<col min max>` range is read per column and written as a range
 

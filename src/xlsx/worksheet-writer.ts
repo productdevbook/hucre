@@ -380,6 +380,22 @@ const EXCEL_ERRORS = new Set([
   "#CALC!",
 ])
 
+/**
+ * Error tokens Excel stores with `t="e"` in a formula's cached result but
+ * that are not in `EXCEL_ERRORS`. That set also decides whether a plain
+ * string *value* is an error, so widening it would turn a cell holding the
+ * text "#FIELD!" into an error cell; a cached result is already known to be
+ * an error by `formulaResultType`, so it only needs the token to be valid.
+ */
+const EXTRA_CACHED_ERRORS = new Set([
+  "#FIELD!",
+  "#BLOCKED!",
+  "#CONNECT!",
+  "#UNKNOWN!",
+  "#BUSY!",
+  "#PYTHON!",
+])
+
 // ── Worksheet Writer ───────────────────────────────────────────────
 
 /** Generate xl/worksheets/sheetN.xml along with any hyperlink relationships */
@@ -1180,7 +1196,15 @@ export function serializeCell(
         // became a formula that returned that *text* (#599). Which one
         // it is comes from `formulaResultType`, never from the token: a
         // formula can return the text "#DIV/0!" as well.
-        cellAttrs["t"] = formulaResultType === "error" ? "e" : "str"
+        //
+        // The flag is honoured only for a string that is an error token.
+        // It survives an edit: a cell read with a cached `#N/A` and then
+        // given `formulaResult: "hello"` would otherwise be written as
+        // `<c t="e"><v>hello</v>`, which is not a valid error value.
+        const isError =
+          formulaResultType === "error" &&
+          (EXCEL_ERRORS.has(formulaResult) || EXTRA_CACHED_ERRORS.has(formulaResult))
+        cellAttrs["t"] = isError ? "e" : "str"
         children.push(xmlElement("v", undefined, xmlEscape(formulaResult)))
       } else if (typeof formulaResult === "boolean") {
         cellAttrs["t"] = "b"
@@ -1843,6 +1867,19 @@ export function serializeConditionalFormatting(
   return elements
 }
 
+/**
+ * Attributes of a `<cfvo>`. A `formula` threshold is formula text like the
+ * `<formula>` child, so it takes the same stored form: `_xlfn.` on newer
+ * functions (#597). The other types hold a number or a percentage.
+ */
+function cfvoAttributes(cfvo: { type: string; value?: string }): Record<string, string> {
+  const attrs: Record<string, string> = { type: cfvo.type }
+  if (cfvo.value !== undefined) {
+    attrs["val"] = cfvo.type === "formula" ? addFuturePrefixes(cfvo.value) : cfvo.value
+  }
+  return attrs
+}
+
 /** Serialize a single `<cfRule>` element */
 function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string {
   const attrs: Record<string, string | number | boolean> = {
@@ -1883,9 +1920,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
   if (rule.type === "colorScale" && rule.colorScale) {
     const csChildren: string[] = []
     for (const cfvo of rule.colorScale.cfvo) {
-      const cfvoAttrs: Record<string, string> = { type: cfvo.type }
-      if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
-      csChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
+      csChildren.push(xmlSelfClose("cfvo", cfvoAttributes(cfvo)))
     }
     // Colour scale and data bar colours used to be written as given, so a
     // 6-digit value — which every other colour field accepts — went out as
@@ -1900,9 +1935,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
   if (rule.type === "dataBar" && rule.dataBar) {
     const dbChildren: string[] = []
     for (const cfvo of rule.dataBar.cfvo) {
-      const cfvoAttrs: Record<string, string> = { type: cfvo.type }
-      if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
-      dbChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
+      dbChildren.push(xmlSelfClose("cfvo", cfvoAttributes(cfvo)))
     }
     dbChildren.push(xmlSelfClose("color", { rgb: toArgb(rule.dataBar.color) }))
     children.push(xmlElement("dataBar", undefined, dbChildren))
@@ -1918,9 +1951,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
 
     const isChildren: string[] = []
     for (const cfvo of rule.iconSet.cfvo) {
-      const cfvoAttrs: Record<string, string> = { type: cfvo.type }
-      if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
-      isChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
+      isChildren.push(xmlSelfClose("cfvo", cfvoAttributes(cfvo)))
     }
     children.push(xmlElement("iconSet", isAttrs, isChildren))
   }

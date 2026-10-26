@@ -2069,8 +2069,8 @@ export interface SheetChart {
   series: ChartSeries[]
   /** Cell anchor — `to` defaults to a 6×15 area below `from`. */
   anchor: {
-    from: { row: number; col: number }
-    to?: { row: number; col: number }
+    from: { row: number; col: number; colOff?: number; rowOff?: number }
+    to?: { row: number; col: number; colOff?: number; rowOff?: number }
   }
   /**
    * Bar/column subtype. Default: `"clustered"`. `"stacked"` and
@@ -6190,9 +6190,9 @@ export interface ChartDataLabelsInfo {
  */
 export interface ChartAnchor {
   /** Top-left cell (`<xdr:from>`). */
-  from: { row: number; col: number }
+  from: { row: number; col: number; colOff?: number; rowOff?: number }
   /** Bottom-right cell (`<xdr:to>`). Omitted for one-cell anchors. */
-  to?: { row: number; col: number }
+  to?: { row: number; col: number; colOff?: number; rowOff?: number }
 }
 
 /**

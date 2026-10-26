@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
+import { addFuturePrefixes } from "../src/xlsx/formula-prefix"
 import { readXlsx } from "../src/xlsx/reader"
 import { writeXlsxStream } from "../src/xlsx/stream-writer"
 import { ZipReader } from "../src/zip/reader"
@@ -94,7 +95,7 @@ describe("future functions are written with their stored prefix (#597)", () => {
     // Neither [MS-XLSX] nor XlsxWriter lists these yet. Excel 16.114 for
     // Mac saved each with `_xlfn.` when the bare formula was typed in.
     // GROUPBY and PIVOTBY take a LAMBDA here: given a bare `SUM`, Excel
-    // stores `_xleta.SUM`, a prefix hucre does not add (see PARITY.md).
+    // stores `_xleta.SUM` (#617); a LAMBDA keeps these cases about #608.
     const seen: Array<[string, string]> = [
       ["PERCENTOF(B2,B2:B3)", "_xlfn.PERCENTOF(B2,B2:B3)"],
       ["TRIMRANGE(B1:B10)", "_xlfn.TRIMRANGE(B1:B10)"],
@@ -434,5 +435,181 @@ describe("LET and LAMBDA names are written with their stored prefix (#597)", () 
     }
     // A name that only contains LET still gets the functions after it.
     expect(await stored("OUTLET(1)+IFS(TRUE,1)")).toBe("OUTLET(1)+_xlfn.IFS(TRUE,1)")
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+// #617 — a built-in function passed as an argument to a LAMBDA helper is
+// stored `_xleta.SUM`. Written bare, the cell computes `#NAME?`.
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("a function passed as a value gets _xleta. (#617)", () => {
+  it("writes what Excel 16.114 for Mac saved for each example in the issue", async () => {
+    const cases: Array<[string, string]> = [
+      ["GROUPBY(A2:A3,B2:B3,SUM)", "_xlfn.GROUPBY(A2:A3,B2:B3,_xleta.SUM)"],
+      ["PIVOTBY(A2:A3,A2:A3,B2:B3,SUM)", "_xlfn.PIVOTBY(A2:A3,A2:A3,B2:B3,_xleta.SUM)"],
+      ["BYROW(B2:B3,SUM)", "_xlfn.BYROW(B2:B3,_xleta.SUM)"],
+      ["BYCOL(B2:B3,MAX)", "_xlfn.BYCOL(B2:B3,_xleta.MAX)"],
+      ["MAP(B2:B3,ABS)", "_xlfn.MAP(B2:B3,_xleta.ABS)"],
+      ["REDUCE(0,B2:B3,SUM)", "_xlfn.REDUCE(0,B2:B3,_xleta.SUM)"],
+      ["SCAN(0,B2:B3,SUM)", "_xlfn.SCAN(0,B2:B3,_xleta.SUM)"],
+      ["MAKEARRAY(2,2,PRODUCT)", "_xlfn.MAKEARRAY(2,2,_xleta.PRODUCT)"],
+      // A future function gets only the _xleta., not _xlfn. as well.
+      ["GROUPBY(B2:B3,B2:B3,PERCENTOF)", "_xlfn.GROUPBY(B2:B3,B2:B3,_xleta.PERCENTOF)"],
+    ]
+    for (const [bare, expected] of cases) {
+      expect(addFuturePrefixes(bare)).toBe(expected)
+      expect(await stored(bare)).toBe(expected)
+    }
+  })
+
+  it("takes MAP's function from its last argument, after several arrays", () => {
+    expect(addFuturePrefixes("MAP(A1:A2,B1:B2,SUM)")).toBe("_xlfn.MAP(A1:A2,B1:B2,_xleta.SUM)")
+  })
+
+  it("is idempotent, including on Excel's own form", () => {
+    for (const f of [
+      "_xlfn.GROUPBY(A2:A3,B2:B3,_xleta.SUM)",
+      "_xlfn.GROUPBY(B2:B3,B2:B3,_xleta.PERCENTOF)",
+      "_xlfn.MAP(B2:B3,_xleta.ABS)",
+    ]) {
+      expect(addFuturePrefixes(f)).toBe(f)
+    }
+    const once = addFuturePrefixes("BYROW(B2:B3,SUM)")
+    expect(addFuturePrefixes(once)).toBe(once)
+  })
+
+  it("leaves a LET-bound name that spells a function alone", () => {
+    expect(addFuturePrefixes("LET(sum,LAMBDA(x,x*2),MAP(B2:B3,sum))")).toBe(
+      "_xlfn.LET(_xlpm.sum,_xlfn.LAMBDA(_xlpm.x,_xlpm.x*2),_xlfn.MAP(B2:B3,_xlpm.sum))",
+    )
+  })
+
+  it("leaves a LAMBDA parameter that spells a function alone", () => {
+    expect(addFuturePrefixes("LAMBDA(sum,BYROW(A1:A3,sum))")).toBe(
+      "_xlfn.LAMBDA(_xlpm.sum,_xlfn.BYROW(A1:A3,_xlpm.sum))",
+    )
+  })
+
+  it("leaves a defined name, such as a named LAMBDA, alone", () => {
+    expect(addFuturePrefixes("MAP(B2:B3,MyLambda)")).toBe("_xlfn.MAP(B2:B3,MyLambda)")
+    expect(addFuturePrefixes("BYROW(B2:B3,Sheet1!SUM)")).toBe("_xlfn.BYROW(B2:B3,Sheet1!SUM)")
+  })
+
+  it("leaves a cell reference that looks like a function alone", () => {
+    expect(addFuturePrefixes("MAP(B2:B3,SUM1)")).toBe("_xlfn.MAP(B2:B3,SUM1)")
+    expect(addFuturePrefixes("MAP(B2:B3,ATAN2)")).toBe("_xlfn.MAP(B2:B3,ATAN2)")
+  })
+
+  it("leaves a function name in a string literal or a sheet name alone", () => {
+    expect(addFuturePrefixes('MAP(B2:B3,"SUM")')).toBe('_xlfn.MAP(B2:B3,"SUM")')
+    expect(addFuturePrefixes('MAP(B2:B3,LAMBDA(x,x&"MAX"))')).toBe(
+      '_xlfn.MAP(B2:B3,_xlfn.LAMBDA(_xlpm.x,_xlpm.x&"MAX"))',
+    )
+    expect(addFuturePrefixes("BYROW(SUM!B2:B3,SUM)")).toBe("_xlfn.BYROW(SUM!B2:B3,_xleta.SUM)")
+    expect(addFuturePrefixes("BYROW('SUM'!B2:B3,SUM)")).toBe("_xlfn.BYROW('SUM'!B2:B3,_xleta.SUM)")
+  })
+
+  it("only prefixes the function slot, and only a lone name", () => {
+    expect(addFuturePrefixes("MAP(SUM,ABS)")).toBe("_xlfn.MAP(SUM,_xleta.ABS)")
+    expect(addFuturePrefixes("SUM(A1:A3)")).toBe("SUM(A1:A3)")
+    expect(addFuturePrefixes("IF(A1,SUM,MAX)")).toBe("IF(A1,SUM,MAX)")
+    expect(addFuturePrefixes("MAP(B2:B3,SUM+1)")).toBe("_xlfn.MAP(B2:B3,SUM+1)")
+  })
+
+  it("prefixes a nested helper's function and the outer one's", () => {
+    expect(addFuturePrefixes("BYROW(MAP(B2:C3,ABS),SUM)")).toBe(
+      "_xlfn.BYROW(_xlfn.MAP(B2:C3,_xleta.ABS),_xleta.SUM)",
+    )
+    expect(addFuturePrefixes("MAP(B2:B3,LAMBDA(x,REDUCE(0,x,SUM)))")).toBe(
+      "_xlfn.MAP(B2:B3,_xlfn.LAMBDA(_xlpm.x,_xlfn.REDUCE(0,_xlpm.x,_xleta.SUM)))",
+    )
+  })
+
+  it("matches in any case and keeps the caller's spelling, as _xlfn. does", () => {
+    expect(addFuturePrefixes("map(B2:B3,abs)")).toBe("_xlfn.map(B2:B3,_xleta.abs)")
+  })
+
+  it("returns a formula without a call untouched", () => {
+    expect(addFuturePrefixes("SUM")).toBe("SUM")
+  })
+})
+
+describe("conditional-formatting thresholds (#608 follow-up)", () => {
+  it("prefixes a formula cfvo in a colour scale, data bar and icon set", async () => {
+    // `type: "formula"` is what the reader hands back from Excel's files; the
+    // declared union does not list it, so the tests cast.
+    const formula = (value: string) => ({ type: "formula" as unknown as "num", value })
+    const xml = await sheetXml({
+      name: "Sheet1",
+      rows: [[1]],
+      conditionalRules: [
+        {
+          type: "colorScale",
+          priority: 1,
+          range: "A1:A3",
+          colorScale: {
+            cfvo: [formula("MINIFS(B:B,C:C,1)"), { type: "max" }],
+            colors: ["FFFF0000", "FF00FF00"],
+          },
+        },
+        {
+          type: "dataBar",
+          priority: 2,
+          range: "B1:B3",
+          dataBar: { cfvo: [{ type: "min" }, formula("XLOOKUP(1,D:D,E:E)")], color: "FF638EC6" },
+        },
+        {
+          type: "iconSet",
+          priority: 3,
+          range: "C1:C3",
+          iconSet: {
+            iconSet: "3Arrows",
+            cfvo: [{ type: "percent", value: "0" }, formula("IFS(A1,1,TRUE,2)")],
+          },
+        },
+      ],
+    })
+    const vals = [...xml.matchAll(/<cfvo type="formula" val="([^"]*)"/g)].map((m) => m[1])
+    expect(vals).toEqual([
+      "_xlfn.MINIFS(B:B,C:C,1)",
+      "_xlfn.XLOOKUP(1,D:D,E:E)",
+      "_xlfn.IFS(A1,1,TRUE,2)",
+    ])
+  })
+
+  it("leaves a non-formula cfvo value alone", async () => {
+    const xml = await sheetXml({
+      name: "Sheet1",
+      rows: [[1]],
+      conditionalRules: [
+        {
+          type: "colorScale",
+          priority: 1,
+          range: "A1:A3",
+          colorScale: {
+            cfvo: [{ type: "num", value: "XLOOKUP(" }, { type: "max" }],
+            colors: ["FFFF0000", "FF00FF00"],
+          },
+        },
+      ],
+    })
+    expect(xml).toContain('<cfvo type="num" val="XLOOKUP("')
+  })
+})
+
+describe("pathologically deep nesting (#608 follow-up)", () => {
+  it("returns the formula unchanged past the depth cap instead of throwing", async () => {
+    const deep = "(".repeat(100000) + "1" + ")".repeat(100000) + "+LET(x,1,x)"
+    expect(addFuturePrefixes(deep)).toBe(deep)
+    // And through the writer, which is where the RangeError surfaced.
+    await expect(stored(deep)).resolves.toBe(deep)
+  })
+
+  it("still prefixes a formula nested as deep as Excel allows", () => {
+    const nested = "(".repeat(64) + "1" + ")".repeat(64) + "+LET(x,1,x)"
+    expect(addFuturePrefixes(nested)).toBe(
+      "(".repeat(64) + "1" + ")".repeat(64) + "+_xlfn.LET(_xlpm.x,1,_xlpm.x)",
+    )
   })
 })
