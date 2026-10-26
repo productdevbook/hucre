@@ -14,6 +14,9 @@
   <a href="https://github.com/productdevbook/hucre/blob/main/LICENSE"><img src="https://img.shields.io/github/license/productdevbook/hucre?style=flat&colorA=18181B&colorB=34d399" alt="license"></a>
 </p>
 
+> [!NOTE]
+> The only official sources for hucre are this repository ([productdevbook/hucre](https://github.com/productdevbook/hucre)) and the [`hucre` package on npm](https://npmjs.com/package/hucre). The website hucre.dev is not affiliated with this project.
+
 ## Quick Start
 
 ```sh
