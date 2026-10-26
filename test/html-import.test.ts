@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { fromHtml } from "../src/export/html-import"
 import { toHtml } from "../src/export/html"
 import { ParseError } from "../src/errors"
-import { MAX_TOTAL_CELLS } from "../src/limits"
+import { MAX_COL_INDEX, MAX_TOTAL_CELLS } from "../src/limits"
 import type { Sheet } from "../src/_types"
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -232,9 +232,28 @@ describe("fromHtml resource bounds", () => {
     expect(html.length).toBeLessThan(60_000)
     expect(() => fromHtml(html)).toThrow(ParseError)
     expect(() => fromHtml(html)).toThrow(String(MAX_TOTAL_CELLS))
-    // Under a second since the rowspan probe stopped costing a string per
-    // slot; it took 11-15 s under Node before, and timed out the gate.
+    // About 0.1 s now that unreserved padding is filled in one step; slot
+    // by slot it took 11-15 s under Node and timed out the gate.
   }, 5_000)
+
+  it("stops colspan padding at the last column", () => {
+    const sheet = fromHtml('<table><tr><td>a</td><td colspan="16384">b</td></tr></table>')
+    expect(sheet.rows[0]).toHaveLength(MAX_COL_INDEX + 1)
+    expect(sheet.rows[0]![1]).toBe("b")
+    expect(sheet.rows[0]![MAX_COL_INDEX]).toBeNull()
+    // A filled array, not a sparse one: every slot is an own null.
+    expect(Object.keys(sheet.rows[0]!)).toHaveLength(MAX_COL_INDEX + 1)
+  })
+
+  it("pads around a rowspan reservation the same way", () => {
+    const sheet = fromHtml(
+      '<table><tr><td rowspan="2">x</td><td colspan="2">y</td></tr><tr><td colspan="2">z</td></tr></table>',
+    )
+    expect(sheet.rows).toEqual([
+      ["x", "y", null],
+      [null, "z", null],
+    ])
+  })
 
   it("refuses a page of hostile rowspans, not just one", () => {
     // The per-cell bound is paid once per cell; two cells pay it twice.
