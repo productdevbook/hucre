@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { writeXlsxStream } from "../src/xlsx/stream-writer"
+import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip"
 import { ZipReader } from "../src/zip/reader"
 import { ZipWriter } from "../src/zip/writer"
 import type { CellStyle, RowDef, WriteSheet } from "../src/_types"
@@ -348,5 +349,58 @@ describe("a row with no r attribute", () => {
 
     expect(def?.height).toBe(20)
     expect(def?.style?.numFmt).toBe("0.00")
+  })
+})
+
+describe("a cell the file left at the default format, in a formatted row", () => {
+  // §18.3.1.73: a row's `s` is the format of the cells that are *not* in
+  // the row. A `<c>` that is present keeps its own `s`, 0 included, so a
+  // cell the file explicitly left unformatted must not pick up the row's
+  // format on the way through. Found in review of #612.
+  async function source(cellB1: string): Promise<Uint8Array> {
+    const bytes = await writeXlsx({
+      sheets: [
+        {
+          name: "S",
+          rows: [["a", "b"]],
+          rowDefs: new Map<number, RowDef>([[0, { style: TOTAL }]]),
+        },
+      ],
+    })
+    return rewrite(bytes, "xl/worksheets/sheet1.xml", (xml) =>
+      xml.replace(/<c r="B1"[^>]*>/, cellB1),
+    )
+  }
+
+  for (const [label, cellB1] of [
+    ['s="0"', '<c r="B1" t="s" s="0">'],
+    ["no s at all", '<c r="B1" t="s">'],
+  ] as const) {
+    it(`keeps B1 at the default format through readXlsx → writeXlsx (${label})`, async () => {
+      const wb = await readXlsx(await source(cellB1), { readStyles: true })
+      const s = wb.sheets[0]!
+      const xml = await sheetXml({ name: s.name, rows: s.rows, cells: s.cells, rowDefs: s.rowDefs })
+
+      expect(xml).toMatch(/<row r="1" s="(\d+)" customFormat="1"><c r="A1" t="s" s="\1">/)
+      expect(xml).toMatch(/<c r="B1" t="s"><v>/)
+    })
+
+    it(`keeps B1 at the default format through openXlsx → saveXlsx (${label})`, async () => {
+      const book = await openXlsx(await source(cellB1), { readStyles: true })
+      const xml = await part(await saveXlsx(book), "xl/worksheets/sheet1.xml")
+
+      expect(xml).toMatch(/<row r="1" s="(\d+)" customFormat="1"><c r="A1" t="s" s="\1">/)
+      expect(xml).toMatch(/<c r="B1" t="s"><v>/)
+    })
+  }
+
+  it("still gives a cell the caller left unstyled the row's format", async () => {
+    const xml = await sheetXml({
+      name: "S",
+      rows: [["a", "b"]],
+      rowDefs: new Map<number, RowDef>([[0, { style: TOTAL }]]),
+    })
+
+    expect(xml).toMatch(/<c r="B1" t="s" s="[1-9]\d*">/)
   })
 })

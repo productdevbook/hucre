@@ -803,8 +803,10 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
   // already in it, and a reader that looks only at the cells should see
   // the format too. It wins over the column's where both cover a cell
   // that has no style of its own, `numFmt` included: a cell's own format
-  // first, then its row's, then its column's is the order Excel is
-  // understood to resolve them in. Not verified in Excel. See #601.
+  // first, then its row's, then its column's. Excel for Mac showed the
+  // same order for an empty cell where a formatted row crosses a formatted
+  // column. A cell read back with `style: {}` was left at the default
+  // format by the file, and keeps it: `{}` is its own style. See #601.
   const rowStyle = (r: number): CellStyle | undefined => sheet.rowDefs?.get(r)?.style
 
   if (sheet.data && sheet.columns) {

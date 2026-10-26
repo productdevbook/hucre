@@ -860,7 +860,9 @@ export interface RowDef {
    * Default style for the whole row — `<row s="N" customFormat="1">`. On
    * write it also applies to every cell in the row that has no style of
    * its own, and wins over {@link ColumnDef.style} there. Read back only
-   * with `readStyles`. See #601.
+   * with `readStyles`. A cell the file left at the default format inside
+   * such a row reads back with `style: {}`, so writing it again keeps it
+   * unformatted rather than filling it from the row. See #601.
    */
   style?: CellStyle
 }

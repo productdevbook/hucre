@@ -311,8 +311,11 @@ export function createStylesCollector(
   const numFmtMap = new Map<string, number>()
   let nextNumFmtId = 164
 
-  // Cell XFs — default xf at index 0
-  const defaultXfKey = "nf:0|f:0|fl:0|b:0|a:|p:"
+  // Cell XFs — default xf at index 0. The key has to be spelled the way
+  // `registerXf` builds one, checkbox flag included, or a style that sets
+  // nothing — `{}` — never finds it and gets a second, identical xf. A
+  // cell read back as explicitly unformatted (#601) relies on landing here.
+  const defaultXfKey = "nf:0|f:0|fl:0|b:0|a:|p:|cb:0"
   const xfs: XfEntry[] = [
     {
       key: defaultXfKey,

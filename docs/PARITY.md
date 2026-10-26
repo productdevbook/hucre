@@ -250,6 +250,17 @@ Only the **trailing** box shrinks. Interior positions are untouched: a
 value at D1 still sits at index 3 behind three nulls, and an empty row
 between two populated ones is still there.
 
+### A row format and the cells already in it
+
+A row's format (`<row s customFormat>`) is the format of the cells that
+are not in the row (ECMA-376 Part 1 §18.3.1.73). A cell that is present
+keeps its own `s`, and that includes `s="0"` or no `s` at all. With
+`readStyles`, such a cell inside a formatted row reads back with
+`style: {}`. That says the file chose the default format, and the writer
+keeps it at `s="0"` instead of giving it the row's format, as it does
+for a cell the caller left without a style. Without the `{}`, read →
+write moved the row's format onto it. Found in review of #612.
+
 ### `Sheet.rows` is a dense rectangle
 
 Every row is an array, every row is the same length, and no element is

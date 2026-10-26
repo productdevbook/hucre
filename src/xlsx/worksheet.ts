@@ -1052,6 +1052,13 @@ function worksheetParser(
             //
             // Under `readStyles: true` those cells do carry information
             // and still count. See #492.
+            // A cell that is present in a row with a format keeps its own
+            // `s`, 0 or absent included (§18.3.1.73): the row's format is
+            // for the cells that are not there. The model says so with an
+            // empty `style`, which the writer emits as the default format
+            // instead of filling the cell from the row. See #601.
+            const inFormattedRow =
+              ctx.readStyles === true && rowDefs.get(effRow)?.style !== undefined
             const carriesData =
               cellValueText !== "" ||
               inlineText !== "" ||
@@ -1070,6 +1077,7 @@ function worksheetParser(
               // `writeXlsxStream` defaults to inline strings.
               cellType === "inlineStr" ||
               (ctx.readStyles && cellStyleIndex >= 0) ||
+              inFormattedRow ||
               (ctx.styles && cellStyleIndex >= 0
                 ? (ctx.styles.cellXfs[cellStyleIndex]?.hasCheckboxFeature ?? false)
                 : false)
@@ -1093,6 +1101,7 @@ function worksheetParser(
                 cellFormulaCm,
                 effRow,
                 effCol,
+                inFormattedRow,
               )
               // Track max dimensions
               if (effRow >= 0 && effCol >= 0) {
@@ -1820,6 +1829,7 @@ function processCell(
   formulaCm?: boolean,
   fallbackRow?: number,
   fallbackCol?: number,
+  inFormattedRow?: boolean,
 ): void {
   // When the `r` attribute is missing, fall back to implicit row/col position
   // (parity with the streaming reader).
@@ -2049,6 +2059,7 @@ function processCell(
   // in sparse mode, where `cells` is the only place a value can live.
   const hasDetails =
     ctx.sparse ||
+    inFormattedRow ||
     formula !== undefined ||
     richText !== undefined ||
     (ctx.readStyles && ctx.styles && styleIndex >= 0) ||
@@ -2112,6 +2123,12 @@ function processCell(
           col,
         })
       }
+    }
+    // Left at the default format inside a formatted row: `{}` says the
+    // file chose that, where no `style` at all would let the writer fill
+    // the cell from the row. See the caller and #601.
+    if (inFormattedRow && cell.style === undefined) {
+      cell.style = {}
     }
     const cellKey = `${row},${col}`
     assertCellMapCapacity(cells, cellKey, ctx.sheetName)
