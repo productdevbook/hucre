@@ -81,11 +81,11 @@ export interface StreamWriterOptions {
    */
   repeatHeaders?: boolean
   /**
-   * Row-level properties — `height`, `hidden`, `outlineLevel`, `collapsed` —
-   * keyed by 0-based row index, counted the way the caller sees it: the key
-   * keeps rising past a rollover, where the per-sheet index restarts at 0.
-   * Consulted as each row is emitted, so it costs nothing per row that has
-   * no entry.
+   * Row-level properties — `height`, `hidden`, `outlineLevel`, `collapsed`,
+   * `style` — keyed by 0-based row index, counted the way the caller sees
+   * it: the key keeps rising past a rollover, where the per-sheet index
+   * restarts at 0. Consulted as each row is emitted, so it costs nothing
+   * per row that has no entry.
    */
   rowDefs?: Map<number, RowDef>
   /**
@@ -301,16 +301,22 @@ class RowSerializer {
     rowDef?: RowDef,
   ): string | null {
     const cellElements: string[] = []
+    // A row format reaches the cells that carry no style of their own and
+    // wins over the column's there, as it does in writeXlsx. See #601.
+    const rowStyle = rowDef?.style
 
     for (let c = 0; c < values.length; c++) {
       const colDef = this.columns?.[c]
       const raw = values[c]
       const styled = isStreamStyledCell(raw)
       const value = styled ? (raw.value ?? null) : (raw as CellValue)
-      let style: CellStyle | undefined = (styled && raw.style) || colDef?.style
+      const own = (styled && raw.style) || undefined
+      let style: CellStyle | undefined = own || rowStyle || colDef?.style
 
-      // If numFmt on column but not in style, merge
-      if (colDef?.numFmt && (!style || !style.numFmt)) {
+      // If numFmt on column but not in style, merge — except into a row
+      // format, which replaces the column's outright, number format
+      // included, the way writeXlsx resolves it. See #601.
+      if (colDef?.numFmt && (!style || !style.numFmt) && (own || !rowStyle)) {
         style = { ...style, numFmt: colDef.numFmt }
       }
 
@@ -324,11 +330,12 @@ class RowSerializer {
       if (cellXml) cellElements.push(cellXml)
     }
 
-    const attrs = rowAttributes(rowIndex, rowDef)
+    const attrs = rowAttributes(rowIndex, rowDef, this.styles)
 
     if (cellElements.length === 0) {
       // A row with no cells still has to be emitted when its definition asks
-      // for something — a height, or a hidden/grouped row the caller wants.
+      // for something — a height, a format, or a hidden/grouped row the
+      // caller wants.
       return hasRowAttributes(rowDef) ? xmlSelfClose("row", attrs) : null
     }
     return xmlElement("row", attrs, cellElements)

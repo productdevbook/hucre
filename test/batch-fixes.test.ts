@@ -291,7 +291,8 @@ describe("#94: Workbook calcPr", () => {
 
     const calcPr = findChild(doc, "calcPr")
     expect(calcPr).toBeDefined()
-    expect(calcPr.attrs["calcId"]).toBe("0")
+    // Excel for the web ignores fullCalcOnLoad when calcId is 0 (#621)
+    expect(calcPr.attrs["calcId"]).toBe("191029")
     expect(calcPr.attrs["fullCalcOnLoad"]).toBe("1")
   })
 
