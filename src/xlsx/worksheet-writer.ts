@@ -101,6 +101,44 @@ const NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationship
 // ── Column Letter Conversion ───────────────────────────────────────
 
 /** Convert a 0-based column index to an Excel column letter (A, B, ... Z, AA, AB, ...) */
+/** One column's `<col>` attributes, minus `min`/`max`. */
+export interface ColumnRun {
+  index: number
+  attrs: Record<string, string | number | boolean>
+}
+
+/**
+ * Serialize per-column attributes as `<col>` elements, merging adjacent
+ * columns whose attributes are identical into one `<col min max>`.
+ *
+ * The reader expands a range into one ColumnDef per column, so a template
+ * with `<col min="2" max="16384" hidden="1"/>` came back out as 16,383
+ * elements (#622). Merging also helps callers who set the same width on a
+ * hundred columns. Only adjacent columns merge, and only when every
+ * attribute matches, so what Excel sees is unchanged.
+ */
+export function coalesceColumns(runs: ColumnRun[]): string[] {
+  const out: string[] = []
+  let i = 0
+  while (i < runs.length) {
+    const first = runs[i]!
+    const key = JSON.stringify(first.attrs)
+    let last = first.index
+    let j = i + 1
+    while (
+      j < runs.length &&
+      runs[j]!.index === last + 1 &&
+      JSON.stringify(runs[j]!.attrs) === key
+    ) {
+      last = runs[j]!.index
+      j++
+    }
+    out.push(xmlSelfClose("col", { min: first.index + 1, max: last + 1, ...first.attrs }))
+    i = j
+  }
+  return out
+}
+
 export function colToLetter(col: number): string {
   // Memoising this was tried and measured: it is 10 ms of a 2,814 ms
   // write, 0.36%, and the change did not show above run-to-run noise. A
@@ -485,7 +523,7 @@ export function writeWorksheetXml(
 
   // ── Columns ──
   if (sheet.columns && sheet.columns.length > 0) {
-    const colElements: string[] = []
+    const colRuns: ColumnRun[] = []
     for (let i = 0; i < sheet.columns.length; i++) {
       const col = sheet.columns[i]
 
@@ -524,10 +562,7 @@ export function writeWorksheetXml(
         col.collapsed ||
         columnStyleId !== 0
       ) {
-        const colAttrs: Record<string, string | number | boolean> = {
-          min: i + 1,
-          max: i + 1,
-        }
+        const colAttrs: Record<string, string | number | boolean> = {}
         if (effectiveWidth !== undefined) {
           colAttrs["width"] = effectiveWidth
           colAttrs["customWidth"] = true
@@ -546,9 +581,10 @@ export function writeWorksheetXml(
         if (col.collapsed) {
           colAttrs["collapsed"] = true
         }
-        colElements.push(xmlSelfClose("col", colAttrs))
+        colRuns.push({ index: i, attrs: colAttrs })
       }
     }
+    const colElements = coalesceColumns(colRuns)
     if (colElements.length > 0) {
       parts.push(xmlElement("cols", undefined, colElements))
     }

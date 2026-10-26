@@ -930,10 +930,11 @@ describe("writeXlsxStream", () => {
 
   it("emits the sheet opening in its own chunk when the prelude is huge", async () => {
     // 1200 sized columns push the `<cols>` block past the 64 KB flush
-    // threshold before the first row is ever serialized.
+    // threshold before the first row is ever serialized. Each width differs:
+    // identical neighbours are merged into one `<col min max>` (#622).
     const columns = Array.from({ length: 1200 }, (_, i) => ({
       key: `c${i}`,
-      width: 12.5,
+      width: 12.5 + i / 100,
       hidden: true,
       outlineLevel: 1,
     }))

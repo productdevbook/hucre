@@ -268,14 +268,23 @@ describe("workbook protection", () => {
     expect(wb.workbookProtection).toEqual({ lockStructure: true, lockWindows: true })
   })
 
-  it("omits the block when nothing is actually locked", async () => {
+  it("omits the block when it locks nothing and holds no digest", async () => {
+    const wb = await read({
+      "xl/workbook.xml": workbookXml(
+        `<workbookProtection/>` + `<sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets>`,
+      ),
+    })
+    expect(wb.workbookProtection).toBeUndefined()
+  })
+
+  it("keeps a digest even when no lock flag is set (#622)", async () => {
     const wb = await read({
       "xl/workbook.xml": workbookXml(
         `<workbookProtection workbookPassword="CC1A"/>` +
           `<sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets>`,
       ),
     })
-    expect(wb.workbookProtection).toBeUndefined()
+    expect(wb.workbookProtection).toEqual({ digest: { hash: "CC1A" } })
   })
 })
 

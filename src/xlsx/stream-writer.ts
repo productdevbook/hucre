@@ -29,7 +29,13 @@ import { zipStream, type ZipStreamEntry } from "../zip/stream-writer"
 import { writeContentTypes } from "./content-types-writer"
 import { writeRootRels, writeWorkbookRels } from "./workbook-writer"
 import { createStylesCollector, type StylesCollector } from "./styles-writer"
-import { createSharedStrings, DEFAULT_COL_WIDTH, writeSharedStringsXml } from "./worksheet-writer"
+import {
+  coalesceColumns,
+  createSharedStrings,
+  DEFAULT_COL_WIDTH,
+  writeSharedStringsXml,
+  type ColumnRun,
+} from "./worksheet-writer"
 import {
   cellRef,
   hasRowAttributes,
@@ -423,14 +429,11 @@ function buildSheetPrelude(
 
   // Columns
   if (columns && columns.length > 0) {
-    const colElements: string[] = []
+    const colRuns: ColumnRun[] = []
     for (let i = 0; i < columns.length; i++) {
       const col = columns[i]
       if (col.width !== undefined || col.hidden || col.outlineLevel) {
-        const colAttrs: Record<string, string | number | boolean> = {
-          min: i + 1,
-          max: i + 1,
-        }
+        const colAttrs: Record<string, string | number | boolean> = {}
         if (col.width !== undefined) {
           colAttrs["width"] = col.width
           colAttrs["customWidth"] = true
@@ -440,9 +443,10 @@ function buildSheetPrelude(
         }
         if (col.hidden) colAttrs["hidden"] = true
         if (col.outlineLevel) colAttrs["outlineLevel"] = col.outlineLevel
-        colElements.push(xmlSelfClose("col", colAttrs))
+        colRuns.push({ index: i, attrs: colAttrs })
       }
     }
+    const colElements = coalesceColumns(colRuns)
     if (colElements.length > 0) {
       parts.push(xmlElement("cols", undefined, colElements))
     }

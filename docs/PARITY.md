@@ -537,6 +537,22 @@ one as zero wide, which hid the column: `columns: [{ style }]` produced a
 column the user could not see. Excel itself always writes a width, even
 for a column that only has a format. Fixed in #603.
 
+### A `<col min max>` range is read per column and written as a range
+
+The reader expands `<col min="2" max="16384">` into one `ColumnDef` per
+column (the `ColumnDef` API has no range), and the writers — `writeXlsx`,
+`saveXlsx` and the stream writer — merge adjacent columns whose attributes
+are all identical back into one `<col min max>`. A B:XFD template therefore
+round-trips as one element, not 16,383. Columns that differ are not merged,
+so the merge changes the XML, never what Excel shows. Fixed in #622.
+
+### A `<dataValidation>` with no `type` reads as `type: "none"`
+
+`type` is optional in the schema and defaults to `none` (§18.3.1.32), which
+is how Excel stores a validation that only shows an input message.
+`ValidationType` includes `"none"`, and the writer leaves the attribute off
+for it. Fixed in #622.
+
 ### Losses inside fields that otherwise round-trip
 
 Three cases where a field is carried but a particular _value_ is not.
