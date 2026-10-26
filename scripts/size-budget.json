@@ -1,26 +1,26 @@
 {
   "csv (hucre/csv)": {
     "min": 10315,
-    "gzip": 4038
+    "gzip": 4019
   },
   "readXlsx (hucre/xlsx)": {
-    "min": 138926,
-    "gzip": 39085
+    "min": 143848,
+    "gzip": 41338
   },
   "read+write xlsx (hucre/xlsx)": {
-    "min": 271860,
-    "gzip": 75215
+    "min": 290611,
+    "gzip": 83380
   },
   "everything (hucre)": {
-    "min": 505600,
-    "gzip": 144358
+    "min": 528357,
+    "gzip": 153802
   },
   "writeXlsx (hucre)": {
-    "min": 137825,
-    "gzip": 39445
+    "min": 154522,
+    "gzip": 46640
   },
   "readOds (hucre/ods)": {
-    "min": 29733,
-    "gzip": 10454
+    "min": 30078,
+    "gzip": 10485
   }
 }
