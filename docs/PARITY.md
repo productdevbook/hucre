@@ -410,7 +410,13 @@ hucre's list of Excel's function names that no LET or LAMBDA binds. A
 future function gets only `_xleta.` (`_xleta.PERCENTOF`). The limits: a
 function missing from the list, or a defined name that spells a listed
 function and sits in such a slot, is not what Excel would store. A named
-LAMBDA (`MAP(B2:B3,MyLambda)`) is left bare. This was written from
+LAMBDA (`MAP(B2:B3,MyLambda)`) is left bare, unless its name is in the
+function list: a defined name `Rate` passed in a function slot is
+wrongly written `_xleta.Rate`. `LOG10` and `ATAN2` read as cell
+references, so they are left out of the list and stay bare in a function
+slot: `BYROW(A1:B2,LOG10)` still computes `#NAME?`. A function passed
+through a LET (`LET(f,SUM,BYROW(A1:B2,f))`) or to anything other than
+the eight helpers is also left bare. This was written from
 Excel 16.114 for Mac's output for the nine forms in the issue, not
 checked against other helpers or versions.
 
