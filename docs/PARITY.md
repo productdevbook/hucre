@@ -96,7 +96,7 @@ checkboxes, and encryption.
 value is genuinely in the file. But hucre has no formula engine, so it
 cannot know whether that cached value still matches the formula — and a
 stale `<v>` is a workbook that shows the wrong number. Every workbook
-hucre writes therefore carries `calcPr fullCalcOnLoad="1"`, which tells
+hucre writes therefore carries `calcPr calcId="191029" fullCalcOnLoad="1"` (a non-zero `calcId`, because Excel for the web ignores `fullCalcOnLoad` when it is 0), which tells
 Excel to recalculate everything on open and discard the cached results.
 
 The practical consequence: **`formulaResult` survives a hucre round-trip
