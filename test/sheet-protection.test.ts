@@ -5,6 +5,9 @@ import { readXlsx } from "../src/xlsx/reader"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
 import { createSharedStrings, writeWorksheetXml } from "../src/xlsx/worksheet-writer"
 import { hashSheetPassword } from "../src/xlsx/password"
+import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip"
+import { ZipReader } from "../src/zip/reader"
+import { ZipWriter } from "../src/zip/writer"
 import type { WriteSheet, SheetProtection } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -642,5 +645,124 @@ describe("sheet protection — round-trip", () => {
     expect(workbook.sheets[2].protection!.sheet).toBe(true)
     expect(workbook.sheets[2].protection!.autoFilter).toBe(true)
     expect(workbook.sheets[2].protection!.formatCells).toBe(false)
+  })
+})
+
+// ── Password digest round-trip ───────────────────────────────────────
+// The file holds a digest of the password, never the password. Dropping it
+// on read meant open → save kept the protection and lost its password.
+
+const dec = new TextDecoder()
+const enc = new TextEncoder()
+
+async function part(data: Uint8Array, path: string): Promise<string> {
+  return dec.decode(await new ZipReader(data).extract(path))
+}
+
+/** Rewrite one XML part of a package, as another producer would have written it. */
+async function rewritePart(
+  data: Uint8Array,
+  path: string,
+  edit: (xml: string) => string,
+): Promise<Uint8Array> {
+  const reader = new ZipReader(data)
+  const zip = new ZipWriter()
+  for (const name of reader.entries()) {
+    const bytes = await reader.extract(name)
+    zip.add(name, name === path ? enc.encode(edit(dec.decode(bytes))) : bytes)
+  }
+  return zip.build()
+}
+
+const SHA512 = {
+  algorithmName: "SHA-512",
+  hashValue:
+    "X7pdmAyY0lMmJbJbUWwvvPgO4Z2v4h3Yt9Uv8NHUsSPI0Nh8Nh9bWVGgZ5H1W0tW0bPF3eNo2Tfi6ZXqLqC9Bw==",
+  saltValue: "ZcXkLWO1T2rA4Kmbfi3g6A==",
+  spinCount: 100000,
+}
+const SHA512_ATTRS =
+  `algorithmName="${SHA512.algorithmName}" hashValue="${SHA512.hashValue}" ` +
+  `saltValue="${SHA512.saltValue}" spinCount="${SHA512.spinCount}"`
+
+describe("protection password digest — round-trip", () => {
+  it("reads a legacy sheet password hash and writes it back", async () => {
+    const data = await writeXlsx({
+      sheets: [{ name: "S", rows: [["x"]], protection: { sheet: true, password: "secret" } }],
+    })
+    const hash = hashSheetPassword("secret")
+
+    const wb = await readXlsx(data)
+    expect(wb.sheets[0].protection!.passwordHash).toEqual({ legacy: hash })
+
+    const out = await saveXlsx(await openXlsx(data))
+    expect(await part(out, "xl/worksheets/sheet1.xml")).toContain(`password="${hash}"`)
+  })
+
+  it("reads an Agile (SHA-512) sheet digest and writes it back", async () => {
+    const base = await writeXlsx({
+      sheets: [{ name: "S", rows: [["x"]], protection: { sheet: true } }],
+    })
+    const data = await rewritePart(base, "xl/worksheets/sheet1.xml", (xml) =>
+      xml.replace("<sheetProtection ", `<sheetProtection ${SHA512_ATTRS} `),
+    )
+
+    const wb = await readXlsx(data)
+    expect(wb.sheets[0].protection!.passwordHash).toEqual(SHA512)
+
+    const sheetXml = await part(await saveXlsx(await openXlsx(data)), "xl/worksheets/sheet1.xml")
+    const prot = findChild(parseSheet(sheetXml), "sheetProtection")
+    expect(prot.attrs).toMatchObject({
+      algorithmName: SHA512.algorithmName,
+      hashValue: SHA512.hashValue,
+      saltValue: SHA512.saltValue,
+      spinCount: String(SHA512.spinCount),
+      sheet: "1",
+    })
+  })
+
+  it("reads a workbook password digest and writes it back", async () => {
+    const base = await writeXlsx({
+      sheets: [{ name: "S", rows: [["x"]] }],
+      workbookProtection: { lockStructure: true },
+    })
+    const prefixed = SHA512_ATTRS.replace(
+      /(\w+)="/g,
+      (_, a: string) => `workbook${a[0].toUpperCase()}${a.slice(1)}="`,
+    )
+    const data = await rewritePart(base, "xl/workbook.xml", (xml) =>
+      xml.replace(
+        "<workbookProtection ",
+        `<workbookProtection workbookPassword="CC3D" ${prefixed} `,
+      ),
+    )
+
+    const wb = await readXlsx(data)
+    expect(wb.workbookProtection).toEqual({
+      lockStructure: true,
+      passwordHash: { legacy: "CC3D", ...SHA512 },
+    })
+
+    const wbXml = await part(await saveXlsx(await openXlsx(data)), "xl/workbook.xml")
+    const prot = findChild(parseSheet(wbXml), "workbookProtection")
+    expect(prot.attrs).toMatchObject({
+      lockStructure: "1",
+      workbookPassword: "CC3D",
+      workbookAlgorithmName: SHA512.algorithmName,
+      workbookHashValue: SHA512.hashValue,
+      workbookSaltValue: SHA512.saltValue,
+      workbookSpinCount: String(SHA512.spinCount),
+    })
+  })
+
+  it("a plaintext password replaces the digest", () => {
+    const xml = writeXml({
+      name: "S",
+      rows: [["x"]],
+      protection: { password: "new", passwordHash: SHA512 },
+    })
+    const prot = findChild(parseSheet(xml), "sheetProtection")
+    expect(prot.attrs["password"]).toBe(hashSheetPassword("new"))
+    expect(prot.attrs["hashValue"]).toBeUndefined()
   })
 })

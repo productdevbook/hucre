@@ -522,7 +522,7 @@ total made Excel repair the file and drop the row. Fixed in #604.
 | `WriteOptions.stringMode`                                 | an encoding choice with nothing to surface on read                                                                                                                         |
 | `WriteSheet.data`                                         | the object form of `rows`; comes back as `rows`                                                                                                                            |
 | `WriteSheet.a11y`                                         | authoring metadata. `a11y.summary` is promoted to `properties.description` and does survive; `a11y.headerRow` has no cell to live in                                       |
-| `SheetProtection.password`, `workbookProtection.password` | the file holds a one-way digest, never the password. The digest is read; the password cannot be                                                                            |
+| `SheetProtection.password`, `workbookProtection.password` | the file holds a one-way digest, never the password. The digest is read into `passwordHash` and written back; the password cannot be                                       |
 
 ### A column with no width comes back with one
 

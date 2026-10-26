@@ -15,7 +15,7 @@
 // two fields can interact and a failure names the field directly.
 
 import { describe, expect, it } from "vitest"
-import { readXlsx, writeXlsx } from "../src/xlsx"
+import { hashSheetPassword, readXlsx, writeXlsx } from "../src/xlsx"
 import { ZipReader } from "../src/zip"
 import type { Sheet, WriteOptions, WriteSheet, Workbook } from "../src/_types"
 
@@ -218,10 +218,18 @@ const SHEET_FIELDS: { [K in keyof Required<WriteSheet>]: Entry<WriteSheet[K]> } 
       formatCells: sheet.protection?.formatCells,
       sort: sheet.protection?.sort,
       // Declared one-way below, and asserted here so the claim stays true:
-      // the file stores a hash, and a hash is not the password.
+      // the file stores a hash, and a hash is not the password. The hash
+      // itself is read, so a round trip keeps the sheet locked by it.
       password: sheet.protection?.password,
+      passwordHash: sheet.protection?.passwordHash,
     }),
-    expected: { sheet: true, formatCells: true, sort: true, password: undefined },
+    expected: {
+      sheet: true,
+      formatCells: true,
+      sort: true,
+      password: undefined,
+      passwordHash: { legacy: hashSheetPassword("s3cret") },
+    },
   },
 
   pageSetup: {
@@ -453,9 +461,13 @@ const OPTION_FIELDS: { [K in keyof Required<WriteOptions>]: Entry<WriteOptions[K
   workbookProtection: {
     value: { lockStructure: true, lockWindows: true, password: "s3cret" },
     read: (_sheet, wb) => wb.workbookProtection,
-    // Same one-way hash as sheet protection; the flags come back, the
-    // password does not.
-    expected: { lockStructure: true, lockWindows: true },
+    // Same one-way hash as sheet protection; the flags and the hash come
+    // back, the password does not.
+    expected: {
+      lockStructure: true,
+      lockWindows: true,
+      passwordHash: { legacy: hashSheetPassword("s3cret") },
+    },
   },
 
   stringMode: {

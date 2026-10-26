@@ -1028,6 +1028,9 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
   // Copy protection
   if (sheet.protection) {
     cloned.protection = { ...sheet.protection }
+    if (sheet.protection.passwordHash) {
+      cloned.protection.passwordHash = { ...sheet.protection.passwordHash }
+    }
   }
 
   // Copy pageSetup

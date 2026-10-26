@@ -384,6 +384,7 @@ export type {
   WriteChartKind,
   ChartSeries,
   SheetProtection,
+  ProtectionPasswordHash,
   SheetView,
   PageSetup,
   PageMargins,

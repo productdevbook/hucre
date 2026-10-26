@@ -31,7 +31,7 @@ import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape, xmlTextElement } from
 import { calculateColumnWidth } from "./auto-width"
 import { DYNAMIC_ARRAY_CM } from "./metadata"
 import { addFuturePrefixes } from "./formula-prefix"
-import { hashSheetPassword } from "./password"
+import { hashSheetPassword, writePasswordHash } from "./password"
 import { validateColumnIndex } from "../_validate"
 import { toCellValue } from "../_inline-cells"
 import { computeTableRange } from "./derived-ranges"
@@ -1194,6 +1194,8 @@ function serializeSheetProtection(protection: SheetProtection): string {
   // Password hash
   if (protection.password) {
     attrs["password"] = hashSheetPassword(protection.password)
+  } else if (protection.passwordHash) {
+    writePasswordHash(protection.passwordHash, "", attrs)
   }
 
   // sheet, objects, scenarios: true means protected → "1"

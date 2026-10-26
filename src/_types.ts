@@ -829,8 +829,29 @@ export interface A11yIssue {
 
 // ── Sheet Protection ───────────────────────────────────────────────
 
+/**
+ * The password digest a protected sheet or workbook was saved with, as
+ * the file stores it. The password cannot be recovered from it; it is
+ * read so a round trip keeps the protection's password, and written only
+ * when no plaintext `password` is given.
+ */
+export interface ProtectionPasswordHash {
+  /** Legacy 16-bit hash, 4 hex digits (`password` / `workbookPassword`) */
+  legacy?: string
+  /** Hash algorithm of `hashValue`, e.g. "SHA-512" */
+  algorithmName?: string
+  /** Base64 digest */
+  hashValue?: string
+  /** Base64 salt */
+  saltValue?: string
+  /** Hash iterations */
+  spinCount?: number
+}
+
 export interface SheetProtection {
   password?: string
+  /** Digest read from the file; written when `password` is not set */
+  passwordHash?: ProtectionPasswordHash
   sheet?: boolean
   objects?: boolean
   scenarios?: boolean
@@ -1470,6 +1491,7 @@ export interface Workbook {
   workbookProtection?: {
     lockStructure?: boolean
     lockWindows?: boolean
+    passwordHash?: ProtectionPasswordHash
   }
   /**
    * Workbook-wide person directory referenced from threaded comments.
@@ -1768,6 +1790,8 @@ export interface WriteOptions {
     lockStructure?: boolean
     lockWindows?: boolean
     password?: string
+    /** Digest read from the file; written when `password` is not set */
+    passwordHash?: ProtectionPasswordHash
   }
   /** String storage mode. Default: "shared"
    *  - "shared": shared string table (smaller files with repeated strings)

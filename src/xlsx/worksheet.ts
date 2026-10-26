@@ -37,6 +37,7 @@ import { dateToSerial, serialToDate } from "../_date"
 import { parseSax, parseSaxStream, decodeOoxmlEscapes, type SaxHandlers } from "../xml/parser"
 import { MAX_CELL_MAP_ENTRIES, MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
 import { ParseError } from "../errors"
+import { readPasswordHash } from "./password"
 
 /**
  * The message for a sheet whose bounding box is over the limit.
@@ -1503,10 +1504,11 @@ export async function parseWorksheetStream(
 function parseSheetProtectionAttrs(attrs: Record<string, string>): SheetProtection {
   const prot: SheetProtection = {}
 
-  // password is stored as hex hash — we store it as-is (hashed form)
-  // We do NOT store it as the `password` field since that's the raw plaintext in our API.
-  // Instead we skip it — the hash is one-way and can't be reversed.
-  // The presence of a password attr just means the sheet was password-protected.
+  // The file holds a digest, never the password, so it cannot become
+  // `password` (plaintext in our API). It is kept as `passwordHash` and
+  // written back as-is; see ./password.ts.
+  const passwordHash = readPasswordHash(attrs, "")
+  if (passwordHash) prot.passwordHash = passwordHash
 
   if (attrs["sheet"] === "1" || attrs["sheet"] === "true") {
     prot.sheet = true

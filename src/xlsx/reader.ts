@@ -47,6 +47,7 @@ import { parseComments } from "./comments-reader"
 import { parseCellRef } from "./worksheet"
 import { parseCoreProperties, parseAppProperties, parseCustomProperties } from "./doc-props-reader"
 import { parseThemeColors } from "./theme"
+import { readPasswordHash } from "./password"
 
 // ── OOXML Relationship Types ─────────────────────────────────────────
 
@@ -1577,7 +1578,7 @@ function parseWorkbookXml(
   sheets: SheetInfo[]
   dateSystem: "1900" | "1904"
   namedRanges: NamedRange[]
-  workbookProtection?: { lockStructure?: boolean; lockWindows?: boolean }
+  workbookProtection?: Workbook["workbookProtection"]
   /**
    * `<bookViews><workbookView activeTab>` — the tab Excel opens on.
    * Omitted when the file declares tab 0, which is the OOXML default and
@@ -1606,7 +1607,7 @@ function parseWorkbookXml(
     dateSystem = "1900"
   }
 
-  let wbProtection: { lockStructure?: boolean; lockWindows?: boolean } | undefined
+  let wbProtection: Workbook["workbookProtection"]
   let activeSheet: number | undefined
 
   // First pass: collect sheets (needed for resolving localSheetId)
@@ -1633,6 +1634,8 @@ function parseWorkbookXml(
         wbProtection = {}
         if (lockStructure) wbProtection.lockStructure = true
         if (lockWindows) wbProtection.lockWindows = true
+        const passwordHash = readPasswordHash(child.attrs, "workbook")
+        if (passwordHash) wbProtection.passwordHash = passwordHash
       }
     }
 
