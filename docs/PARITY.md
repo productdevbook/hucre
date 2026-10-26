@@ -548,6 +548,21 @@ one as zero wide, which hid the column: `columns: [{ style }]` produced a
 column the user could not see. Excel itself always writes a width, even
 for a column that only has a format. Fixed in #603.
 
+### A cell's own style replaces its row's and its column's
+
+A cell resolves to the first style present of its own, its row's, then its
+column's, and that style is used whole. It is never layered over the next:
+a cell given `{ font: { bold: true } }` in a column with `numFmt: "0.00"`
+is bold with the General format, not bold and `0.00`. This is how Excel
+stores it, since a cell's `xf` is complete and self-contained; to get both,
+give the cell both. `writeXlsx` has always behaved this way.
+`writeXlsxStream` and `XlsxStreamWriter` used to add the column's `numFmt`
+to a cell style that had none, so the same input produced a different
+workbook; they no longer do, which changes the number format of any
+streamed styled cell that relied on it. They also now write the column's
+format on `<col style>`, as `writeXlsx` does, so it reads back on the
+column and applies to cells typed there later. Fixed in #616.
+
 ### Losses inside fields that otherwise round-trip
 
 Three cases where a field is carried but a particular _value_ is not.
