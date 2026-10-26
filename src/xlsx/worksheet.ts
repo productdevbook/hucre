@@ -515,12 +515,16 @@ function worksheetParser(
             // lacking an `r` attribute get sequential columns within this row.
             currentRowNum = Number(attrs["r"]) || currentRowNum + 1
             implicitCol = 0
+            // `r` is optional on `<row>` (§18.3.1.73): the attributes below
+            // take the row number worked out above, as the cells do. They
+            // used to read `attrs["r"]` again, which is NaN without it, so
+            // a height, hidden flag, outline level or format was dropped.
             // Parse row-level attributes: ht, customHeight, hidden
             if (
               attrs["ht"] &&
               (attrs["customHeight"] === "1" || attrs["customHeight"] === "true")
             ) {
-              const rowNum = Number(attrs["r"]) - 1 // 0-based
+              const rowNum = currentRowNum - 1 // 0-based
               const height = Number(attrs["ht"])
               if (!Number.isNaN(rowNum) && !Number.isNaN(height)) {
                 const existing = rowDefs.get(rowNum) ?? {}
@@ -529,7 +533,7 @@ function worksheetParser(
               }
             }
             if (attrs["hidden"] === "1" || attrs["hidden"] === "true") {
-              const rowNum = Number(attrs["r"]) - 1
+              const rowNum = currentRowNum - 1
               if (!Number.isNaN(rowNum)) {
                 const existing = rowDefs.get(rowNum) ?? {}
                 existing.hidden = true
@@ -537,7 +541,7 @@ function worksheetParser(
               }
             }
             if (attrs["outlineLevel"]) {
-              const rowNum = Number(attrs["r"]) - 1
+              const rowNum = currentRowNum - 1
               const level = Number(attrs["outlineLevel"])
               if (!Number.isNaN(rowNum) && !Number.isNaN(level) && level > 0) {
                 const existing = rowDefs.get(rowNum) ?? {}
@@ -546,11 +550,35 @@ function worksheetParser(
               }
             }
             if (attrs["collapsed"] === "1" || attrs["collapsed"] === "true") {
-              const rowNum = Number(attrs["r"]) - 1
+              const rowNum = currentRowNum - 1
               if (!Number.isNaN(rowNum)) {
                 const existing = rowDefs.get(rowNum) ?? {}
                 existing.collapsed = true
                 rowDefs.set(rowNum, existing)
+              }
+            }
+            // The row's format. §18.3.1.73 makes `s` mean something only
+            // when `customFormat` is set, and Excel ignores it otherwise,
+            // so a bare `s` is not read as one. It used to be dropped
+            // either way, which lost a formatted row on the way through.
+            // See #601.
+            if (
+              ctx.readStyles &&
+              ctx.styles &&
+              attrs["s"] !== undefined &&
+              (attrs["customFormat"] === "1" || attrs["customFormat"] === "true")
+            ) {
+              const rowNum = currentRowNum - 1
+              const styleIndex = Number(attrs["s"])
+              if (!Number.isNaN(rowNum) && styleIndex >= 0) {
+                const rowStyle = resolveStyle(ctx.styles, styleIndex)
+                if (Object.keys(rowStyle).length > 0) {
+                  const existing = rowDefs.get(rowNum) ?? {}
+                  // Each row gets its own copy, as each column does:
+                  // `resolveStyle` hands out shared records.
+                  existing.style = cloneCellStyle(rowStyle)
+                  rowDefs.set(rowNum, existing)
+                }
               }
             }
           }
@@ -1026,6 +1054,13 @@ function worksheetParser(
             //
             // Under `readStyles: true` those cells do carry information
             // and still count. See #492.
+            // A cell that is present in a row with a format keeps its own
+            // `s`, 0 or absent included (§18.3.1.73): the row's format is
+            // for the cells that are not there. The model says so with an
+            // empty `style`, which the writer emits as the default format
+            // instead of filling the cell from the row. See #601.
+            const inFormattedRow =
+              ctx.readStyles === true && rowDefs.get(effRow)?.style !== undefined
             const carriesData =
               cellValueText !== "" ||
               inlineText !== "" ||
@@ -1044,6 +1079,7 @@ function worksheetParser(
               // `writeXlsxStream` defaults to inline strings.
               cellType === "inlineStr" ||
               (ctx.readStyles && cellStyleIndex >= 0) ||
+              inFormattedRow ||
               (ctx.styles && cellStyleIndex >= 0
                 ? (ctx.styles.cellXfs[cellStyleIndex]?.hasCheckboxFeature ?? false)
                 : false)
@@ -1067,6 +1103,7 @@ function worksheetParser(
                 cellFormulaCm,
                 effRow,
                 effCol,
+                inFormattedRow,
               )
               // Track max dimensions
               if (effRow >= 0 && effCol >= 0) {
@@ -1794,6 +1831,7 @@ function processCell(
   formulaCm?: boolean,
   fallbackRow?: number,
   fallbackCol?: number,
+  inFormattedRow?: boolean,
 ): void {
   // When the `r` attribute is missing, fall back to implicit row/col position
   // (parity with the streaming reader).
@@ -2056,6 +2094,7 @@ function processCell(
   // in sparse mode, where `cells` is the only place a value can live.
   const hasDetails =
     ctx.sparse ||
+    inFormattedRow ||
     formula !== undefined ||
     richText !== undefined ||
     (ctx.readStyles && ctx.styles && styleIndex >= 0) ||
@@ -2122,6 +2161,12 @@ function processCell(
           col,
         })
       }
+    }
+    // Left at the default format inside a formatted row: `{}` says the
+    // file chose that, where no `style` at all would let the writer fill
+    // the cell from the row. See the caller and #601.
+    if (inFormattedRow && cell.style === undefined) {
+      cell.style = {}
     }
     const cellKey = `${row},${col}`
     assertCellMapCapacity(cells, cellKey, ctx.sheetName)

@@ -140,8 +140,12 @@ export interface TotalRowCell {
   formula?: string
 }
 
-/** `A1:B5`: two plain cell references, no `$`, no sheet, no whole columns. */
-const TABLE_REF = /^[A-Za-z]{1,3}[1-9]\d*:[A-Za-z]{1,3}[1-9]\d*$/
+/**
+ * `A1:B5`: two plain cell references, no `$`, no sheet, no whole columns.
+ * Case and leading zeros in the row are accepted because `parseCellRef`,
+ * which reads the range next, accepts them (`a1:b5`, `A01:B5`).
+ */
+const TABLE_REF = /^[A-Za-z]{1,3}0*[1-9]\d*:[A-Za-z]{1,3}0*[1-9]\d*$/
 
 /**
  * The cells a table's total row needs on the sheet.

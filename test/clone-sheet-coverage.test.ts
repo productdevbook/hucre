@@ -53,7 +53,7 @@ const FULL_SHEET: Required<Sheet> = {
   ],
   cells: new Map<string, Cell>([["0,0", FULL_CELL]]),
   columns: [{ width: 12, style: { font: { name: "Arial" } } }],
-  rowDefs: new Map([[0, { height: 30, hidden: true }]]),
+  rowDefs: new Map([[0, { height: 30, hidden: true, style: { numFmt: "0.00" } }]]),
   defaultRowHeight: 24,
   defaultColWidth: 18,
   merges: [{ startRow: 0, startCol: 0, endRow: 0, endCol: 1 }],
@@ -131,6 +131,7 @@ describe("cloneSheet carries every field of Sheet", () => {
     expect(copy.slicers![0]).not.toBe(FULL_SHEET.slicers[0])
     expect(copy.timelines![0]).not.toBe(FULL_SHEET.timelines[0])
     expect(copy.threadedComments![0]).not.toBe(FULL_SHEET.threadedComments[0])
+    expect(copy.rowDefs!.get(0)!.style).not.toBe(FULL_SHEET.rowDefs.get(0)!.style)
 
     copy.rowBreaks!.push(99)
     copy.sparklines![0]!.dataRange = "Z1:Z9"

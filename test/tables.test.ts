@@ -1105,4 +1105,8 @@ describe("a total-row table whose range is not a table reference", () => {
   it("still accepts a plain range", async () => {
     await expect(writeXlsx({ sheets: [sheetWith("A1:B5")] })).resolves.toBeInstanceOf(Uint8Array)
   })
+
+  it.each(["a1:b5", "A01:B5"])("accepts %s, which parseCellRef reads the same", async (range) => {
+    await expect(writeXlsx({ sheets: [sheetWith(range)] })).resolves.toBeInstanceOf(Uint8Array)
+  })
 })
