@@ -25,6 +25,33 @@ const DEFAULT_HEIGHT_EMU = 2000000 // ~2.19 inches
 /** Pixels to EMU conversion factor (96 DPI assumption) */
 const EMU_PER_PIXEL = 9525
 
+/**
+ * An `xdr:from` / `xdr:to` element. `colOff` / `rowOff` are the anchor's
+ * sub-cell offsets in pixels, written as EMU; absent writes "0", which is
+ * what this always wrote before, so output without them is unchanged (#567).
+ * A `to` the caller did not give (the text box and chart defaults) has no
+ * offsets either.
+ */
+function anchorPoint(
+  tag: "xdr:from" | "xdr:to",
+  col: number,
+  row: number,
+  pos: { colOff?: number; rowOff?: number } | undefined,
+): string {
+  return xmlElement(tag, undefined, [
+    xmlElement("xdr:col", undefined, String(col)),
+    xmlElement("xdr:colOff", undefined, String(offsetEmu(pos?.colOff))),
+    xmlElement("xdr:row", undefined, String(row)),
+    xmlElement("xdr:rowOff", undefined, String(offsetEmu(pos?.rowOff))),
+  ])
+}
+
+/** Pixels to whole EMU; a missing, negative or non-finite offset is 0. */
+function offsetEmu(px: number | undefined): number {
+  if (px === undefined || !Number.isFinite(px) || px <= 0) return 0
+  return Math.round(px * EMU_PER_PIXEL)
+}
+
 // ── Types ────────────────────────────────────────────────────────────
 
 export interface DrawingImage {
@@ -132,12 +159,7 @@ export function writeDrawing(
     const fromCol = img.anchor.from.col
     const fromRow = img.anchor.from.row
 
-    const fromElement = xmlElement("xdr:from", undefined, [
-      xmlElement("xdr:col", undefined, String(fromCol)),
-      xmlElement("xdr:colOff", undefined, "0"),
-      xmlElement("xdr:row", undefined, String(fromRow)),
-      xmlElement("xdr:rowOff", undefined, "0"),
-    ])
+    const fromElement = anchorPoint("xdr:from", fromCol, fromRow, img.anchor.from)
 
     const cNvPrAttrs: Record<string, string | number> = {
       id: i + 2,
@@ -168,12 +190,7 @@ export function writeDrawing(
 
     let anchor: string
     if (img.anchor.to) {
-      const toElement = xmlElement("xdr:to", undefined, [
-        xmlElement("xdr:col", undefined, String(img.anchor.to.col)),
-        xmlElement("xdr:colOff", undefined, "0"),
-        xmlElement("xdr:row", undefined, String(img.anchor.to.row)),
-        xmlElement("xdr:rowOff", undefined, "0"),
-      ])
+      const toElement = anchorPoint("xdr:to", img.anchor.to.col, img.anchor.to.row, img.anchor.to)
       anchor = xmlElement("xdr:twoCellAnchor", undefined, [
         fromElement,
         toElement,
@@ -214,19 +231,9 @@ export function writeDrawing(
       const widthEmu = tb.width ? tb.width * EMU_PER_PIXEL : DEFAULT_TEXTBOX_WIDTH_EMU
       const heightEmu = tb.height ? tb.height * EMU_PER_PIXEL : DEFAULT_TEXTBOX_HEIGHT_EMU
 
-      const fromElement = xmlElement("xdr:from", undefined, [
-        xmlElement("xdr:col", undefined, String(fromCol)),
-        xmlElement("xdr:colOff", undefined, "0"),
-        xmlElement("xdr:row", undefined, String(fromRow)),
-        xmlElement("xdr:rowOff", undefined, "0"),
-      ])
+      const fromElement = anchorPoint("xdr:from", fromCol, fromRow, tb.anchor.from)
 
-      const toElement = xmlElement("xdr:to", undefined, [
-        xmlElement("xdr:col", undefined, String(toCol)),
-        xmlElement("xdr:colOff", undefined, "0"),
-        xmlElement("xdr:row", undefined, String(toRow)),
-        xmlElement("xdr:rowOff", undefined, "0"),
-      ])
+      const toElement = anchorPoint("xdr:to", toCol, toRow, tb.anchor.to)
 
       const cNvPrAttrs: Record<string, string | number> = {
         id: shapeId++,
@@ -337,19 +344,9 @@ export function writeDrawing(
       const toCol = chart.anchor.to?.col ?? fromCol + 8
       const toRow = chart.anchor.to?.row ?? fromRow + 15
 
-      const fromElement = xmlElement("xdr:from", undefined, [
-        xmlElement("xdr:col", undefined, String(fromCol)),
-        xmlElement("xdr:colOff", undefined, "0"),
-        xmlElement("xdr:row", undefined, String(fromRow)),
-        xmlElement("xdr:rowOff", undefined, "0"),
-      ])
+      const fromElement = anchorPoint("xdr:from", fromCol, fromRow, chart.anchor.from)
 
-      const toElement = xmlElement("xdr:to", undefined, [
-        xmlElement("xdr:col", undefined, String(toCol)),
-        xmlElement("xdr:colOff", undefined, "0"),
-        xmlElement("xdr:row", undefined, String(toRow)),
-        xmlElement("xdr:rowOff", undefined, "0"),
-      ])
+      const toElement = anchorPoint("xdr:to", toCol, toRow, chart.anchor.to)
 
       const cNvPrAttrs: Record<string, string | number> = {
         id: shapeId++,

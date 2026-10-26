@@ -385,6 +385,25 @@ field to either interface fails `tsc` until it is registered — as a probe
 that round-trips, or as a one-way entry with its reason. That register,
 not this list, is the thing that stays current.
 
+### Drawing anchors carry a sub-cell offset, in pixels
+
+The `from` / `to` corners of `SheetImage.anchor`, `SheetTextBox.anchor` and
+`SheetChart.anchor` (and the read-side `ChartAnchor`) take an optional
+`colOff` / `rowOff`: pixels at 96 DPI from the cell's top-left corner, the
+same unit as `width` / `height`. They are written as `xdr:colOff` /
+`xdr:rowOff` in EMU (pixels x 9525) and read back the same way, so two
+images can share one cell (#567). Absent means 0 and the output is
+byte-identical to what was written before the fields existed.
+
+Two small losses, both deliberate: a zero offset reads back as absent, and
+an offset that is not a whole number of pixels (EMU not divisible by 9525)
+reads back fractional, not rounded, so writing it again restores the exact
+EMU. A negative or non-finite offset on write is written as 0.
+
+Images are an `.xlsx` feature only. `XlsxStreamWriter`, the ODS writer and
+reader, and the XLS and XLSB readers neither write nor read images, text
+boxes or chart anchors at all, so these offsets do not exist on those paths.
+
 ### Newer functions read back with their `_xlfn.` prefix
 
 Functions added after Excel 2007 are stored under a prefixed name —
