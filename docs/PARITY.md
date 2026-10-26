@@ -337,6 +337,12 @@ written back as text. `writeXlsxStream` has no way to say a streamed
 formula's result is an error, so it still writes string results as
 `t="str"`.
 
+The flag is honoured only when the cached string is a known error token
+(the standard seven plus `#GETTING_DATA`, `#SPILL!`, `#CALC!`, `#FIELD!`,
+`#BLOCKED!`, `#CONNECT!`, `#UNKNOWN!`, `#BUSY!`, `#PYTHON!`). A `t="e"` cell
+whose token is outside both sets is therefore rewritten as `t="str"`: the
+text survives, its error type does not.
+
 ### ISO-8601 date cells
 
 `ST_CellType` (§18.18.11) has seven members and the reader's switch had
@@ -568,6 +574,18 @@ The schema lets `width` be left out, but Excel reads a `<col>` without
 one as zero wide, which hid the column: `columns: [{ style }]` produced a
 column the user could not see. Excel itself always writes a width, even
 for a column that only has a format. Fixed in #603.
+
+**`customWidth` is not read, so a round trip sets it.** `ColumnDef` has a
+`width` and no flag for whether that width was chosen, so the reader keeps
+the width and drops `customWidth`. Every `<col>` with a width is written
+back with `customWidth="1"` — including the defaulted one above and any
+column Excel wrote with a width but without the flag. Reading the file
+`readXlsx` → `writeXlsx` or `openXlsx` → `saveXlsx` therefore turns "this
+is the default width" into "the user set this width". The width itself is
+exact; what is lost is only which of the two it was, and Excel shows the
+column the same either way. Dropping `customWidth` when the width equals
+the default would fix only the columns hucre defaulted, not the ones Excel
+did, so it is not done; the real fix is a field on `ColumnDef`.
 
 ### Auto-filter criteria, and the two kinds that are not carried
 

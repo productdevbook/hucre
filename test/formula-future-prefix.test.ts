@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
+import { addFuturePrefixes } from "../src/xlsx/formula-prefix"
 import { readXlsx } from "../src/xlsx/reader"
 import { writeXlsxStream } from "../src/xlsx/stream-writer"
 import { ZipReader } from "../src/zip/reader"
@@ -434,5 +435,84 @@ describe("LET and LAMBDA names are written with their stored prefix (#597)", () 
     }
     // A name that only contains LET still gets the functions after it.
     expect(await stored("OUTLET(1)+IFS(TRUE,1)")).toBe("OUTLET(1)+_xlfn.IFS(TRUE,1)")
+  })
+})
+
+describe("conditional-formatting thresholds (#608 follow-up)", () => {
+  it("prefixes a formula cfvo in a colour scale, data bar and icon set", async () => {
+    // `type: "formula"` is what the reader hands back from Excel's files; the
+    // declared union does not list it, so the tests cast.
+    const formula = (value: string) => ({ type: "formula" as unknown as "num", value })
+    const xml = await sheetXml({
+      name: "Sheet1",
+      rows: [[1]],
+      conditionalRules: [
+        {
+          type: "colorScale",
+          priority: 1,
+          range: "A1:A3",
+          colorScale: {
+            cfvo: [formula("MINIFS(B:B,C:C,1)"), { type: "max" }],
+            colors: ["FFFF0000", "FF00FF00"],
+          },
+        },
+        {
+          type: "dataBar",
+          priority: 2,
+          range: "B1:B3",
+          dataBar: { cfvo: [{ type: "min" }, formula("XLOOKUP(1,D:D,E:E)")], color: "FF638EC6" },
+        },
+        {
+          type: "iconSet",
+          priority: 3,
+          range: "C1:C3",
+          iconSet: {
+            iconSet: "3Arrows",
+            cfvo: [{ type: "percent", value: "0" }, formula("IFS(A1,1,TRUE,2)")],
+          },
+        },
+      ],
+    })
+    const vals = [...xml.matchAll(/<cfvo type="formula" val="([^"]*)"/g)].map((m) => m[1])
+    expect(vals).toEqual([
+      "_xlfn.MINIFS(B:B,C:C,1)",
+      "_xlfn.XLOOKUP(1,D:D,E:E)",
+      "_xlfn.IFS(A1,1,TRUE,2)",
+    ])
+  })
+
+  it("leaves a non-formula cfvo value alone", async () => {
+    const xml = await sheetXml({
+      name: "Sheet1",
+      rows: [[1]],
+      conditionalRules: [
+        {
+          type: "colorScale",
+          priority: 1,
+          range: "A1:A3",
+          colorScale: {
+            cfvo: [{ type: "num", value: "XLOOKUP(" }, { type: "max" }],
+            colors: ["FFFF0000", "FF00FF00"],
+          },
+        },
+      ],
+    })
+    expect(xml).toContain('<cfvo type="num" val="XLOOKUP("')
+  })
+})
+
+describe("pathologically deep nesting (#608 follow-up)", () => {
+  it("returns the formula unchanged past the depth cap instead of throwing", async () => {
+    const deep = "(".repeat(100000) + "1" + ")".repeat(100000) + "+LET(x,1,x)"
+    expect(addFuturePrefixes(deep)).toBe(deep)
+    // And through the writer, which is where the RangeError surfaced.
+    await expect(stored(deep)).resolves.toBe(deep)
+  })
+
+  it("still prefixes a formula nested as deep as Excel allows", () => {
+    const nested = "(".repeat(64) + "1" + ")".repeat(64) + "+LET(x,1,x)"
+    expect(addFuturePrefixes(nested)).toBe(
+      "(".repeat(64) + "1" + ")".repeat(64) + "+_xlfn.LET(_xlpm.x,1,_xlpm.x)",
+    )
   })
 })
