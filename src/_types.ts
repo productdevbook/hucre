@@ -271,7 +271,9 @@ export interface ColumnDef {
   /**
    * Default style for every cell in the column. Applies whether the rows
    * come from {@link WriteSheet.data} or {@link WriteSheet.rows} — on the
-   * `data[]` path the generated header row gets it too.
+   * `data[]` path the generated header row gets it too. A row's
+   * {@link RowDef.style} takes its place, `numFmt` included, on the cells
+   * of that row (#601).
    */
   style?: CellStyle
   /** Number format. Folded into {@link style}; an explicit `style.numFmt` wins. */
@@ -933,6 +935,15 @@ export interface RowDef {
   outlineLevel?: number
   /** Whether this outline group is collapsed */
   collapsed?: boolean
+  /**
+   * Default style for the whole row — `<row s="N" customFormat="1">`. On
+   * write it also applies to every cell in the row that has no style of
+   * its own, and wins over {@link ColumnDef.style} there. Read back only
+   * with `readStyles`. A cell the file left at the default format inside
+   * such a row reads back with `style: {}`, so writing it again keeps it
+   * unformatted rather than filling it from the row. See #601.
+   */
+  style?: CellStyle
 }
 
 // ── Sheet ──────────────────────────────────────────────────────────

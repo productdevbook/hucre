@@ -239,7 +239,7 @@ export class SheetBuilder {
     return this
   }
 
-  /** Set row-level properties — height, hidden, outline level, collapsed. */
+  /** Set row-level properties — height, hidden, outline level, collapsed, format. */
   rowDef(
     row: number,
     def: NonNullable<WriteSheet["rowDefs"]> extends Map<number, infer T> ? T : never,

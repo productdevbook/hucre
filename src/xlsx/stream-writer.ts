@@ -38,6 +38,7 @@ import {
 } from "./worksheet-writer"
 import {
   cellRef,
+  columnCellStyle,
   hasRowAttributes,
   rowAttributes,
   serializeAutoFilter,
@@ -87,11 +88,11 @@ export interface StreamWriterOptions {
    */
   repeatHeaders?: boolean
   /**
-   * Row-level properties — `height`, `hidden`, `outlineLevel`, `collapsed` —
-   * keyed by 0-based row index, counted the way the caller sees it: the key
-   * keeps rising past a rollover, where the per-sheet index restarts at 0.
-   * Consulted as each row is emitted, so it costs nothing per row that has
-   * no entry.
+   * Row-level properties — `height`, `hidden`, `outlineLevel`, `collapsed`,
+   * `style` — keyed by 0-based row index, counted the way the caller sees
+   * it: the key keeps rising past a rollover, where the per-sheet index
+   * restarts at 0. Consulted as each row is emitted, so it costs nothing
+   * per row that has no entry.
    */
   rowDefs?: Map<number, RowDef>
   /**
@@ -307,18 +308,21 @@ class RowSerializer {
     rowDef?: RowDef,
   ): string | null {
     const cellElements: string[] = []
+    // A row format reaches the cells that carry no style of their own and
+    // wins over the column's there, as it does in writeXlsx. See #601.
+    const rowStyle = rowDef?.style
 
     for (let c = 0; c < values.length; c++) {
       const colDef = this.columns?.[c]
       const raw = values[c]
       const styled = isStreamStyledCell(raw)
       const value = styled ? (raw.value ?? null) : (raw as CellValue)
-      let style: CellStyle | undefined = (styled && raw.style) || colDef?.style
-
-      // If numFmt on column but not in style, merge
-      if (colDef?.numFmt && (!style || !style.numFmt)) {
-        style = { ...style, numFmt: colDef.numFmt }
-      }
+      const own = (styled && raw.style) || undefined
+      // Own style, else the row's, else the column's, and the first one
+      // present is used whole, as in writeXlsx. The column's numFmt used to
+      // be merged into an own style without one; the two writers then gave
+      // one input two different xfs. See #616 and columnCellStyle.
+      const style: CellStyle | undefined = own || rowStyle || columnCellStyle(colDef)
 
       const cellXml = this.serializeCell(
         rowIndex,
@@ -330,11 +334,12 @@ class RowSerializer {
       if (cellXml) cellElements.push(cellXml)
     }
 
-    const attrs = rowAttributes(rowIndex, rowDef)
+    const attrs = rowAttributes(rowIndex, rowDef, this.styles)
 
     if (cellElements.length === 0) {
       // A row with no cells still has to be emitted when its definition asks
-      // for something — a height, or a hidden/grouped row the caller wants.
+      // for something — a height, a format, or a hidden/grouped row the
+      // caller wants.
       return hasRowAttributes(rowDef) ? xmlSelfClose("row", attrs) : null
     }
     return xmlElement("row", attrs, cellElements)
@@ -383,6 +388,7 @@ function buildSheetPrelude(
   columns: ColumnDef[] | undefined,
   freezePane: FreezePane | undefined,
   outlineProperties: OutlineProperties | undefined,
+  styles: StylesCollector,
 ) {
   const parts: string[] = []
 
@@ -432,7 +438,16 @@ function buildSheetPrelude(
     const colRuns: ColumnRun[] = []
     for (let i = 0; i < columns.length; i++) {
       const col = columns[i]
-      if (col.width !== undefined || col.hidden || col.outlineLevel) {
+      // The column's format goes on `<col style>` as well as on the cells,
+      // so it survives a read and applies to cells typed later, as in
+      // writeXlsx (#439 §W). The xf is allocated here, before the cols are
+      // written, and styles.xml is only serialised after every sheet is
+      // done, so the id is always valid. See #616.
+      const colStyle = columnCellStyle(col)
+      const styleId = colStyle ? styles.addStyle(colStyle) : 0
+      if (col.width !== undefined || col.hidden || col.outlineLevel || styleId !== 0) {
+        // min/max are added by coalesceColumns, after the style id is part
+        // of the attributes: adjacent columns merge only when it matches.
         const colAttrs: Record<string, string | number | boolean> = {}
         if (col.width !== undefined) {
           colAttrs["width"] = col.width
@@ -441,6 +456,7 @@ function buildSheetPrelude(
           // Excel shows a `<col>` without a width zero wide. See #603.
           colAttrs["width"] = DEFAULT_COL_WIDTH
         }
+        if (styleId !== 0) colAttrs["style"] = styleId
         if (col.hidden) colAttrs["hidden"] = true
         if (col.outlineLevel) colAttrs["outlineLevel"] = col.outlineLevel
         colRuns.push({ index: i, attrs: colAttrs })
@@ -675,7 +691,12 @@ export class XlsxStreamWriter implements SpreadsheetStreamWriter {
     const sheetCount = this.sheetFragments.length
 
     // Build the same view/columns prelude for every emitted sheet.
-    const sheetPrelude = buildSheetPrelude(this.columns, this.freezePane, this.outlineProperties)
+    const sheetPrelude = buildSheetPrelude(
+      this.columns,
+      this.freezePane,
+      this.outlineProperties,
+      this.serializer.styles,
+    )
 
     // Build ZIP archive
     const zip = new ZipWriter()
@@ -918,6 +939,7 @@ async function* xlsxStreamEntries(
       sheet.columns,
       sheet.freezePane,
       sheet.outlineProperties,
+      styles,
     ).join("")
     const cursor = createRowCursor(sheet.rows)
 
