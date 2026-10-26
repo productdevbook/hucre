@@ -1905,8 +1905,11 @@ function processCell(
       // the rest, emitting `<f>` with no `<v>`. The writer has always
       // been able to write them back. See #497.
       value = decodeOoxmlEscapes(valueText)
-      cellType = formula ? "formula" : "string"
-      if (formula) formulaResult = value
+      // `!== undefined`, not truthiness: a cell a shared formula covers
+      // has `formula: ""`, and its cached result is no less a result. The
+      // truthiness test read it as a plain string and dropped it.
+      cellType = formula !== undefined ? "formula" : "string"
+      if (formula !== undefined) formulaResult = value
       break
     }
     case "inlineStr": {
@@ -1924,8 +1927,9 @@ function processCell(
     case "b": {
       // Boolean
       value = valueText === "1" || valueText.toLowerCase() === "true"
-      cellType = formula ? "formula" : "boolean"
-      if (formula) formulaResult = value
+      // `!== undefined` for the shared-formula slave, as in the "str" arm.
+      cellType = formula !== undefined ? "formula" : "boolean"
+      if (formula !== undefined) formulaResult = value
       break
     }
     case "e": {
@@ -1988,7 +1992,7 @@ function processCell(
         value = null
         cellType = "empty"
       }
-      if (formula) {
+      if (formula !== undefined) {
         formulaResult = value
         cellType = "formula"
       }
@@ -2028,7 +2032,7 @@ function processCell(
         cellType = "string"
       }
 
-      if (formula) {
+      if (formula !== undefined) {
         formulaResult = value
         cellType = "formula"
       }

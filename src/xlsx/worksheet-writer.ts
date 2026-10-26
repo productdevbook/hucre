@@ -330,6 +330,22 @@ const EXCEL_ERRORS = new Set([
   "#CALC!",
 ])
 
+/**
+ * Error tokens Excel stores with `t="e"` in a formula's cached result but
+ * that are not in `EXCEL_ERRORS`. That set also decides whether a plain
+ * string *value* is an error, so widening it would turn a cell holding the
+ * text "#FIELD!" into an error cell; a cached result is already known to be
+ * an error by `formulaResultType`, so it only needs the token to be valid.
+ */
+const EXTRA_CACHED_ERRORS = new Set([
+  "#FIELD!",
+  "#BLOCKED!",
+  "#CONNECT!",
+  "#UNKNOWN!",
+  "#BUSY!",
+  "#PYTHON!",
+])
+
 // ── Worksheet Writer ───────────────────────────────────────────────
 
 /** Generate xl/worksheets/sheetN.xml along with any hyperlink relationships */
@@ -1098,7 +1114,15 @@ export function serializeCell(
         // became a formula that returned that *text* (#599). Which one
         // it is comes from `formulaResultType`, never from the token: a
         // formula can return the text "#DIV/0!" as well.
-        cellAttrs["t"] = formulaResultType === "error" ? "e" : "str"
+        //
+        // The flag is honoured only for a string that is an error token.
+        // It survives an edit: a cell read with a cached `#N/A` and then
+        // given `formulaResult: "hello"` would otherwise be written as
+        // `<c t="e"><v>hello</v>`, which is not a valid error value.
+        const isError =
+          formulaResultType === "error" &&
+          (EXCEL_ERRORS.has(formulaResult) || EXTRA_CACHED_ERRORS.has(formulaResult))
+        cellAttrs["t"] = isError ? "e" : "str"
         children.push(xmlElement("v", undefined, xmlEscape(formulaResult)))
       } else if (typeof formulaResult === "boolean") {
         cellAttrs["t"] = "b"
