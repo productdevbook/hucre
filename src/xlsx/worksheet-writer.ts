@@ -4,6 +4,7 @@
 import { toRanges } from "../cell-utils"
 import type {
   AutoFilter,
+  AutoFilterColumn,
   RowDef,
   WriteSheet,
   CellValue,
@@ -34,6 +35,7 @@ import { addFuturePrefixes } from "./formula-prefix"
 import { writePasswordDigest } from "./password"
 import { validateColumnIndex } from "../_validate"
 import { toCellValue } from "../_inline-cells"
+import { InvalidArgumentError } from "../errors"
 import { computeTableRange } from "./derived-ranges"
 import { totalRowCells } from "./table-writer"
 
@@ -1814,21 +1816,98 @@ function serializeFontProps(font: FontStyle): string[] {
  * when column criteria are configured.
  */
 export function serializeAutoFilter(autoFilter: AutoFilter): string {
-  if (autoFilter.columns && autoFilter.columns.length > 0) {
-    const filterChildren: string[] = []
-    for (const col of autoFilter.columns) {
-      if (col.filters && col.filters.length > 0) {
-        const filterElements = col.filters.map((v) => xmlSelfClose("filter", { val: v }))
-        filterChildren.push(
-          xmlElement("filterColumn", { colId: col.colIndex }, [
-            xmlElement("filters", undefined, filterElements),
-          ]),
-        )
-      }
-    }
+  const filterChildren: string[] = []
+  for (const col of autoFilter.columns ?? []) {
+    const criterion = serializeFilterCriterion(col)
+    const attrs: Record<string, string | number> = { colId: col.colIndex }
+    if (col.hiddenButton) attrs.hiddenButton = 1
+    if (col.showButton === false) attrs.showButton = 0
+    // A column with only a button setting is a valid empty <filterColumn>
+    // (the schema's criterion choice is minOccurs=0); one with neither is
+    // nothing to write.
+    if (criterion === undefined && !col.hiddenButton && col.showButton !== false) continue
+    filterChildren.push(
+      xmlElement("filterColumn", attrs, criterion === undefined ? undefined : [criterion]),
+    )
+  }
+  if (filterChildren.length > 0) {
     return xmlElement("autoFilter", { ref: autoFilter.range }, filterChildren)
   }
   return xmlSelfClose("autoFilter", { ref: autoFilter.range })
+}
+
+/**
+ * The single criterion element of a `<filterColumn>` (CT_FilterColumn is a
+ * choice, not a sequence). Custom, top-10 and dynamic filters used to be
+ * dropped on read and never written, so a sheet filtered on two columns
+ * came back with only its value-list column (#565).
+ */
+function serializeFilterCriterion(col: AutoFilterColumn): string | undefined {
+  // CT_FilterColumn takes one criterion. Writing the first and dropping the
+  // rest would be a silently discarded field, so refuse (#565).
+  const kinds = [
+    (col.filters && col.filters.length > 0) || col.blank || col.dateGroups?.length
+      ? "filters"
+      : undefined,
+    col.custom ? "custom" : undefined,
+    col.top10 ? "top10" : undefined,
+    col.dynamic ? "dynamic" : undefined,
+  ].filter((k) => k !== undefined)
+  if (kinds.length > 1) {
+    throw new InvalidArgumentError(
+      `autoFilter column ${col.colIndex} sets more than one criterion (${kinds.join(", ")}); a column takes exactly one`,
+    )
+  }
+  if (col.custom && col.custom.conditions.length > 2) {
+    throw new InvalidArgumentError(
+      `autoFilter column ${col.colIndex} has ${col.custom.conditions.length} custom conditions; Excel allows at most 2`,
+    )
+  }
+  if ((col.filters && col.filters.length > 0) || col.blank || col.dateGroups?.length) {
+    const kids: string[] = (col.filters ?? []).map((v) => xmlSelfClose("filter", { val: v }))
+    for (const g of col.dateGroups ?? []) {
+      kids.push(
+        xmlSelfClose("dateGroupItem", {
+          year: g.year,
+          month: g.month,
+          day: g.day,
+          hour: g.hour,
+          minute: g.minute,
+          second: g.second,
+          dateTimeGrouping: g.grouping,
+        }),
+      )
+    }
+    return xmlElement(
+      "filters",
+      { blank: col.blank ? 1 : undefined, calendarType: col.calendarType },
+      kids,
+    )
+  }
+  if (col.custom && col.custom.conditions.length > 0) {
+    const kids = col.custom.conditions.map((c) =>
+      xmlSelfClose("customFilter", { operator: c.operator, val: c.value }),
+    )
+    return xmlElement("customFilters", col.custom.and ? { and: 1 } : undefined, kids)
+  }
+  if (col.top10) {
+    return xmlSelfClose("top10", {
+      top: col.top10.bottom ? 0 : undefined,
+      percent: col.top10.percent ? 1 : undefined,
+      filterVal: col.top10.filterVal,
+      val: col.top10.val,
+    })
+  }
+  if (col.dynamic) {
+    return xmlSelfClose("dynamicFilter", {
+      type: col.dynamic.type,
+      val: col.dynamic.val,
+      maxVal: col.dynamic.maxVal,
+      valIso: col.dynamic.valIso,
+      maxValIso: col.dynamic.maxValIso,
+    })
+  }
+  return undefined
 }
 
 // ── Conditional Formatting Serialization ─────────────────────────

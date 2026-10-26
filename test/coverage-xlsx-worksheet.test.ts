@@ -503,11 +503,10 @@ describe("auto filter", () => {
     expect(s.autoFilter).toBeUndefined()
   })
 
-  it("drops a filterColumn that lists no values", () => {
-    // A `<filterColumn>` holding only `<customFilters>` or `<top10>` has
-    // no plain value list for us to surface yet.
+  it("drops a filterColumn whose only criterion is not modelled", () => {
+    // A colour filter points at a dxf; custom/top10/dynamic are read (#565).
     const s = sheet(
-      `<sheetData/><autoFilter ref="A1:B9"><filterColumn colId="0"><top10 val="5"/>` +
+      `<sheetData/><autoFilter ref="A1:B9"><filterColumn colId="0"><colorFilter dxfId="0"/>` +
         `</filterColumn></autoFilter>`,
     )
     expect(s.autoFilter).toEqual({ range: "A1:B9" })

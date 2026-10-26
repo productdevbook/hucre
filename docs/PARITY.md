@@ -76,7 +76,7 @@ hyperlinks with tooltips, comments, checkboxes, the full cell style model
 (fonts, pattern and gradient fills, borders including diagonal, every
 alignment field, number formats, protection), merges, data validations,
 all 15 conditional-rule types **including their dxf styles**, auto-filters
-with value filters, freeze and split panes, sheet protection, every
+with value, custom, top-10, dynamic and date-group criteria, freeze and split panes, sheet protection, every
 attribute of `CT_PageSetup` bar one — print areas, print titles, every
 OOXML paper size (by name where hucre has one, by code otherwise) plus
 custom `paperWidth` / `paperHeight` for the sizes that have none, page
@@ -613,6 +613,41 @@ so the merge changes the XML, never what Excel shows. Fixed in #622.
 is how Excel stores a validation that only shows an input message.
 `ValidationType` includes `"none"`, and the writer leaves the attribute off
 for it. Fixed in #622.
+
+### Auto-filter criteria, and the two kinds that are not carried
+
+Every `<filterColumn>` of an `<autoFilter>` is read and written: value
+lists (with `blank` and date-group items), custom filters (one or two
+comparisons, and/or), top/bottom-N (items or percent), and dynamic filters
+such as `aboveAverage` or `thisMonth`, plus `hiddenButton`, `showButton`,
+`calendarType`, `top10` `filterVal` and `valIso` / `maxValIso`. A column takes
+one criterion kind and at most two custom conditions; `writeXlsx` throws an
+`InvalidArgumentError` for more rather than dropping the excess. Until #565 only
+the value-list columns survived, so a sheet filtered on a number or text
+condition in one column and a value in another came back with a single
+column.
+
+**Colour and icon filters are not carried.** Their criterion is a `dxfId`
+into the workbook's differential styles, and the writer renumbers those. A
+column whose only criterion is a colour or icon filter is left out of
+`AutoFilter.columns`; the `ref` range stays. Reading a file with
+`readXlsx` and writing it with `writeXlsx` therefore removes those
+columns' filter criteria. `sortState` inside an `<autoFilter>` is also
+not read or written, so a sort stored with the filter is lost.
+
+### In-cell pictures ("Place in Cell") are not read
+
+A picture placed in a cell through Excel's Insert > Picture > Place in Cell
+is stored as a rich value, not as a drawing anchor: the cell carries
+`<c vm="N">`, and the image sits behind `xl/metadata.xml`,
+`xl/richData/rdrichvalue.xml` and `xl/richData/richValueRel.xml` (with its
+`.rels` pointing at `xl/media/`). hucre reads none of this: such a cell
+comes back with whatever cached value the file holds (Excel writes an
+error), the picture appears in neither `Sheet.images` nor
+`Workbook.cellImages`, and the `vm` attribute is not written back, so the
+picture is gone from a file passed through `openXlsx` → `saveXlsx` even
+though its media part may remain in the package. WPS `DISPIMG` pictures are
+a different mechanism and are supported (see above). See #565.
 
 ### A cell's own style replaces its row's and its column's
 
