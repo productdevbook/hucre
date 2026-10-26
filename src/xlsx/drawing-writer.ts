@@ -46,9 +46,13 @@ function anchorPoint(
   ])
 }
 
-/** Pixels to whole EMU; a missing, negative or non-finite offset is 0. */
+/**
+ * Pixels to whole EMU; a missing or non-finite offset is 0. A negative one
+ * is carried through, as the reader does: ST_Coordinate allows it, and a
+ * read-then-write must not change the file's bytes.
+ */
 function offsetEmu(px: number | undefined): number {
-  if (px === undefined || !Number.isFinite(px) || px <= 0) return 0
+  if (px === undefined || !Number.isFinite(px)) return 0
   return Math.round(px * EMU_PER_PIXEL)
 }
 

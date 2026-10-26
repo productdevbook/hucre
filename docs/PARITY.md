@@ -409,7 +409,9 @@ byte-identical to what was written before the fields existed.
 Two small losses, both deliberate: a zero offset reads back as absent, and
 an offset that is not a whole number of pixels (EMU not divisible by 9525)
 reads back fractional, not rounded, so writing it again restores the exact
-EMU. A negative or non-finite offset on write is written as 0.
+EMU. A negative offset is carried through in both directions (the schema
+allows it), so a round trip does not change bytes; a non-finite one is
+written as 0.
 
 Images are an `.xlsx` feature only. `XlsxStreamWriter`, the ODS writer and
 reader, and the XLS and XLSB readers neither write nor read images, text

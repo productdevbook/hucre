@@ -1454,8 +1454,8 @@ function parseAnchorPosition(el: { children: Array<unknown> }): AnchorPos {
   }
 
   const pos: AnchorPos = { row, col }
-  if (colOff > 0) pos.colOff = colOff / EMU_PER_PIXEL
-  if (rowOff > 0) pos.rowOff = rowOff / EMU_PER_PIXEL
+  if (colOff !== 0) pos.colOff = colOff / EMU_PER_PIXEL
+  if (rowOff !== 0) pos.rowOff = rowOff / EMU_PER_PIXEL
   return pos
 }
 

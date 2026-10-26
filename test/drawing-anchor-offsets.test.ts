@@ -113,10 +113,38 @@ describe("drawing anchor offsets (#567)", () => {
   })
 
   it("writes the same bytes as before when no offset is given", async () => {
-    const a = await drawingXml(oneImage({ row: 1, col: 1 }))
-    expect(a).toContain("<xdr:colOff>0</xdr:colOff>")
-    expect(a).toContain("<xdr:rowOff>0</xdr:rowOff>")
-    expect(await drawingXml(oneImage({ row: 1, col: 1, colOff: 0, rowOff: 0 }))).toBe(a)
+    // Literal fragments, not new-vs-new: any change to the default output fails.
+    const from = (col: number, row: number) =>
+      `<xdr:from><xdr:col>${col}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${row}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>`
+    const to = (col: number, row: number) =>
+      `<xdr:to><xdr:col>${col}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${row}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>`
+    const oneCell = await drawingXml(oneImage({ row: 2, col: 1 }))
+    expect(oneCell).toContain(from(1, 2))
+    expect(oneCell).not.toContain("<xdr:to>")
+    expect(await drawingXml(oneImage({ row: 2, col: 1, colOff: 0, rowOff: 0 }))).toBe(oneCell)
+
+    const xml = await drawingXml({
+      name: "S",
+      rows: [["x", 1]],
+      images: [
+        {
+          data: PNG,
+          type: "png",
+          anchor: { from: { row: 2, col: 1 }, to: { row: 5, col: 4 } },
+        },
+      ],
+      textBoxes: [{ text: "t", anchor: { from: { row: 7, col: 6 } } }],
+      charts: [
+        {
+          type: "column",
+          series: [{ name: "s", values: "S!$B$1:$B$1" }],
+          anchor: { from: { row: 9, col: 8 }, to: { row: 12, col: 11 } },
+        },
+      ],
+    })
+    expect(xml).toContain(from(1, 2) + to(4, 5)) // image, two-cell
+    expect(xml).toContain(from(6, 7) + to(9, 10)) // text box, default to
+    expect(xml).toContain(from(8, 9) + to(11, 12)) // chart
   })
 
   it("keeps a fractional pixel offset instead of rounding it", async () => {
@@ -130,10 +158,12 @@ describe("drawing anchor offsets (#567)", () => {
     expect(from.colOff).not.toBe(2)
   })
 
-  it("treats a negative or non-finite offset as 0", async () => {
-    const xml = await drawingXml(oneImage({ row: 0, col: 0, colOff: -3, rowOff: Number.NaN }))
-    expect(xml).toContain("<xdr:colOff>0</xdr:colOff>")
+  it("carries a negative offset through both ways and writes a non-finite one as 0", async () => {
+    const xml = await drawingXml(oneImage({ row: 1, col: 1, colOff: -3, rowOff: Number.NaN }))
+    expect(xml).toContain("<xdr:colOff>-28575</xdr:colOff>")
     expect(xml).toContain("<xdr:rowOff>0</xdr:rowOff>")
+    const xlsx = await writeXlsx({ sheets: [oneImage({ row: 1, col: 1, colOff: -3 })] })
+    expect((await readXlsx(xlsx)).sheets[0].images![0].anchor.from.colOff).toBe(-3)
   })
 
   it("moves offsets with the anchor when rows and columns are inserted", async () => {
