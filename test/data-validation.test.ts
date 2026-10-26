@@ -5,6 +5,8 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
 import { createSharedStrings, writeWorksheetXml } from "../src/xlsx/worksheet-writer"
 import { readXlsx } from "../src/xlsx/reader"
+import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip"
+import { ZipWriter } from "../src/zip/writer"
 import type { WriteSheet, DataValidation } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -800,5 +802,79 @@ describe("data validation — integration (ZIP verification)", () => {
     const sheetXml = await extractXml(data, "xl/worksheets/sheet1.xml")
     expect(sheetXml).not.toContain("<dataValidations")
     expect(sheetXml).not.toContain("<dataValidation")
+  })
+})
+
+// ── Validation without a type ────────────────────────────────────────
+// `type` defaults to "none" (ECMA-376 §18.3.1.32). Excel leaves it out of a
+// validation that only shows an input message; the reader used to discard
+// those as invalid, so every such prompt was lost on read.
+
+/** A workbook whose one validation has no `type`, as Excel writes it. */
+async function workbookWithTypelessValidation(): Promise<Uint8Array> {
+  const base = await writeXlsx({
+    sheets: [
+      {
+        name: "Sheet1",
+        rows: [["Email"]],
+        dataValidations: [
+          {
+            type: "whole",
+            range: "A2:A100",
+            allowBlank: true,
+            showInputMessage: true,
+            inputTitle: "Email",
+            inputMessage: "The address replies go to",
+          },
+        ],
+      },
+    ],
+  })
+  const reader = new ZipReader(base)
+  const zip = new ZipWriter()
+  for (const name of reader.entries()) {
+    let bytes = await reader.extract(name)
+    if (name === "xl/worksheets/sheet1.xml") {
+      const xml = decoder.decode(bytes)
+      expect(xml).toContain('type="whole" ')
+      bytes = new TextEncoder().encode(xml.replace('type="whole" ', ""))
+    }
+    zip.add(name, bytes)
+  }
+  return zip.build()
+}
+
+describe("data validation — no type attribute", () => {
+  it("reads it as type none, keeping the input message", async () => {
+    const workbook = await readXlsx(await workbookWithTypelessValidation())
+    expect(workbook.sheets[0].dataValidations).toEqual([
+      {
+        type: "none",
+        range: "A2:A100",
+        allowBlank: true,
+        showInputMessage: true,
+        inputTitle: "Email",
+        inputMessage: "The address replies go to",
+      },
+    ])
+  })
+
+  it("writes type none without a type attribute", () => {
+    const xml = writeXml({
+      name: "Sheet1",
+      rows: [["Email"]],
+      dataValidations: [{ type: "none", range: "A2", showInputMessage: true, inputMessage: "Hi" }],
+    })
+    const dv = findChild(findChild(parseWorksheetXml(xml), "dataValidations"), "dataValidation")
+    expect(dv.attrs).toEqual({ sqref: "A2", showInputMessage: "1", prompt: "Hi" })
+  })
+
+  it("survives openXlsx → saveXlsx", async () => {
+    const out = await saveXlsx(await openXlsx(await workbookWithTypelessValidation()))
+    const doc = parseXml(await extractXml(out, "xl/worksheets/sheet1.xml"))
+    const dvs = findChildren(findChild(doc, "dataValidations"), "dataValidation")
+    expect(dvs).toHaveLength(1)
+    expect(dvs[0].attrs["type"]).toBeUndefined()
+    expect(dvs[0].attrs["prompt"]).toBe("The address replies go to")
   })
 })

@@ -1552,6 +1552,7 @@ function parseSheetProtectionAttrs(attrs: Record<string, string>): SheetProtecti
 // ── Data Validation Builder ─────────────────────────────────────────
 
 const VALID_TYPES = new Set<string>([
+  "none",
   "list",
   "whole",
   "decimal",
@@ -1576,8 +1577,11 @@ function buildDataValidation(
   formula1Text: string,
   formula2Text: string,
 ): DataValidation | null {
-  const typeStr = attrs["type"]
-  if (!typeStr || !VALID_TYPES.has(typeStr)) return null
+  // A missing type is "none", the schema default — not an invalid rule.
+  // Excel writes it that way for a validation that only shows an input
+  // message, and dropping those lost every such prompt on read.
+  const typeStr = attrs["type"] ?? "none"
+  if (!VALID_TYPES.has(typeStr)) return null
 
   const sqref = attrs["sqref"]
   if (!sqref) return null

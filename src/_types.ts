@@ -299,7 +299,12 @@ export interface MergeRange {
 
 // ── Data Validation ────────────────────────────────────────────────
 
+/**
+ * `"none"` is the OOXML default (ECMA-376 §18.18.21): a validation that
+ * checks nothing and only shows an input message.
+ */
 export type ValidationType =
+  | "none"
   | "list"
   | "whole"
   | "decimal"
