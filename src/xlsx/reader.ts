@@ -1021,10 +1021,8 @@ function parseTwoCellAnchor(
   altText?: string
   title?: string
 } | null {
-  let fromRow = 0
-  let fromCol = 0
-  let toRow = 0
-  let toCol = 0
+  let from: AnchorPos = { row: 0, col: 0 }
+  let to: AnchorPos = { row: 0, col: 0 }
   let embedId: string | undefined
   let altText: string | undefined
   let title: string | undefined
@@ -1041,13 +1039,9 @@ function parseTwoCellAnchor(
     const local = c.local || c.tag
 
     if (local === "from") {
-      const pos = parseAnchorPosition(c)
-      fromRow = pos.row
-      fromCol = pos.col
+      from = parseAnchorPosition(c)
     } else if (local === "to") {
-      const pos = parseAnchorPosition(c)
-      toRow = pos.row
-      toCol = pos.col
+      to = parseAnchorPosition(c)
     } else if (local === "pic") {
       embedId = findBlipEmbed(c)
       const meta = findCNvPrMeta(c, "nvPicPr")
@@ -1078,8 +1072,8 @@ function parseTwoCellAnchor(
     mediaPath,
     type: imageType,
     anchor: {
-      from: { row: fromRow, col: fromCol },
-      to: { row: toRow, col: toCol },
+      from,
+      to,
     },
   }
   if (size) {
@@ -1122,10 +1116,8 @@ function findShapeExtent(shapeEl: {
 
 /** Parse a twoCellAnchor element that contains a textbox shape (sp with txBox="1") */
 function parseTwoCellAnchorTextBox(el: { children: Array<unknown> }): SheetTextBox | null {
-  let fromRow = 0
-  let fromCol = 0
-  let toRow = 0
-  let toCol = 0
+  let from: AnchorPos = { row: 0, col: 0 }
+  let to: AnchorPos = { row: 0, col: 0 }
   let spElement: any = null
 
   for (const child of el.children) {
@@ -1139,13 +1131,9 @@ function parseTwoCellAnchorTextBox(el: { children: Array<unknown> }): SheetTextB
     const local = c.local || c.tag
 
     if (local === "from") {
-      const pos = parseAnchorPosition(c)
-      fromRow = pos.row
-      fromCol = pos.col
+      from = parseAnchorPosition(c)
     } else if (local === "to") {
-      const pos = parseAnchorPosition(c)
-      toRow = pos.row
-      toCol = pos.col
+      to = parseAnchorPosition(c)
     } else if (local === "sp") {
       // Check if this is a textbox shape
       const nvSpPr = findChildEl(c, "nvSpPr")
@@ -1214,8 +1202,8 @@ function parseTwoCellAnchorTextBox(el: { children: Array<unknown> }): SheetTextB
   const tb: SheetTextBox = {
     text,
     anchor: {
-      from: { row: fromRow, col: fromCol },
-      to: { row: toRow, col: toCol },
+      from,
+      to,
     },
   }
 
@@ -1343,8 +1331,7 @@ function parseOneCellAnchor(
   altText?: string
   title?: string
 } | null {
-  let fromRow = 0
-  let fromCol = 0
+  let from: AnchorPos = { row: 0, col: 0 }
   let widthEmu = 0
   let heightEmu = 0
   let embedId: string | undefined
@@ -1362,9 +1349,7 @@ function parseOneCellAnchor(
     const local = c.local || c.tag
 
     if (local === "from") {
-      const pos = parseAnchorPosition(c)
-      fromRow = pos.row
-      fromCol = pos.col
+      from = parseAnchorPosition(c)
     } else if (local === "ext") {
       // <xdr:ext cx="..." cy="..."/>
       widthEmu = Number(c.attrs["cx"]) || 0
@@ -1397,7 +1382,7 @@ function parseOneCellAnchor(
     mediaPath,
     type: imageType,
     anchor: {
-      from: { row: fromRow, col: fromCol },
+      from,
     },
   }
 
@@ -1434,10 +1419,22 @@ function findCNvPrMeta(
   return out
 }
 
-/** Parse row/col from an anchor position element (from or to) */
-function parseAnchorPosition(el: { children: Array<unknown> }): { row: number; col: number } {
+type AnchorPos = { row: number; col: number; colOff?: number; rowOff?: number }
+
+/**
+ * Parse an anchor position element (from or to). `colOff` / `rowOff` are
+ * converted from EMU to pixels and left out when 0, so a file without
+ * offsets reads back exactly as before. An EMU count that is not a multiple
+ * of 9525 stays fractional rather than being rounded: rounding would move
+ * the shape by up to half a pixel on a read-then-write, and the writer
+ * rounds back to whole EMU, so the fractional value round-trips exactly
+ * (#567).
+ */
+function parseAnchorPosition(el: { children: Array<unknown> }): AnchorPos {
   let row = 0
   let col = 0
+  let colOff = 0
+  let rowOff = 0
 
   for (const child of el.children) {
     if (typeof child === "string") continue
@@ -1449,10 +1446,17 @@ function parseAnchorPosition(el: { children: Array<unknown> }): { row: number; c
       row = Number(text) || 0
     } else if (local === "col") {
       col = Number(text) || 0
+    } else if (local === "colOff") {
+      colOff = Number(text) || 0
+    } else if (local === "rowOff") {
+      rowOff = Number(text) || 0
     }
   }
 
-  return { row, col }
+  const pos: AnchorPos = { row, col }
+  if (colOff !== 0) pos.colOff = colOff / EMU_PER_PIXEL
+  if (rowOff !== 0) pos.rowOff = rowOff / EMU_PER_PIXEL
+  return pos
 }
 
 /** Find the r:embed attribute on the blip element inside a pic element */

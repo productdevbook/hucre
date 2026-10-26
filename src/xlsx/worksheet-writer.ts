@@ -839,8 +839,16 @@ export function writeWorksheetXml(
  * The default cell style a column contributes to every cell beneath it.
  * `numFmt` is folded into the style object, but an explicit
  * `style.numFmt` wins — it is the more specific of the two spellings.
+ *
+ * A cell's own style *replaces* this (and a row's) as a whole; it is never
+ * layered over it. In a file a cell's `xf` is complete and self-contained,
+ * so a bold cell in a currency column is a third xf that holds both, and a
+ * caller who wants both says both. `writeXlsx` and `writeXlsxStream` both
+ * resolve a cell as own, else row, else this, so one input gives one xf in
+ * either. The stream writer used to graft the column's `numFmt` onto an
+ * own style that had none. See #616.
  */
-function columnCellStyle(col: ColumnDef | undefined): CellStyle | undefined {
+export function columnCellStyle(col: ColumnDef | undefined): CellStyle | undefined {
   if (!col) return undefined
   if (col.numFmt && !col.style?.numFmt) return { ...col.style, numFmt: col.numFmt }
   return col.style
