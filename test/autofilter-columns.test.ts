@@ -4,6 +4,77 @@ import { ZipWriter } from "../src/zip/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { writeXlsx } from "../src/xlsx/writer"
 import type { AutoFilter } from "../src/_types"
+import { InvalidArgumentError } from "../src/errors"
+import { cloneSheet } from "../src/sheet-ops"
+
+describe("auto filter columns: review follow-ups (#565)", () => {
+  const rows = [
+    ["a", "b", "c"],
+    [1, 2, 3],
+  ]
+  const write = (af: AutoFilter) => writeXlsx({ sheets: [{ name: "S", rows, autoFilter: af }] })
+
+  it("writes and reads a column that only hides its button", async () => {
+    const af: AutoFilter = {
+      range: "A1:C2",
+      columns: [
+        { colIndex: 1, hiddenButton: true },
+        { colIndex: 2, showButton: false },
+      ],
+    }
+    expect((await readXlsx(await write(af))).sheets[0].autoFilter).toEqual(af)
+  })
+
+  it("round-trips the attributes beside the criteria", async () => {
+    const af = (await withAutoFilterXml(
+      `<autoFilter ref="A1:D3">` +
+        `<filterColumn colId="0"><filters calendarType="hijri"><filter val="1"/></filters></filterColumn>` +
+        `<filterColumn colId="1"><top10 val="5" filterVal="42"/></filterColumn>` +
+        `<filterColumn colId="2"><dynamicFilter type="between" val="1" maxVal="2" valIso="2024-01-01T00:00:00" maxValIso="2024-02-01T00:00:00"/></filterColumn>` +
+        `</autoFilter>`,
+    ))!
+    expect(af.columns).toEqual([
+      { colIndex: 0, filters: ["1"], calendarType: "hijri" },
+      { colIndex: 1, top10: { val: 5, filterVal: 42 } },
+      {
+        colIndex: 2,
+        dynamic: {
+          type: "between",
+          val: 1,
+          maxVal: 2,
+          valIso: "2024-01-01T00:00:00",
+          maxValIso: "2024-02-01T00:00:00",
+        },
+      },
+    ])
+    expect((await readXlsx(await write(af))).sheets[0].autoFilter).toEqual(af)
+  })
+
+  it("refuses more than two custom conditions instead of truncating", async () => {
+    const c = { operator: "equal" as const, value: "x" }
+    await expect(
+      write({ range: "A1:C2", columns: [{ colIndex: 0, custom: { conditions: [c, c, c] } }] }),
+    ).rejects.toThrow(InvalidArgumentError)
+  })
+
+  it("refuses a column with more than one criterion kind", async () => {
+    await expect(
+      write({
+        range: "A1:C2",
+        columns: [{ colIndex: 0, filters: ["a"], top10: { val: 3 } }],
+      }),
+    ).rejects.toThrow(/more than one criterion/)
+  })
+
+  it("cloneSheet detaches the auto filter's columns", async () => {
+    const af: AutoFilter = { range: "A1:C2", columns: [{ colIndex: 0, filters: ["1"] }] }
+    const sheet = (await readXlsx(await write(af))).sheets[0]
+    const clone = cloneSheet(sheet, "Copy")
+    clone.autoFilter!.columns![0].filters!.push("2")
+    clone.autoFilter!.columns!.push({ colIndex: 1, hiddenButton: true })
+    expect(sheet.autoFilter!.columns).toEqual([{ colIndex: 0, filters: ["1"] }])
+  })
+})
 
 // #565: an auto filter on two or more columns came back with one column.
 // Only `<filters><filter val/>` was read, so every column filtered by a

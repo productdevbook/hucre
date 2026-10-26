@@ -753,10 +753,14 @@ function worksheetParser(
           if (inAutoFilter && attrs["colId"] !== undefined) {
             currentFilterCol = { colIndex: Number(attrs["colId"]) }
             if (isOn(attrs["hiddenButton"])) currentFilterCol.hiddenButton = true
+            if (attrs["showButton"] === "0" || attrs["showButton"] === "false")
+              currentFilterCol.showButton = false
           }
           break
         case "filters":
           if (currentFilterCol && isOn(attrs["blank"])) currentFilterCol.blank = true
+          if (currentFilterCol && attrs["calendarType"])
+            currentFilterCol.calendarType = attrs["calendarType"]
           if (currentFilterCol) currentFilterCol.filters ??= []
           break
         case "filter":
@@ -814,6 +818,8 @@ function worksheetParser(
             if (attrs["top"] === "0" || attrs["top"] === "false")
               currentFilterCol.top10.bottom = true
             if (isOn(attrs["percent"])) currentFilterCol.top10.percent = true
+            if (attrs["filterVal"] !== undefined)
+              currentFilterCol.top10.filterVal = Number(attrs["filterVal"])
           }
           break
         case "dynamicFilter":
@@ -822,6 +828,8 @@ function worksheetParser(
             if (attrs["val"] !== undefined) currentFilterCol.dynamic.val = Number(attrs["val"])
             if (attrs["maxVal"] !== undefined)
               currentFilterCol.dynamic.maxVal = Number(attrs["maxVal"])
+            if (attrs["valIso"]) currentFilterCol.dynamic.valIso = attrs["valIso"]
+            if (attrs["maxValIso"]) currentFilterCol.dynamic.maxValIso = attrs["maxValIso"]
           }
           break
         case "mergeCells":
@@ -1245,7 +1253,9 @@ function worksheetParser(
               col.dateGroups ||
               (col.custom && col.custom.conditions.length > 0) ||
               col.top10 ||
-              col.dynamic
+              col.dynamic ||
+              col.hiddenButton ||
+              col.showButton === false
             ) {
               if (col.filters && col.filters.length === 0) delete col.filters
               if (col.custom && col.custom.conditions.length === 0) delete col.custom

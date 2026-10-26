@@ -1006,7 +1006,9 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
 
   // Copy autoFilter
   if (sheet.autoFilter) {
-    cloned.autoFilter = { ...sheet.autoFilter }
+    // structuredClone, not a spread: `columns` and each criterion nest
+    // arrays and objects, and a shallow copy shared them with the original.
+    cloned.autoFilter = structuredClone(sheet.autoFilter)
   }
 
   // Copy freezePane

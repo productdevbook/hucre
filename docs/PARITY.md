@@ -553,7 +553,10 @@ for a column that only has a format. Fixed in #603.
 Every `<filterColumn>` of an `<autoFilter>` is read and written: value
 lists (with `blank` and date-group items), custom filters (one or two
 comparisons, and/or), top/bottom-N (items or percent), and dynamic filters
-such as `aboveAverage` or `thisMonth`, plus `hiddenButton`. Until #565 only
+such as `aboveAverage` or `thisMonth`, plus `hiddenButton`, `showButton`,
+`calendarType`, `top10` `filterVal` and `valIso` / `maxValIso`. A column takes
+one criterion kind and at most two custom conditions; `writeXlsx` throws an
+`InvalidArgumentError` for more rather than dropping the excess. Until #565 only
 the value-list columns survived, so a sheet filtered on a number or text
 condition in one column and a value in another came back with a single
 column.
@@ -564,7 +567,7 @@ column whose only criterion is a colour or icon filter is left out of
 `AutoFilter.columns`; the `ref` range stays. Reading a file with
 `readXlsx` and writing it with `writeXlsx` therefore removes those
 columns' filter criteria. `sortState` inside an `<autoFilter>` is also
-not read.
+not read or written, so a sort stored with the filter is lost.
 
 ### In-cell pictures ("Place in Cell") are not read
 

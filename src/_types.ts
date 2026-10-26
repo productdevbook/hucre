@@ -427,6 +427,8 @@ export interface AutoFilterColumn {
   filters?: string[]
   /** `<filters blank="1">`: blank cells are part of the value list. */
   blank?: boolean
+  /** `<filters calendarType>`, e.g. "hijri"; absent means the Gregorian default. */
+  calendarType?: string
   /** `<dateGroupItem>` entries of a value filter, e.g. "all of March 2024". */
   dateGroups?: Array<{
     year: number
@@ -461,6 +463,8 @@ export interface AutoFilterColumn {
     /** `val` is a percentage rather than an item count. */
     percent?: boolean
     val: number
+    /** `filterVal`: the value Excel last computed the cut-off to be. */
+    filterVal?: number
   }
   /** `<dynamicFilter>`: a date/average filter Excel recomputes, e.g. "aboveAverage". */
   dynamic?: {
@@ -468,9 +472,14 @@ export interface AutoFilterColumn {
     type: string
     val?: number
     maxVal?: number
+    /** `valIso` / `maxValIso`: the same bounds as ISO-8601 date-times. */
+    valIso?: string
+    maxValIso?: string
   }
   /** `hiddenButton="1"`: the dropdown arrow is hidden for this column. */
   hiddenButton?: boolean
+  /** `showButton="0"` is the schema's other spelling of a hidden arrow; kept apart so it round-trips. */
+  showButton?: boolean
 }
 
 // ── Freeze Pane ────────────────────────────────────────────────────
