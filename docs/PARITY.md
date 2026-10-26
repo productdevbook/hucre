@@ -537,6 +537,18 @@ one as zero wide, which hid the column: `columns: [{ style }]` produced a
 column the user could not see. Excel itself always writes a width, even
 for a column that only has a format. Fixed in #603.
 
+**`customWidth` is not read, so a round trip sets it.** `ColumnDef` has a
+`width` and no flag for whether that width was chosen, so the reader keeps
+the width and drops `customWidth`. Every `<col>` with a width is written
+back with `customWidth="1"` — including the defaulted one above and any
+column Excel wrote with a width but without the flag. Reading the file
+`readXlsx` → `writeXlsx` or `openXlsx` → `saveXlsx` therefore turns "this
+is the default width" into "the user set this width". The width itself is
+exact; what is lost is only which of the two it was, and Excel shows the
+column the same either way. Dropping `customWidth` when the width equals
+the default would fix only the columns hucre defaulted, not the ones Excel
+did, so it is not done; the real fix is a field on `ColumnDef`.
+
 ### Losses inside fields that otherwise round-trip
 
 Three cases where a field is carried but a particular _value_ is not.
