@@ -1460,9 +1460,10 @@ function worksheetParser(
       const hyperlink: Hyperlink = { target: "" }
 
       if (hl.location) {
-        // Internal hyperlink
+        // Internal hyperlink, or an anchor inside the external document its
+        // r:id points at, where the relationship is still the target. See #646.
         hyperlink.location = hl.location
-        hyperlink.target = hl.location
+        hyperlink.target = (hl.rId && relMap.get(hl.rId)) || hl.location
       } else if (hl.rId) {
         // External hyperlink — resolve from relationships
         const target = relMap.get(hl.rId)
