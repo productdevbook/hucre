@@ -576,6 +576,37 @@ describe("XLSX hyperlink reading", () => {
     expect(cell!.hyperlink!.display).toBe("Go to Sheet2")
   })
 
+  it("reads the external target of a link that also has a location (#646)", async () => {
+    const xlsxData = await createXlsxWithHyperlinks({
+      hyperlinks: [{ ref: "A1", rId: "rId1", location: "section-2" }],
+      rels: [{ id: "rId1", target: "https://example.com/report.htm" }],
+      sharedStrings: ["Report"],
+      cellData: [{ ref: "A1", value: "Report", type: "s", ssIndex: 0 }],
+    })
+
+    const workbook = await readXlsx(xlsxData)
+
+    expect(workbook.sheets[0].cells!.get("0,0")!.hyperlink).toEqual({
+      target: "https://example.com/report.htm",
+      location: "section-2",
+    })
+  })
+
+  it("falls back to the location when the r:id of such a link does not resolve", async () => {
+    const xlsxData = await createXlsxWithHyperlinks({
+      hyperlinks: [{ ref: "A1", rId: "rId9", location: "section-2" }],
+      sharedStrings: ["Report"],
+      cellData: [{ ref: "A1", value: "Report", type: "s", ssIndex: 0 }],
+    })
+
+    const workbook = await readXlsx(xlsxData)
+
+    expect(workbook.sheets[0].cells!.get("0,0")!.hyperlink).toEqual({
+      target: "section-2",
+      location: "section-2",
+    })
+  })
+
   it("reads hyperlink tooltip", async () => {
     const xlsxData = await createXlsxWithHyperlinks({
       hyperlinks: [{ ref: "A1", rId: "rId1", tooltip: "Click here" }],

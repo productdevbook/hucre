@@ -160,7 +160,7 @@ export interface Hyperlink {
   target: string
   tooltip?: string
   display?: string
-  /** Internal reference (e.g. "Sheet2!A1") */
+  /** Internal reference (e.g. "Sheet2!A1"), or an anchor inside an external `target` */
   location?: string
 }
 
