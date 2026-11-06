@@ -516,7 +516,7 @@ describe("resolveStyle", () => {
       <border><left/><right/><top/><bottom/><diagonal/></border>
       <border><left style="thin"/></border>
     </borders>
-    <cellXfs count="9">
+    <cellXfs count="10">
       <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
       <xf numFmtId="164" fontId="1" fillId="2" borderId="1"/>
       <xf numFmtId="9" fontId="0" fillId="1" borderId="0"/>
@@ -526,6 +526,7 @@ describe("resolveStyle", () => {
       <xf numFmtId="0" fontId="0" fillId="0" borderId="99"/>
       <xf numFmtId="0" fontId="0" fillId="0" borderId="0"><alignment horizontal="right"/><protection hidden="1"/></xf>
       <xf numFmtId="0" fontId="1" fillId="2" borderId="1"/>
+      <xf numFmtId="0" fontId="0" fillId="1" borderId="0" applyFill="1"/>
     </cellXfs>
   `)
 
@@ -551,6 +552,12 @@ describe("resolveStyle", () => {
     // Every styles.xml declares gray125 at index 1 whether or not anything
     // uses it; surfacing it would paint cells with a grey hatch.
     expect(resolveStyle(styles, 2).fill).toBeUndefined()
+  })
+
+  it("keeps fill index 1 when the xf applies it (#643)", () => {
+    // gray125 is an ordinary pattern once an xf sets applyFill="1" on it;
+    // dropping it made the cell read back as unfilled.
+    expect(resolveStyle(styles, 9).fill).toEqual({ type: "pattern", pattern: "gray125" })
   })
 
   it("omits numFmt for an id that exists in neither table", () => {
