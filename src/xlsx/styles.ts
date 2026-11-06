@@ -649,8 +649,10 @@ export function resolveStyle(styles: ParsedStyles, styleIndex: number): CellStyl
     result.font = styles.fonts[xf.fontId]
   }
 
-  // Fill — skip index 0 (none) and index 1 (gray125 default)
-  if (xf.fillId < styles.fills.length && xf.fillId > 1) {
+  // Fill — skip index 0 (none). Index 1 is the mandatory gray125 entry that
+  // every styles.xml declares, so it is only surfaced when the xf applies
+  // it; otherwise a cell that really uses gray125 reads back unfilled (#643).
+  if (xf.fillId < styles.fills.length && (xf.fillId > 1 || (xf.fillId === 1 && xf.applyFill))) {
     result.fill = styles.fills[xf.fillId]
   }
 
