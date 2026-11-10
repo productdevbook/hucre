@@ -148,7 +148,8 @@ export interface XlsGlobals {
   sst: string[]
   isDate: (ixfe: number) => boolean
   date1904: boolean
-  boundSheets: Array<{ name: string; pos: number }>
+  /** `hsState`: 0 visible, 1 hidden, 2 very hidden ([MS-XLS] BoundSheet8). */
+  boundSheets: Array<{ name: string; pos: number; hsState: number }>
 }
 
 function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbook {
@@ -161,18 +162,17 @@ function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbo
   )
   const sheets: Sheet[] = []
   for (const bs of globals.boundSheets) {
-    if (!starts.has(bs.pos)) {
-      sheets.push({ name: bs.name, rows: [] })
-      continue
-    }
-    sheets.push(
-      parseSheet(
-        new RecordCursor(stream, bs.pos),
-        bs.name,
-        globals,
-        options?.maxTotalCells ?? MAX_TOTAL_CELLS,
-      ),
-    )
+    const sheet: Sheet = starts.has(bs.pos)
+      ? parseSheet(
+          new RecordCursor(stream, bs.pos),
+          bs.name,
+          globals,
+          options?.maxTotalCells ?? MAX_TOTAL_CELLS,
+        )
+      : { name: bs.name, rows: [] }
+    if (bs.hsState === 1) sheet.hidden = true
+    if (bs.hsState === 2) sheet.veryHidden = true
+    sheets.push(sheet)
   }
 
   return { sheets }
@@ -214,7 +214,7 @@ export function readGlobals(stream: Uint8Array, options?: ReadOptions): XlsGloba
   let date1904 = options?.dateSystem === "1904"
   const xfFmtIds: number[] = []
   const fmtCodes = new Map<number, string>()
-  const boundSheets: Array<{ name: string; pos: number }> = []
+  const boundSheets: XlsGlobals["boundSheets"] = []
   const sst: string[] = []
 
   for (let rec: BiffRecord | undefined = bof; rec; rec = cursor.next()) {
@@ -243,9 +243,10 @@ export function readGlobals(stream: Uint8Array, options?: ReadOptions): XlsGloba
       case SID.BOUNDSHEET: {
         const r = new Reader(rec.data)
         const pos = r.u32()
-        r.u8() // hsState (visibility)
+        // The low two bits; the other six are unused and MUST be ignored.
+        const hsState = r.u8() & 0b11
         r.u8() // dt (sheet type)
-        boundSheets.push({ name: strings.short(r), pos })
+        boundSheets.push({ name: strings.short(r), pos, hsState })
         break
       }
       case SID.SST: {

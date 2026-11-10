@@ -175,18 +175,19 @@ async function parseXlsbParts(
   const sheets: Sheet[] = []
   for (const entry of sheetEntries) {
     const path = entry.relId ? relMap.get(entry.relId) : undefined
-    if (!path || !zip.has(path)) {
-      sheets.push({ name: entry.name, rows: [] })
-      continue
+    const sheet: Sheet = { name: entry.name, rows: [] }
+    if (path && zip.has(path)) {
+      const { rows, merges } = parseWorksheetBin(
+        await zip.extract(path),
+        sharedStrings,
+        dateXf,
+        date1904,
+      )
+      sheet.rows = rows
+      if (merges.length > 0) sheet.merges = merges
     }
-    const { rows, merges } = parseWorksheetBin(
-      await zip.extract(path),
-      sharedStrings,
-      dateXf,
-      date1904,
-    )
-    const sheet: Sheet = { name: entry.name, rows }
-    if (merges.length > 0) sheet.merges = merges
+    if (entry.hsState === 1) sheet.hidden = true
+    if (entry.hsState === 2) sheet.veryHidden = true
     sheets.push(sheet)
   }
 
@@ -198,6 +199,8 @@ async function parseXlsbParts(
 interface SheetEntry {
   name: string
   relId: string
+  /** ST_SheetState: 0 visible, 1 hidden, 2 very hidden ([MS-XLSB] BrtBundleSh). */
+  hsState: number
 }
 
 function parseWorkbookBin(bin: Uint8Array): { sheets: SheetEntry[]; file1904: boolean } {
@@ -212,11 +215,11 @@ function parseWorkbookBin(bin: Uint8Array): { sheets: SheetEntry[]; file1904: bo
       file1904 = (new Cursor(rec.data).u32() & 0x01) !== 0
     } else if (rec.id === BrtBundleSh) {
       const c = new Cursor(rec.data)
-      c.u32() // hsState
+      const hsState = c.u32()
       c.u32() // iTabID
       const relId = c.nullableWideString()
       const name = c.wideString()
-      out.push({ name, relId })
+      out.push({ name, relId, hsState })
     }
   }
   return { sheets: out, file1904 }

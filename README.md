@@ -748,9 +748,9 @@ merged cells. Read-only.
 For a sheet too large to hold as a workbook, `streamXlsRows` yields the
 same values a row at a time — see [Streaming](#streaming).
 
-Both legacy readers surface sheet names, cell values, and merges — and
-nothing else. Formulas arrive as their **cached value**, never as formula
-text; styles, column widths, row heights, sheet visibility, named ranges
+Both legacy readers surface sheet names, sheet visibility, cell values,
+and merges — and nothing else. Formulas arrive as their **cached value**,
+never as formula text; styles, column widths, row heights, named ranges
 and workbook properties are not read. Converting `.xls` / `.xlsb` to
 `.xlsx` through hucre is therefore a values-and-sheet-names conversion,
 not a faithful copy.

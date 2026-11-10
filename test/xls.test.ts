@@ -70,7 +70,13 @@ function sstRecord(strings: string[]): number[] {
 }
 
 function buildXls(
-  opts: { dateFmtId?: number; fmtCodes?: Array<[number, string]>; value?: number } = {},
+  opts: {
+    dateFmtId?: number
+    fmtCodes?: Array<[number, string]>
+    value?: number
+    /** The BOUNDSHEET's hsState byte. */
+    hsState?: number
+  } = {},
 ): Uint8Array {
   const strings = ["Name", "Score", "Ada"]
 
@@ -117,7 +123,7 @@ function buildXls(
         ...Array.from({ length: 16 }, () => 0),
       ]),
       sstRecord(strings),
-      record(SID.BOUNDSHEET, [...u32(sheetPos), 0, 0, ...shortStr("Sheet1")]),
+      record(SID.BOUNDSHEET, [...u32(sheetPos), opts.hsState ?? 0, 0, ...shortStr("Sheet1")]),
       eof(),
     ])
 
@@ -219,6 +225,27 @@ describe("XLS (BIFF8) reader", () => {
     const wb = await read(buildXls())
     expect(wb.sheets[0].rows[1][0]).toBe("Ada")
     expect(wb.sheets[0].rows[1][1]).toBe(95)
+  })
+
+  // ── Sheet visibility ─────────────────────────────────────────────────
+  // BoundSheet8.hsState is the low two bits of the byte after the stream
+  // position: 0 visible, 1 hidden, 2 very hidden. The other six bits are
+  // unused and MUST be ignored ([MS-XLS] BoundSheet8). The byte used to
+  // be skipped, so a hidden sheet read back as visible.
+  describe("sheet visibility", () => {
+    it.each([
+      ["visible sheet", 0x00, {}],
+      ["hidden sheet", 0x01, { hidden: true }],
+      ["very hidden sheet", 0x02, { veryHidden: true }],
+      ["hidden sheet whose unused bits are set", 0xfd, { hidden: true }],
+    ])("reads a %s", async (_, hsState, expected) => {
+      const [sheet] = (await readXls(buildXls({ hsState }))).sheets
+      expect({ hidden: sheet.hidden, veryHidden: sheet.veryHidden }).toStrictEqual({
+        hidden: undefined,
+        veryHidden: undefined,
+        ...expected,
+      })
+    })
   })
 
   it("rejects a BIFF version it does not read with a clear error", async () => {
@@ -386,6 +413,8 @@ function buildXls5(
     /** The RSTRING trailer: a u8 run count, then (first char, font) byte pairs. */
     richRuns?: number[]
     stream?: string
+    /** The BOUNDSHEET's hsState byte. */
+    hsState?: number
   } = {},
 ): Uint8Array {
   const text = opts.text ?? cp1251("Видаткова накладна")
@@ -458,7 +487,12 @@ function buildXls5(
       record(SID.XF, [...u16(0), ...u16(0), ...Array.from({ length: 12 }, () => 0)]),
       record(SID.XF, [...u16(0), ...u16(14), ...Array.from({ length: 12 }, () => 0)]),
       record(SID.XF, [...u16(0), ...u16(50), ...Array.from({ length: 12 }, () => 0)]),
-      record(SID.BOUNDSHEET, [...u32(sheetPos), 0, 0, ...shortBytesStr(cp1251("Лист1"))]),
+      record(SID.BOUNDSHEET, [
+        ...u32(sheetPos),
+        opts.hsState ?? 0,
+        0,
+        ...shortBytesStr(cp1251("Лист1")),
+      ]),
       eof(),
     ])
 
@@ -481,6 +515,13 @@ describe("XLS (BIFF5) reader", () => {
     expect(rows[2]).toEqual(["Разом", true, null])
     expect(rows[3]).toEqual([10, 20, null])
     expect(wb.sheets[0].merges).toEqual([{ startRow: 0, endRow: 0, startCol: 0, endCol: 1 }])
+  })
+
+  it("reads a hidden sheet's state from the same BOUNDSHEET byte as BIFF8", async () => {
+    const [sheet] = (await readXls(buildXls5({ codepage: 1251, hsState: 0x01 }))).sheets
+    expect(sheet.name).toBe("Лист1")
+    expect(sheet.hidden).toBe(true)
+    expect(sheet.veryHidden).toBeUndefined()
   })
 
   it("falls back to `codepage` when the workbook carries no CODEPAGE record", async () => {
