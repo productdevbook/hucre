@@ -440,8 +440,8 @@ describe("openXlsx -> saveXlsx — pivot table roundtrip", () => {
     wb.sheets[0].rows.push(["APAC", 300])
     const saved = await saveXlsx(wb)
 
-    // Re-reading alone masks this bug: the reader resolves the cache via
-    // the pivot's .rels and overwrites its cacheId. Check the saved XML.
+    // The reader recovers cacheId from the pivot's .rels file, which hides
+    // an invalid ID in the saved XML. Check the XML directly.
     expect(await zipExtractText(saved, "xl/workbook.xml")).toMatch(
       /<pivotCache cacheId="2" [^>]*r:id="rId\d+"/,
     )
@@ -458,8 +458,8 @@ describe("openXlsx -> saveXlsx — pivot table roundtrip", () => {
       parts.set(workbookPath, parts.get("xl/workbook.xml")!)
       parts.delete("xl/workbook.xml")
       const relsPath = workbookPath.replace(/([^/]+)$/, "_rels/$1.rels")
-      // All targets still point at the original parts under xl/; the
-      // cache target stays relative to exercise directory resolution.
+      // Keep the existing parts under xl/. Relative cache targets exercise
+      // resolution from the workbook's new directory.
       const prefix = workbookPath.startsWith("xl/")
         ? ""
         : workbookPath.includes("/")

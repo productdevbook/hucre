@@ -545,9 +545,9 @@ export async function saveXlsx(
     rId: `rId${nextWorkbookRelId++}`,
     target: cache.target,
   }))
-  // Pivot table and slicer XML survive verbatim, including their cacheIds.
-  // Preserve the original ID -> part mapping: IDs can be sparse and the
-  // workbook's declaration order need not match the part filenames.
+  // Keep each cache ID paired with its original file. IDs can have gaps,
+  // and declaration order can differ from filename order. Preserved pivot
+  // tables and slicers still reference these IDs.
   const pivotCacheRefs: PivotCacheRef[] = pivotCacheRels.map((rel, i) => ({
     cacheId: originalPivotCaches[i].cacheId,
     rId: rel.rId,
@@ -1280,7 +1280,7 @@ function collectWorkbookPivotCaches(
       if (Number.isNaN(cacheId) || !rel) return
       const cachePath = resolvePath(workbookDir, rel.target)
       if (!rawEntries.has(cachePath)) return
-      // The saved workbook always lives under xl/, even if the source did not.
+      // Rebase cache targets to xl/, where saveXlsx writes the workbook.
       const target = cachePath.startsWith("xl/") ? cachePath.slice(3) : `/${cachePath}`
       caches.push({ cacheId, target })
     },

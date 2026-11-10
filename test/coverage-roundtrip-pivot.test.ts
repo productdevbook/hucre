@@ -550,8 +550,8 @@ describe("openXlsx → saveXlsx re-declares foreign workbook parts", () => {
       const saved = await saveXlsx(wb)
       const names = entries(saved)
 
-      // Inspect both halves of the saved wiring; the reader repairs IDs
-      // from .rels in memory and would hide a dangling XML reference.
+      // Check IDs and relationship targets in the saved XML. The reader
+      // recovers IDs from .rels files, so rereading can hide broken references.
       for (const output of [saved, await saveXlsx(await openXlsx(saved))]) {
         const workbook = parseXml(await part(output, "xl/workbook.xml"))
         const rels = parseRelationships(await part(output, "xl/_rels/workbook.xml.rels"))
