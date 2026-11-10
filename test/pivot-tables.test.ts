@@ -195,7 +195,7 @@ describe("attachPivotCacheFields", () => {
 
 // ── Integration: end-to-end XLSX with pivot table ──────────────────
 
-async function buildXlsxWithPivotTable(): Promise<Uint8Array> {
+async function buildXlsxWithPivotTable(cacheId = 0): Promise<Uint8Array> {
   const z = new ZipWriter()
 
   z.add(
@@ -231,7 +231,7 @@ async function buildXlsxWithPivotTable(): Promise<Uint8Array> {
     <sheet name="Pivot" sheetId="2" r:id="rId2"/>
   </sheets>
   <pivotCaches>
-    <pivotCache cacheId="0" r:id="rId3"/>
+    <pivotCache cacheId="${cacheId}" r:id="rId3"/>
   </pivotCaches>
 </workbook>`),
   )
@@ -277,7 +277,7 @@ async function buildXlsxWithPivotTable(): Promise<Uint8Array> {
     "xl/pivotTables/pivotTable1.xml",
     encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-                     name="SalesPivot" cacheId="0" applyNumberFormats="0"
+                     name="SalesPivot" cacheId="${cacheId}" applyNumberFormats="0"
                      applyBorderFormats="0" applyFontFormats="0"
                      applyPatternFormats="0" applyAlignmentFormats="0"
                      applyWidthHeightFormats="1" dataCaption="Values">
@@ -433,6 +433,68 @@ describe("readXlsx — pivot table integration", () => {
 // ── Roundtrip ──────────────────────────────────────────────────────
 
 describe("openXlsx -> saveXlsx — pivot table roundtrip", () => {
+  it("keeps a nonzero cache ID wired to the preserved pivot table", async () => {
+    const buf = await buildXlsxWithPivotTable(2)
+    const wb = await openXlsx(buf)
+    expect(wb.pivotCaches?.[0].cacheId).toBe(2)
+    wb.sheets[0].rows.push(["APAC", 300])
+    const saved = await saveXlsx(wb)
+
+    // Re-reading alone masks this bug: the reader resolves the cache via
+    // the pivot's .rels and overwrites its cacheId. Check the saved XML.
+    expect(await zipExtractText(saved, "xl/workbook.xml")).toMatch(
+      /<pivotCache cacheId="2" [^>]*r:id="rId\d+"/,
+    )
+    expect(await zipExtractText(saved, "xl/pivotTables/pivotTable1.xml")).toBe(
+      await zipExtractText(buf, "xl/pivotTables/pivotTable1.xml"),
+    )
+  })
+
+  it.each(["xl/alternate.xml", "alternate.xml", "custom/alternate.xml"])(
+    "preserves cache wiring when the workbook lives at %s",
+    async (workbookPath) => {
+      const original = await buildXlsxWithPivotTable()
+      const parts = await new ZipReader(original).extractAll()
+      parts.set(workbookPath, parts.get("xl/workbook.xml")!)
+      parts.delete("xl/workbook.xml")
+      const relsPath = workbookPath.replace(/([^/]+)$/, "_rels/$1.rels")
+      // All targets still point at the original parts under xl/; the
+      // cache target stays relative to exercise directory resolution.
+      const prefix = workbookPath.startsWith("xl/")
+        ? ""
+        : workbookPath.includes("/")
+          ? "../xl/"
+          : "xl/"
+      const rels = (await zipExtractText(original, "xl/_rels/workbook.xml.rels")).replace(
+        /Target="/g,
+        `Target="${prefix}`,
+      )
+      parts.set(relsPath, encoder.encode(rels))
+      parts.delete("xl/_rels/workbook.xml.rels")
+      for (const path of ["_rels/.rels", "[Content_Types].xml"]) {
+        parts.set(
+          path,
+          encoder.encode(
+            (await zipExtractText(original, path)).replace("xl/workbook.xml", workbookPath),
+          ),
+        )
+      }
+      const zip = new ZipWriter()
+      for (const [path, data] of parts) zip.add(path, data)
+      const wb = await openXlsx(await zip.build())
+      expect(wb.pivotCaches?.[0].cacheId).toBe(0)
+      const saved = await saveXlsx(wb)
+      expect(await zipExtractText(saved, "xl/workbook.xml")).toMatch(
+        /<pivotCache cacheId="0" [^>]*r:id="rId\d+"/,
+      )
+      const reread = await readXlsx(saved)
+      expect(reread.pivotCaches).toEqual(wb.pivotCaches)
+      expect(await zipExtractText(saved, "xl/pivotTables/pivotTable1.xml")).toBe(
+        await zipExtractText(original, "xl/pivotTables/pivotTable1.xml"),
+      )
+    },
+  )
+
   it("preserves the pivot table, cache definition, and records on roundtrip", async () => {
     const buf = await buildXlsxWithPivotTable()
     const wb = await openXlsx(buf)
