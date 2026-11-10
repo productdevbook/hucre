@@ -314,6 +314,42 @@ describe("sheet selection", () => {
     expect(await collect(streamXlsxRows(await build(parts)))).toEqual([[1]])
   })
 
+  it.each([
+    ["workbook", `xmlns:rel="${REL_BASE}"`, "", ""],
+    ["sheets parent", "", `xmlns:rel="${REL_BASE}"`, ""],
+    ["sheet", "", "", `xmlns:rel="${REL_BASE}"`],
+    [
+      "Strict namespace",
+      `xmlns:rel="http://purl.oclc.org/ooxml/officeDocument/relationships"`,
+      "",
+      "",
+    ],
+    [
+      "unrelated id attributes",
+      `xmlns:rel="${REL_BASE}" xmlns:foreign="urn:foreign"`,
+      "",
+      `xmlns:id="rId:namespace" foreign:id="rIdOther"`,
+    ],
+    [
+      "local namespace rebinding",
+      `xmlns:rel="urn:foreign" xmlns:old="${REL_BASE}"`,
+      "",
+      `xmlns:rel="${REL_BASE}" xmlns:old="urn:foreign" old:id="rIdOther"`,
+    ],
+  ])("resolves an arbitrary sheet relationship id with %s", async (_, workbook, sheets, sheet) => {
+    const parts = defaultParts(`<row r="1"><c r="A1"><v>1</v></c></row>`)
+    parts["xl/workbook.xml"] =
+      `<?xml version="1.0"?><workbook ${NS} ${workbook}>` +
+      `<sheets ${sheets}><sheet name="Prefixed" sheetId="1" ${sheet} rel:id="sheetOne"/>` +
+      `</sheets></workbook>`
+    parts["xl/_rels/workbook.xml.rels"] = relsXml([
+      { id: "sheetOne", type: "worksheet", target: "worksheets/sheet1.xml" },
+    ])
+    const data = await build(parts)
+    expect(await collect(streamXlsxRows(data, { sheet: "Prefixed" }))).toEqual([[1]])
+    expect(await collect(streamXlsxRows(toStream(data), { sheet: "Prefixed" }))).toEqual([[1]])
+  })
+
   it("ignores entries in <sheets> that are not usable sheet declarations", async () => {
     // A sheet with no name, a non-sheet child, and a sheet with no
     // sheetId all appear in files stitched together by other tools.

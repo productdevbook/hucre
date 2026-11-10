@@ -16,7 +16,8 @@ import {
   type PivotCacheRef,
   type PivotCacheRel,
 } from "./workbook-writer"
-import { parseRelationships } from "./relationships"
+import { dirname, findRIdAttr, parseRelationships, resolvePath } from "./relationships"
+import { parseSax } from "../xml/parser"
 import { createStylesCollector } from "./styles-writer"
 import { createSharedStrings, writeSharedStringsXml, writeWorksheetXml } from "./worksheet-writer"
 import {
@@ -539,18 +540,16 @@ export async function saveXlsx(
   // rIds for pivot cache definition relationships. The same rIds also
   // flow into the workbook.xml `<pivotCaches>` block so cache references
   // stay sound.
-  const pivotCacheRels: PivotCacheRel[] = pivotCacheDefinitionIndices.map((idx) => ({
+  const originalPivotCaches = collectWorkbookPivotCaches(rawEntries)
+  const pivotCacheRels: PivotCacheRel[] = originalPivotCaches.map((cache) => ({
     rId: `rId${nextWorkbookRelId++}`,
-    target: `pivotCache/pivotCacheDefinition${idx}.xml`,
+    target: cache.target,
   }))
-  // Workbook-level pivotCaches block. cacheId is 0-based and must match
-  // the per-pivot-table `cacheId` attribute. We assign them in the
-  // order the cache definitions appear in the package — the original
-  // cacheIds aren't recoverable without parsing workbook.xml here, but
-  // Excel only requires cacheId/rId pairings to be self-consistent, so
-  // a 0..N-1 sequence is safe for roundtrip.
+  // Keep each cache ID paired with its original file. IDs can have gaps,
+  // and declaration order can differ from filename order. Preserved pivot
+  // tables and slicers still reference these IDs.
   const pivotCacheRefs: PivotCacheRef[] = pivotCacheRels.map((rel, i) => ({
-    cacheId: i,
+    cacheId: originalPivotCaches[i].cacheId,
     rId: rel.rId,
   }))
   const slicerCacheRels = slicerCacheIndices.map((idx) => ({
@@ -1254,6 +1253,50 @@ export async function saveXlsx(
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Recover each original pivot cache ID and its existing target from the package.
+ * Targets are rebased for the output workbook at xl/workbook.xml.
+ */
+function collectWorkbookPivotCaches(
+  rawEntries: ReadonlyMap<string, Uint8Array>,
+): Array<{ cacheId: number; target: string }> {
+  const decoder = new TextDecoder("utf-8")
+  const rootRels = parseRelationships(decoder.decode(rawEntries.get("_rels/.rels")))
+  const workbookRel = rootRels.find((r) => r.type.endsWith("/officeDocument"))
+  if (!workbookRel) return []
+  const workbookPath = resolvePath("", workbookRel.target)
+  const workbookDir = dirname(workbookPath)
+  const workbookBytes = rawEntries.get(workbookPath)
+  const relsBytes = rawEntries.get(workbookPath.replace(/([^/]+)$/, "_rels/$1.rels"))
+  if (!workbookBytes || !relsBytes) return []
+  const rels = parseRelationships(decoder.decode(relsBytes))
+  const caches: Array<{ cacheId: number; target: string }> = []
+  const scopes: Record<string, string>[] = []
+  let inPivotCaches = false
+  parseSax(decoder.decode(workbookBytes), {
+    onOpenTag(tag, attrs) {
+      scopes.push(attrs)
+      const local = tag.slice(tag.indexOf(":") + 1)
+      if (local === "pivotCaches") inPivotCaches = true
+      if (!inPivotCaches || local !== "pivotCache") return
+      const cacheId = attrs.cacheId === undefined ? NaN : Number(attrs.cacheId)
+      const rId = findRIdAttr(attrs, scopes)
+      const rel = rels.find((r) => r.id === rId)
+      if (Number.isNaN(cacheId) || !rel) return
+      const cachePath = resolvePath(workbookDir, rel.target)
+      if (!rawEntries.has(cachePath)) return
+      // Rebase cache targets to xl/, where saveXlsx writes the workbook.
+      const target = cachePath.startsWith("xl/") ? cachePath.slice(3) : `/${cachePath}`
+      caches.push({ cacheId, target })
+    },
+    onCloseTag(tag) {
+      scopes.pop()
+      if (tag.slice(tag.indexOf(":") + 1) === "pivotCaches") inPivotCaches = false
+    },
+  })
+  return caches
+}
 
 /**
  * Pull the set of media paths referenced by `xl/_rels/cellimages.xml.rels`

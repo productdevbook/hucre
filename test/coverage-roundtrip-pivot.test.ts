@@ -5,6 +5,8 @@ import { resolvePivotSource, writePivotTable } from "../src/xlsx/pivot-writer"
 import { cloneChart } from "../src/xlsx/chart-clone"
 import { ZipReader } from "../src/zip/reader"
 import { ZipWriter } from "../src/zip/writer"
+import { parseXml } from "../src/xml/parser"
+import { parseRelationships, resolvePath } from "../src/xlsx/relationships"
 import { EncryptedFileError } from "../src/errors"
 import type { CellValue, Chart, SheetChart, WritePivotTable, WriteSheet } from "../src/_types"
 
@@ -497,36 +499,95 @@ describe("openXlsx → saveXlsx re-declares foreign workbook parts", () => {
     expect(sheetRels).toContain("../timelines/timeline2.xml")
   })
 
-  it("keeps two pivot caches and their pivot tables", async () => {
-    const pivotSheet: WriteSheet = {
-      name: "Pivots",
-      pivotTables: [
-        {
-          name: "First",
-          sourceSheet: "Data",
-          rows: ["Region"],
-          values: [{ field: "Revenue" }],
-        },
-        {
-          name: "Second",
-          sourceSheet: "Data",
-          targetCell: "A20",
-          rows: ["Product"],
-          values: [{ field: "Revenue", function: "average" }],
-        },
-      ],
-    }
-    const saved = await saveXlsx(await openXlsx(await writeXlsx({ sheets: [SALES, pivotSheet] })))
-    const names = entries(saved)
+  it.each([
+    { ids: [0, 1], reverse: false },
+    { ids: [0, 2], reverse: false },
+    { ids: [7, 2], reverse: true },
+  ])(
+    "keeps pivot cache IDs $ids attached to their original parts (reverse=$reverse)",
+    async ({ ids, reverse }) => {
+      const pivotSheet: WriteSheet = {
+        name: "Pivots",
+        pivotTables: [
+          {
+            name: "First",
+            sourceSheet: "Data",
+            rows: ["Region"],
+            values: [{ field: "Revenue" }],
+          },
+          {
+            name: "Second",
+            sourceSheet: "Data",
+            targetCell: "A20",
+            rows: ["Product"],
+            values: [{ field: "Revenue", function: "average" }],
+          },
+        ],
+      }
+      const base = await writeXlsx({ sheets: [SALES, pivotSheet] })
+      let workbookXml = (await part(base, "xl/workbook.xml")).replace(
+        /cacheId="(\d+)"/g,
+        (_, id) => `cacheId="${ids[Number(id)]}"`,
+      )
+      if (reverse) {
+        workbookXml = workbookXml.replace(/(<pivotCache [^>]+\/>)(<pivotCache [^>]+\/>)/, "$2$1")
+      }
+      const buf = await withParts(base, {
+        "xl/workbook.xml": workbookXml,
+        "xl/_rels/workbook.xml.rels": (await part(base, "xl/_rels/workbook.xml.rels")).replace(
+          /Target="pivotCache\//g,
+          'Target="/xl/pivotCache/',
+        ),
+        "xl/pivotTables/pivotTable1.xml": (
+          await part(base, "xl/pivotTables/pivotTable1.xml")
+        ).replace('cacheId="0"', `cacheId="${ids[0]}"`),
+        "xl/pivotTables/pivotTable2.xml": (
+          await part(base, "xl/pivotTables/pivotTable2.xml")
+        ).replace('cacheId="1"', `cacheId="${ids[1]}"`),
+      })
+      const wb = await openXlsx(buf)
+      wb.sheets[0].rows.push(["APAC", "Widget", "Q3", 300])
+      const saved = await saveXlsx(wb)
+      const names = entries(saved)
 
-    expect(names).toContain("xl/pivotCache/pivotCacheDefinition2.xml")
-    expect(names).toContain("xl/pivotCache/pivotCacheRecords2.xml")
-    expect(names).toContain("xl/pivotTables/pivotTable2.xml")
+      // Check IDs and relationship targets in the saved XML. The reader
+      // recovers IDs from .rels files, so rereading can hide broken references.
+      for (const output of [saved, await saveXlsx(await openXlsx(saved))]) {
+        const workbook = parseXml(await part(output, "xl/workbook.xml"))
+        const rels = parseRelationships(await part(output, "xl/_rels/workbook.xml.rels"))
+        const caches = workbook.children.find(
+          (c) => typeof c !== "string" && c.local === "pivotCaches",
+        )
+        expect(caches).toBeDefined()
+        if (!caches || typeof caches === "string") throw new Error("Missing pivotCaches")
+        const targets = new Map(
+          caches.children
+            .filter((c) => typeof c !== "string")
+            .map((c) => {
+              const rel = rels.find((r) => r.id === c.attrs["r:id"])!
+              return [Number(c.attrs.cacheId), resolvePath("xl", rel.target)]
+            }),
+        )
+        expect(targets).toEqual(
+          new Map([
+            [ids[0], "xl/pivotCache/pivotCacheDefinition1.xml"],
+            [ids[1], "xl/pivotCache/pivotCacheDefinition2.xml"],
+          ]),
+        )
+        for (const path of entries(buf).filter((p) => /^xl\/(pivotTables|pivotCache)\//.test(p))) {
+          expect(await part(output, path)).toBe(await part(buf, path))
+        }
+      }
 
-    const sheetRels = await part(saved, "xl/worksheets/_rels/sheet2.xml.rels")
-    expect(sheetRels).toContain("../pivotTables/pivotTable1.xml")
-    expect(sheetRels).toContain("../pivotTables/pivotTable2.xml")
-  })
+      expect(names).toContain("xl/pivotCache/pivotCacheDefinition2.xml")
+      expect(names).toContain("xl/pivotCache/pivotCacheRecords2.xml")
+      expect(names).toContain("xl/pivotTables/pivotTable2.xml")
+
+      const sheetRels = await part(saved, "xl/worksheets/_rels/sheet2.xml.rels")
+      expect(sheetRels).toContain("../pivotTables/pivotTable1.xml")
+      expect(sheetRels).toContain("../pivotTables/pivotTable2.xml")
+    },
+  )
 
   it("resolves cell-image media paths written as package-absolute or ../ targets", async () => {
     // WPS writes `media/imageN.png` relative to `xl/cellimages.xml`, but

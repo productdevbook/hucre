@@ -223,8 +223,7 @@ describe("sheet declarations", () => {
   })
 
   it("finds the relationship id under any namespace prefix", async () => {
-    // The `r` prefix is conventional, not required — the attribute is
-    // identified by its namespace, which we approximate by shape.
+    // The namespace identifies the attribute; its prefix can vary.
     const wb = await read({
       "xl/workbook.xml":
         `<?xml version="1.0"?><workbook ${NS} ` +
@@ -232,6 +231,43 @@ describe("sheet declarations", () => {
         `<sheets><sheet name="Prefixed" sheetId="1" rel:id="rId1"/></sheets></workbook>`,
     })
     expect(wb.sheets[0].name).toBe("Prefixed")
+  })
+
+  it.each([
+    ["workbook", `xmlns:rel="${REL_BASE}"`, "", ""],
+    ["sheets parent", "", `xmlns:rel="${REL_BASE}"`, ""],
+    ["sheet", "", "", `xmlns:rel="${REL_BASE}"`],
+    [
+      "Strict namespace",
+      `xmlns:rel="http://purl.oclc.org/ooxml/officeDocument/relationships"`,
+      "",
+      "",
+    ],
+    [
+      "unrelated id attributes",
+      `xmlns:rel="${REL_BASE}" xmlns:foreign="urn:foreign"`,
+      "",
+      `xmlns:id="rId:namespace" foreign:id="rIdOther"`,
+    ],
+    [
+      "local namespace rebinding",
+      `xmlns:rel="urn:foreign" xmlns:old="${REL_BASE}"`,
+      "",
+      `xmlns:rel="${REL_BASE}" xmlns:old="urn:foreign" old:id="rIdOther"`,
+    ],
+  ])("resolves an arbitrary sheet relationship id with %s", async (_, workbook, sheets, sheet) => {
+    const wb = await read({
+      "xl/workbook.xml":
+        `<?xml version="1.0"?><workbook ${NS} ${workbook}>` +
+        `<sheets ${sheets}><sheet name="Prefixed" sheetId="1" ${sheet} rel:id="sheetOne"/>` +
+        `</sheets></workbook>`,
+      "xl/_rels/workbook.xml.rels": relsXml([
+        { id: "sheetOne", type: "worksheet", target: "worksheets/sheet1.xml" },
+      ]),
+    })
+    expect(wb.sheets.map((s) => ({ name: s.name, rows: s.rows }))).toEqual([
+      { name: "Prefixed", rows: [["hi"]] },
+    ])
   })
 })
 
