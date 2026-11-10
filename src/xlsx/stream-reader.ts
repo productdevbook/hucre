@@ -72,6 +72,10 @@ interface SheetInfo {
   rId: string
 }
 
+/**
+ * Read the sheet names, relationship IDs, and date system needed to stream rows.
+ * Worksheet data is parsed separately.
+ */
 function parseWorkbookXml(
   xml: string,
   options?: ReadOptions,

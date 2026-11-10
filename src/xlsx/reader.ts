@@ -1575,6 +1575,10 @@ interface SheetInfo {
   state?: "visible" | "hidden" | "veryHidden"
 }
 
+/**
+ * Read workbook settings and the references used to load sheets and pivot caches.
+ * Preserve sheet order so localSheetId continues to identify the correct sheet.
+ */
 function parseWorkbookXml(
   xml: string,
   options?: ReadOptions,

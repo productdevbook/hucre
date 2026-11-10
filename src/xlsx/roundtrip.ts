@@ -1254,6 +1254,10 @@ export async function saveXlsx(
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+/**
+ * Recover each original pivot cache ID and its existing target from the package.
+ * Targets are rebased for the output workbook at xl/workbook.xml.
+ */
 function collectWorkbookPivotCaches(
   rawEntries: ReadonlyMap<string, Uint8Array>,
 ): Array<{ cacheId: number; target: string }> {
