@@ -95,6 +95,8 @@ async function buildXlsb(
     dateFmtId?: number
     fmtCodes?: Array<[number, string]>
     value?: number
+    /** The BrtBundleSh's hsState. */
+    hsState?: number
   } = {},
 ): Promise<Uint8Array> {
   // Shared strings: 0:"Name" 1:"Score" 2:"Ada"
@@ -135,7 +137,7 @@ async function buildXlsb(
   ])
   const wb = concat([
     ...(opts.date1904 === undefined ? [] : [wbProp(opts.date1904)]),
-    rec(BrtBundleSh, concat([u32(0), u32(0), nwstr("rId1"), wstr("Sheet1")])),
+    rec(BrtBundleSh, concat([u32(opts.hsState ?? 0), u32(0), nwstr("rId1"), wstr("Sheet1")])),
   ])
   const rels = `<?xml version="1.0"?><Relationships xmlns="${NS}"><Relationship Id="rIdWb" Type="${REL}/officeDocument" Target="xl/workbook.bin"/></Relationships>`
   const wbRels =
@@ -203,6 +205,22 @@ describe("XLSB reader", () => {
     const wb = await read(await buildXlsb())
     expect(wb.sheets[0].rows[1][1]).toBe(95)
     expect(wb.sheets[0].rows[1][0]).toBe("Ada")
+  })
+
+  // BrtBundleSh.hsState is an ST_SheetState: 0 visible, 1 hidden, 2 very
+  // hidden ([MS-XLSB] BrtBundleSh). It used to be skipped, so a hidden
+  // sheet read back as visible.
+  it.each([
+    ["visible sheet", 0, {}],
+    ["hidden sheet", 1, { hidden: true }],
+    ["very hidden sheet", 2, { veryHidden: true }],
+  ])("reads a %s", async (_, hsState, expected) => {
+    const [sheet] = (await readXlsb(await buildXlsb({ hsState }))).sheets
+    expect({ hidden: sheet.hidden, veryHidden: sheet.veryHidden }).toStrictEqual({
+      hidden: undefined,
+      veryHidden: undefined,
+      ...expected,
+    })
   })
 
   it("decodes RK fractional (x100) numbers", async () => {
