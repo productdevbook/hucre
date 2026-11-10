@@ -106,10 +106,7 @@ function parseWorkbookXml(
           const name = sheetChild.attrs["name"] ?? ""
           const sheetId = Number(sheetChild.attrs["sheetId"] ?? "0")
           const rId =
-            sheetChild.attrs["r:id"] ??
-            sheetChild.attrs["R:id"] ??
-            findRIdAttr(sheetChild.attrs) ??
-            ""
+            findRIdAttr(sheetChild.attrs, [doc.attrs, child.attrs, sheetChild.attrs]) ?? ""
 
           if (name && rId) {
             sheets.push({ name, sheetId, rId })

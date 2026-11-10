@@ -75,14 +75,22 @@ export function dirname(path: string): string {
 }
 
 /**
- * The rId an element points at, when the `r:` namespace prefix is not
- * spelled `r`. Producers bind the relationship namespace to whatever
- * prefix they like, so the attribute is found by its shape — a name
- * ending `:id` whose value looks like an rId — rather than by its name.
+ * Relationship IDs such as "cacheOne" need not start with "rId".
+ * Identify the attribute by its namespace. Scopes run from the document
+ * root to this element, so the closest declaration wins.
  */
-export function findRIdAttr(attrs: Record<string, string>): string | undefined {
+export function findRIdAttr(
+  attrs: Record<string, string>,
+  scopes: ReadonlyArray<Record<string, string>>,
+): string | undefined {
   for (const key of Object.keys(attrs)) {
-    if (key.endsWith(":id") && attrs[key].startsWith("rId")) {
+    if (!key.endsWith(":id")) continue
+    const declaration = `xmlns:${key.slice(0, -3)}`
+    const namespace = scopes.findLast((scope) => Object.hasOwn(scope, declaration))?.[declaration]
+    if (
+      namespace === "http://schemas.openxmlformats.org/officeDocument/2006/relationships" ||
+      namespace === "http://purl.oclc.org/ooxml/officeDocument/relationships"
+    ) {
       return attrs[key]
     }
   }

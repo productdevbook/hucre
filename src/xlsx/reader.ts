@@ -1671,12 +1671,8 @@ function parseWorkbookXml(
         if (sheetLocal === "sheet") {
           const name = sheetChild.attrs["name"] ?? ""
           const sheetId = Number(sheetChild.attrs["sheetId"] ?? "0")
-          // r:id attribute — the namespace prefix may vary
           const rId =
-            sheetChild.attrs["r:id"] ??
-            sheetChild.attrs["R:id"] ??
-            findRIdAttr(sheetChild.attrs) ??
-            ""
+            findRIdAttr(sheetChild.attrs, [doc.attrs, child.attrs, sheetChild.attrs]) ?? ""
           const stateRaw = sheetChild.attrs["state"]
           let state: SheetInfo["state"] = "visible"
           if (stateRaw === "hidden") state = "hidden"
@@ -1696,8 +1692,7 @@ function parseWorkbookXml(
         if (pcLocal === "pivotCache") {
           const cacheIdRaw = pcChild.attrs["cacheId"]
           const cacheId = cacheIdRaw === undefined ? NaN : Number(cacheIdRaw)
-          const rId =
-            pcChild.attrs["r:id"] ?? pcChild.attrs["R:id"] ?? findRIdAttr(pcChild.attrs) ?? ""
+          const rId = findRIdAttr(pcChild.attrs, [doc.attrs, child.attrs, pcChild.attrs]) ?? ""
           if (rId && !Number.isNaN(cacheId)) {
             pivotCacheRefs.push({ cacheId, rId })
           }

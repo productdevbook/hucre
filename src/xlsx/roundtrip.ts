@@ -1268,14 +1268,16 @@ function collectWorkbookPivotCaches(
   if (!workbookBytes || !relsBytes) return []
   const rels = parseRelationships(decoder.decode(relsBytes))
   const caches: Array<{ cacheId: number; target: string }> = []
+  const scopes: Record<string, string>[] = []
   let inPivotCaches = false
   parseSax(decoder.decode(workbookBytes), {
     onOpenTag(tag, attrs) {
+      scopes.push(attrs)
       const local = tag.slice(tag.indexOf(":") + 1)
       if (local === "pivotCaches") inPivotCaches = true
       if (!inPivotCaches || local !== "pivotCache") return
       const cacheId = attrs.cacheId === undefined ? NaN : Number(attrs.cacheId)
-      const rId = attrs["r:id"] ?? attrs["R:id"] ?? findRIdAttr(attrs)
+      const rId = findRIdAttr(attrs, scopes)
       const rel = rels.find((r) => r.id === rId)
       if (Number.isNaN(cacheId) || !rel) return
       const cachePath = resolvePath(workbookDir, rel.target)
@@ -1285,6 +1287,7 @@ function collectWorkbookPivotCaches(
       caches.push({ cacheId, target })
     },
     onCloseTag(tag) {
+      scopes.pop()
       if (tag.slice(tag.indexOf(":") + 1) === "pivotCaches") inPivotCaches = false
     },
   })

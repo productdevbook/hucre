@@ -450,6 +450,73 @@ describe("openXlsx -> saveXlsx — pivot table roundtrip", () => {
     )
   })
 
+  it.each([
+    { scope: "workbook", strict: false, foreignIds: false },
+    { scope: "pivotCaches", strict: false, foreignIds: false },
+    { scope: "pivotCache", strict: false, foreignIds: false },
+    { scope: "workbook", strict: true, foreignIds: false },
+    { scope: "pivotCaches", strict: true, foreignIds: false },
+    { scope: "pivotCache", strict: true, foreignIds: false },
+    { scope: "pivotCache", strict: false, foreignIds: true },
+  ])(
+    "preserves arbitrary cache relationship IDs ($scope, strict=$strict, foreignIds=$foreignIds)",
+    async ({ scope, strict, foreignIds }) => {
+      const original = await buildXlsxWithPivotTable()
+      const namespace = strict
+        ? "http://purl.oclc.org/ooxml/officeDocument/relationships"
+        : "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+      const parts = await new ZipReader(original).extractAll()
+      let workbook = await zipExtractText(original, "xl/workbook.xml")
+      // Each closer declaration overrides the ancestor's unrelated namespace.
+      workbook = workbook
+        .replace(
+          "<workbook ",
+          `<workbook xmlns:rel="${scope === "workbook" ? namespace : "urn:other"}" `,
+        )
+        .replace("<sheets>", '<sheets xmlns:rel="urn:other">')
+        .replace(
+          "<pivotCaches>",
+          scope === "pivotCaches" ? `<pivotCaches xmlns:rel="${namespace}">` : "<pivotCaches>",
+        )
+        .replace(
+          'r:id="rId3"',
+          `${scope === "pivotCache" ? `xmlns:rel="${namespace}" ` : ""}` +
+            (foreignIds
+              ? 'xmlns:r="urn:other" r:id="rIdWrong" xmlns:id="urn:other" xml:id="rIdXml" '
+              : "") +
+            'rel:id="cacheOne"',
+        )
+      parts.set("xl/workbook.xml", encoder.encode(workbook))
+      parts.set(
+        "xl/_rels/workbook.xml.rels",
+        encoder.encode(
+          (await zipExtractText(original, "xl/_rels/workbook.xml.rels")).replace(
+            'Id="rId3"',
+            'Id="cacheOne"',
+          ),
+        ),
+      )
+      const zip = new ZipWriter()
+      for (const [path, data] of parts) zip.add(path, data)
+      const wb = await openXlsx(await zip.build())
+      const saved = await saveXlsx(wb)
+
+      expect(await zipExtractText(saved, "xl/workbook.xml")).toMatch(
+        /<pivotCache cacheId="0" [^>]*r:id="rId\d+"/,
+      )
+      expect(await zipExtractText(saved, "xl/_rels/workbook.xml.rels")).toContain(
+        'Target="pivotCache/pivotCacheDefinition1.xml"',
+      )
+      expect(wb.pivotCaches?.[0].cacheId).toBe(0)
+      expect((await readXlsx(saved)).pivotCaches).toEqual(wb.pivotCaches)
+      for (const path of new ZipReader(original)
+        .entries()
+        .filter((p) => /^xl\/(pivotTables|pivotCache)\//.test(p))) {
+        expect(await zipExtractText(saved, path)).toBe(await zipExtractText(original, path))
+      }
+    },
+  )
+
   it.each(["xl/alternate.xml", "alternate.xml", "custom/alternate.xml"])(
     "preserves cache wiring when the workbook lives at %s",
     async (workbookPath) => {
