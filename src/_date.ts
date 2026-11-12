@@ -589,8 +589,8 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\
 export function reviveIsoDate(value: string): Date | null {
   const trimmed = value.trim()
   if (!ISO_DATE_RE.test(trimmed)) return null
-  const d = new Date(trimmed)
-  return Number.isNaN(d.getTime()) ? null : d
+  // A time without a zone is UTC, as for every other date hucre reads.
+  return parseUtcDefaultDateTime(trimmed) ?? null
 }
 
 /**
