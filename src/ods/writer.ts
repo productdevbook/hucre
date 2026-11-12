@@ -180,7 +180,9 @@ function digitCounts(code: string): {
 } {
   // Only the first section — Excel's `positive;negative;zero` are
   // separate styles, and the caller has already split them.
-  const section = code.split(";")[0] ?? ""
+  // Bracketed sections and quoted text are not digits: the locale id in
+  // `[$€-407] #,##0.00` would otherwise be read as a one-digit number.
+  const section = (code.split(";")[0] ?? "").replace(/\[[^\]]*\]|"[^"]*"/g, "")
   const digits = section.match(/[0#?]+(?:,[0#?]+)*(?:\.[0#?]+)?/)?.[0] ?? ""
   const [integerPart = "", decimalPart = ""] = digits.split(".")
 
