@@ -719,6 +719,15 @@ components everywhere, which is what keeps the readers, the writers and
 `formatValue` consistent; it does not infer a calendar day from a
 timezone. Use `Date.UTC(...)` when you mean a day.
 
+**Built-in currency formats 5-8 come back custom.** A cell styled with a
+built-in id reads back with the id's format code, and the writer maps the
+code back to the id, so a locale-dependent format such as 14 (short date)
+keeps following the reader's locale. Ids 5-8 are the exception: their
+codes spell a literal `$` while the ids mean the locale's currency, and a
+caller writing `"$#,##0…"` means dollars. They are written as custom
+formats, so a workbook that showed złoty or euro through id 5 shows
+dollars after a round trip.
+
 ## ODS
 
 ODS reads and writes the same narrow model, so **ODS → ODS is lossless**.
