@@ -728,6 +728,17 @@ caller writing `"$#,##0…"` means dollars. They are written as custom
 formats, so a workbook that showed złoty or euro through id 5 shows
 dollars after a round trip.
 
+Ids 37-40 are custom for the same reason in the other direction: this
+table spells them with a space (`#,##0 ;(#,##0)`) while Excel defines them
+with a paren-width gap (`#,##0_);(#,##0)`), so mapping the code back to
+the id would change the rendering. Either spelling keeps its exact code
+as a custom format.
+
+The locale trade applies the other way too: a caller writing `"m/d/yyyy"`
+gets id 14, the reader's short date — not a pinned month-first rendering.
+In a US Excel both look identical; in a Polish one the cell follows the
+locale (`15.03.2026`).
+
 ## ODS
 
 ODS reads and writes the same narrow model, so **ODS → ODS is lossless**.

@@ -87,4 +87,21 @@ describe("built-in number format ids", () => {
     )
     expect(cellXfs(styles)).toContain('numFmtId="164"')
   })
+
+  it("keeps the space-spelled accounting formats custom: Excel defines 37-40 with _);", async () => {
+    const styles = await part(
+      await writeXlsx({
+        sheets: [
+          {
+            name: "S",
+            rows: [[1]],
+            cells: new Map([["0,0", { value: 1, style: { numFmt: "#,##0 ;(#,##0)" } }]]),
+          },
+        ],
+      }),
+      "xl/styles.xml",
+    )
+    expect(cellXfs(styles)).toContain('numFmtId="164"')
+    expect(styles).toContain('formatCode="#,##0 ;(#,##0)"')
+  })
 })

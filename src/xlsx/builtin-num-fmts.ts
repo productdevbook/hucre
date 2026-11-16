@@ -47,9 +47,20 @@ export const BUILTIN_NUM_FMTS: Record<number, string> = {
  * Ids 5-8 are left out: their codes spell a literal "$", while the ids
  * mean the locale's currency. An author who writes "$#,##0…" wants
  * dollars, and the read side cannot tell the two apart.
+ *
+ * Ids 37-40 are left out for the same reason in reverse: this table spells
+ * them with a space ("#,##0 ;(#,##0)") while Excel defines them with a
+ * paren-width gap ("#,##0_);(#,##0)"). Mapping the code back to the id
+ * would change the rendering; keeping the exact code custom preserves it.
  */
 export const BUILTIN_NUM_FMT_IDS: ReadonlyMap<string, number> = new Map(
   Object.entries(BUILTIN_NUM_FMTS)
-    .filter(([id]) => Number(id) > 0 && (Number(id) < 5 || Number(id) > 8))
+    .filter(([id]) => {
+      const n = Number(id)
+      if (n <= 0) return false
+      if (n >= 5 && n <= 8) return false
+      if (n >= 37 && n <= 40) return false
+      return true
+    })
     .map(([id, code]) => [code, Number(id)]),
 )
