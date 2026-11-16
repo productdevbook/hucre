@@ -1390,6 +1390,10 @@ Two limits worth knowing:
   and pivot caches cannot be updated from here.
 - **`sortRows` does not rewrite formulas.** Sorting has no correct answer
   for a relative reference, which is why Excel warns about it too.
+- **Inserts stop at the grid edge.** An insert that would push nonblank
+  cells off the sheet throws; formatting pushed off the edge is clipped
+  to the last row or column instead — ranges shrink, and entries pushed
+  wholly off are dropped.
 
 ### HTML & Markdown Export
 

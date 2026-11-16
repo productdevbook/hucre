@@ -7,6 +7,7 @@ import { parseRange, toRange, type RangeLike } from "./cell-utils"
 import { rangeRef } from "./xlsx/worksheet-writer"
 import { cloneCellStyle } from "./_style"
 import { InvalidArgumentError } from "./errors"
+import { MAX_COL_INDEX, MAX_ROW_INDEX } from "./limits"
 import { shiftFormula, shiftRangeRef, type RefShift } from "./_refs"
 
 // ── Range Helpers ────────────────────────────────────────────────────
@@ -19,25 +20,48 @@ function buildRange(r: MergeRange): string {
 }
 
 /**
- * Shift row references in a range string by a given delta.
- * Only rows >= threshold are shifted.
+ * Move a range for inserted rows or columns, keeping it on the grid. A
+ * range pushed entirely off the sheet has nothing left to describe, so it
+ * comes back `undefined` and the caller drops it; one pushed partly off is
+ * clipped to the last row or column. Clipping is what Excel does — a
+ * conditional format over `A1:XFD1` still covers the whole row after a
+ * column is inserted — while an uncapped shift throws out of
+ * `colToLetter`, and the row axis has no validation at all and would
+ * write `A1048577`.
  */
-function shiftRangeRows(range: string, threshold: number, delta: number): string {
+function clipRangeRows(range: string, threshold: number, delta: number): string | undefined {
   const r = parseRange(range)
   if (r.startRow >= threshold) r.startRow += delta
   if (r.endRow >= threshold) r.endRow += delta
+  if (r.startRow > MAX_ROW_INDEX) return undefined
+  if (r.endRow > MAX_ROW_INDEX) r.endRow = MAX_ROW_INDEX
   return buildRange(r)
 }
 
 /**
- * Shift column references in a range string by a given delta.
- * Only columns >= threshold are shifted.
+ * Column-axis twin of `clipRangeRows`. See it for why the grid edge clips
+ * instead of throwing.
  */
-function shiftRangeCols(range: string, threshold: number, delta: number): string {
+function clipRangeCols(range: string, threshold: number, delta: number): string | undefined {
   const r = parseRange(range)
   if (r.startCol >= threshold) r.startCol += delta
   if (r.endCol >= threshold) r.endCol += delta
+  if (r.startCol > MAX_COL_INDEX) return undefined
+  if (r.endCol > MAX_COL_INDEX) r.endCol = MAX_COL_INDEX
   return buildRange(r)
+}
+
+/**
+ * Excel refuses an insert that would push nonblank cells off the grid
+ * instead of silently dropping them, so hucre throws the same way — with
+ * the position named, rather than the writer's column- or row-index error
+ * three calls later.
+ */
+function throwWouldFallOffSheet(kind: "column" | "row", index: number, count: number): never {
+  const max = kind === "column" ? MAX_COL_INDEX : MAX_ROW_INDEX
+  throw new InvalidArgumentError(
+    `Cannot insert ${count} ${kind}${count === 1 ? "" : "s"} at index ${index}: nonblank cells would shift off the sheet (Excel allows 0..${max})`,
+  )
 }
 
 // ── Reference maintenance ────────────────────────────────────────────
@@ -161,9 +185,36 @@ function makeEmptyRow(width: number): null[] {
  * Insert rows at the given position (0-based), shifting existing rows down.
  * Updates merge ranges, data validations, conditional rules, auto filter,
  * images, and cells Map keys.
+ *
+ * An insert that would push nonblank cells off the sheet throws before
+ * anything is mutated, the way Excel refuses it; formatting pushed off the
+ * edge is clipped to it instead.
  */
 export function insertRows(sheet: Sheet, rowIndex: number, count: number): void {
   if (count <= 0) return
+  if (rowIndex > MAX_ROW_INDEX + 1) {
+    throw new InvalidArgumentError(
+      `Cannot insert rows at index ${rowIndex}: the sheet only has rows 0..${MAX_ROW_INDEX}`,
+    )
+  }
+
+  // Same refusal as insertColumns, row axis: rows falling off the bottom
+  // are whole rows, so any nonblank cell in them refuses the insert.
+  // The scan starts at 0, not at a negative index: those splice from the
+  // end, and only real rows can hold data.
+  for (let r = Math.max(rowIndex, 0); r < sheet.rows.length; r++) {
+    if (r + count > MAX_ROW_INDEX && sheet.rows[r]!.some((v) => v != null)) {
+      throwWouldFallOffSheet("row", rowIndex, count)
+    }
+  }
+  if (sheet.cells) {
+    for (const key of sheet.cells.keys()) {
+      const row = Number(key.split(",")[0])
+      if (row >= rowIndex && row + count > MAX_ROW_INDEX) {
+        throwWouldFallOffSheet("row", rowIndex, count)
+      }
+    }
+  }
 
   const width = getRowWidth(sheet)
   const newRows: null[][] = []
@@ -171,8 +222,9 @@ export function insertRows(sheet: Sheet, rowIndex: number, count: number): void 
     newRows.push(makeEmptyRow(width))
   }
 
-  // Insert into rows array
+  // Insert into rows array; only blank rows fall off past row 1048576.
   sheet.rows.splice(rowIndex, 0, ...newRows)
+  if (sheet.rows.length > MAX_ROW_INDEX + 1) sheet.rows.length = MAX_ROW_INDEX + 1
 
   // Update cells Map
   if (sheet.cells && sheet.cells.size > 0) {
@@ -190,7 +242,8 @@ export function insertRows(sheet: Sheet, rowIndex: number, count: number): void 
     sheet.cells = updated
   }
 
-  // Update merge ranges
+  // Update merge ranges; a merge pushed partly off the bottom is clipped
+  // to it, one pushed wholly off is dropped.
   if (sheet.merges) {
     for (const merge of sheet.merges) {
       if (merge.startRow >= rowIndex) {
@@ -200,29 +253,52 @@ export function insertRows(sheet: Sheet, rowIndex: number, count: number): void 
         // Merge starts before insertion but ends at or after — expand it
         merge.endRow += count
       }
+      if (merge.endRow > MAX_ROW_INDEX) merge.endRow = MAX_ROW_INDEX
     }
+    // Same rule as the delete paths: a range clipped to one cell is no
+    // longer a merge.
+    sheet.merges = sheet.merges.filter(
+      (m) =>
+        m.startRow <= MAX_ROW_INDEX &&
+        m.startRow <= m.endRow &&
+        m.startCol <= m.endCol &&
+        !(m.startRow === m.endRow && m.startCol === m.endCol),
+    )
   }
 
-  // Update data validations
+  // Update data validations; ranges pushed off the sheet are dropped.
   if (sheet.dataValidations) {
+    const kept: NonNullable<typeof sheet.dataValidations> = []
     for (const dv of sheet.dataValidations) {
-      dv.range = shiftRangeRows(dv.range, rowIndex, count)
+      const range = clipRangeRows(dv.range, rowIndex, count)
+      if (range !== undefined) {
+        dv.range = range
+        kept.push(dv)
+      }
     }
+    sheet.dataValidations = kept
   }
 
-  // Update conditional rules
+  // Update conditional rules; ranges pushed off the sheet are dropped.
   if (sheet.conditionalRules) {
+    const kept: NonNullable<typeof sheet.conditionalRules> = []
     for (const rule of sheet.conditionalRules) {
-      rule.range = shiftRangeRows(rule.range, rowIndex, count)
+      const range = clipRangeRows(rule.range, rowIndex, count)
+      if (range !== undefined) {
+        rule.range = range
+        kept.push(rule)
+      }
     }
+    sheet.conditionalRules = kept
   }
 
   // Update auto filter
   if (sheet.autoFilter) {
-    sheet.autoFilter.range = shiftRangeRows(sheet.autoFilter.range, rowIndex, count)
+    const range = clipRangeRows(sheet.autoFilter.range, rowIndex, count)
+    sheet.autoFilter = range === undefined ? undefined : { ...sheet.autoFilter, range }
   }
 
-  // Update image anchors
+  // Update image anchors; drawings shifted off the bottom stay at it.
   if (sheet.images) {
     for (const img of sheet.images) {
       if (img.anchor.from.row >= rowIndex) {
@@ -231,15 +307,17 @@ export function insertRows(sheet: Sheet, rowIndex: number, count: number): void 
       if (img.anchor.to && img.anchor.to.row >= rowIndex) {
         img.anchor.to.row += count
       }
+      if (img.anchor.from.row > MAX_ROW_INDEX) img.anchor.from.row = MAX_ROW_INDEX
+      if (img.anchor.to && img.anchor.to.row > MAX_ROW_INDEX) img.anchor.to.row = MAX_ROW_INDEX
     }
   }
 
-  // Update row defs
+  // Update row defs; formats shifted off the bottom are dropped.
   if (sheet.rowDefs && sheet.rowDefs.size > 0) {
     const updated = new Map<number, RowDef>()
     for (const [row, def] of sheet.rowDefs) {
       if (row >= rowIndex) {
-        updated.set(row + count, def)
+        if (row + count <= MAX_ROW_INDEX) updated.set(row + count, def)
       } else {
         updated.set(row, def)
       }
@@ -247,16 +325,34 @@ export function insertRows(sheet: Sheet, rowIndex: number, count: number): void 
     sheet.rowDefs = updated
   }
 
-  // Update table ranges
+  // Update table ranges; tables pushed off the sheet are dropped.
   if (sheet.tables) {
+    const kept: NonNullable<typeof sheet.tables> = []
     for (const table of sheet.tables) {
-      if (table.range) {
-        table.range = shiftRangeRows(table.range, rowIndex, count)
+      if (!table.range) {
+        kept.push(table)
+        continue
+      }
+      const range = clipRangeRows(table.range, rowIndex, count)
+      if (range !== undefined) {
+        table.range = range
+        kept.push(table)
       }
     }
+    sheet.tables = kept
   }
 
   shiftReferences(sheet, { axis: "row", at: rowIndex, delta: count })
+
+  // See insertColumns: breaks past the edge would serialize as a bogus
+  // `<brk id>`, so they are dropped and text-box anchors are held at it.
+  if (sheet.rowBreaks) sheet.rowBreaks = sheet.rowBreaks.filter((b) => b <= MAX_ROW_INDEX)
+  if (sheet.textBoxes) {
+    for (const box of sheet.textBoxes) {
+      if (box.anchor.from.row > MAX_ROW_INDEX) box.anchor.from.row = MAX_ROW_INDEX
+      if (box.anchor.to && box.anchor.to.row > MAX_ROW_INDEX) box.anchor.to.row = MAX_ROW_INDEX
+    }
+  }
 }
 
 // ── Delete Rows ──────────────────────────────────────────────────────
@@ -449,17 +545,48 @@ function shiftDeletedRangeRows(range: string, rowIndex: number, count: number): 
  * Insert columns at the given position (0-based), shifting existing columns right.
  * Updates merge ranges, data validations, conditional rules, auto filter,
  * images, column defs, and cells Map keys.
+ *
+ * An insert that would push nonblank cells off the sheet throws before
+ * anything is mutated, the way Excel refuses it; formatting pushed off the
+ * edge is clipped to it instead.
  */
 export function insertColumns(sheet: Sheet, colIndex: number, count: number): void {
   if (count <= 0) return
+  if (colIndex > MAX_COL_INDEX + 1) {
+    throw new InvalidArgumentError(
+      `Cannot insert columns at index ${colIndex}: the sheet only has columns 0..${MAX_COL_INDEX}`,
+    )
+  }
+
+  // Excel refuses an insert that would push nonblank cells off the grid,
+  // so the check runs before anything is mutated: half-shifted rows plus
+  // a throw would leave the sheet worse than the error it reports. A
+  // sparse `cells` entry is nonblank by definition — a style-only cell
+  // included — so any of them past the edge refuses the same way.
+  for (const row of sheet.rows) {
+    for (let c = colIndex; c < row.length; c++) {
+      if (c + count > MAX_COL_INDEX && row[c] != null) {
+        throwWouldFallOffSheet("column", colIndex, count)
+      }
+    }
+  }
+  if (sheet.cells) {
+    for (const key of sheet.cells.keys()) {
+      const col = Number(key.split(",")[1])
+      if (col >= colIndex && col + count > MAX_COL_INDEX) {
+        throwWouldFallOffSheet("column", colIndex, count)
+      }
+    }
+  }
 
   const nulls: null[] = makeEmptyRow(count)
 
-  // Insert nulls into each row
+  // Insert nulls into each row; only blanks fall off the edge past XFD.
   for (const row of sheet.rows) {
     // Extend row if it's shorter than colIndex
     while (row.length < colIndex) row.push(null)
     row.splice(colIndex, 0, ...nulls)
+    if (row.length > MAX_COL_INDEX + 1) row.length = MAX_COL_INDEX + 1
   }
 
   // Update column defs
@@ -469,6 +596,12 @@ export function insertColumns(sheet: Sheet, colIndex: number, count: number): vo
     // Ensure columns array is long enough
     while (sheet.columns.length < colIndex) sheet.columns.push({})
     sheet.columns.splice(colIndex, 0, ...newCols)
+    // A `<col max="16384">` range (Excel writes one whenever a format is
+    // set on whole columns) is read as a definition for every column up
+    // to XFD, so the splice pushes the tail past the last column and the
+    // writer throws. Definitions shifted off the sheet are dropped, as
+    // Excel drops them.
+    if (sheet.columns.length > MAX_COL_INDEX + 1) sheet.columns.length = MAX_COL_INDEX + 1
   }
 
   // Update cells Map
@@ -487,7 +620,9 @@ export function insertColumns(sheet: Sheet, colIndex: number, count: number): vo
     sheet.cells = updated
   }
 
-  // Update merge ranges
+  // Update merge ranges; a merge pushed partly off the edge is clipped
+  // to it, one pushed wholly off is dropped. Same rule as the delete
+  // paths: a range clipped to one cell is no longer a merge.
   if (sheet.merges) {
     for (const merge of sheet.merges) {
       if (merge.startCol >= colIndex) {
@@ -496,29 +631,50 @@ export function insertColumns(sheet: Sheet, colIndex: number, count: number): vo
       } else if (merge.endCol >= colIndex) {
         merge.endCol += count
       }
+      if (merge.endCol > MAX_COL_INDEX) merge.endCol = MAX_COL_INDEX
     }
+    sheet.merges = sheet.merges.filter(
+      (m) =>
+        m.startCol <= MAX_COL_INDEX &&
+        m.startRow <= m.endRow &&
+        m.startCol <= m.endCol &&
+        !(m.startRow === m.endRow && m.startCol === m.endCol),
+    )
   }
 
-  // Update data validations
+  // Update data validations; ranges pushed off the sheet are dropped.
   if (sheet.dataValidations) {
+    const kept: NonNullable<typeof sheet.dataValidations> = []
     for (const dv of sheet.dataValidations) {
-      dv.range = shiftRangeCols(dv.range, colIndex, count)
+      const range = clipRangeCols(dv.range, colIndex, count)
+      if (range !== undefined) {
+        dv.range = range
+        kept.push(dv)
+      }
     }
+    sheet.dataValidations = kept
   }
 
-  // Update conditional rules
+  // Update conditional rules; ranges pushed off the sheet are dropped.
   if (sheet.conditionalRules) {
+    const kept: NonNullable<typeof sheet.conditionalRules> = []
     for (const rule of sheet.conditionalRules) {
-      rule.range = shiftRangeCols(rule.range, colIndex, count)
+      const range = clipRangeCols(rule.range, colIndex, count)
+      if (range !== undefined) {
+        rule.range = range
+        kept.push(rule)
+      }
     }
+    sheet.conditionalRules = kept
   }
 
   // Update auto filter
   if (sheet.autoFilter) {
-    sheet.autoFilter.range = shiftRangeCols(sheet.autoFilter.range, colIndex, count)
+    const range = clipRangeCols(sheet.autoFilter.range, colIndex, count)
+    sheet.autoFilter = range === undefined ? undefined : { ...sheet.autoFilter, range }
   }
 
-  // Update image anchors
+  // Update image anchors; drawings shifted off the edge stay at the edge.
   if (sheet.images) {
     for (const img of sheet.images) {
       if (img.anchor.from.col >= colIndex) {
@@ -527,19 +683,46 @@ export function insertColumns(sheet: Sheet, colIndex: number, count: number): vo
       if (img.anchor.to && img.anchor.to.col >= colIndex) {
         img.anchor.to.col += count
       }
+      if (img.anchor.from.col > MAX_COL_INDEX) img.anchor.from.col = MAX_COL_INDEX
+      if (img.anchor.to && img.anchor.to.col > MAX_COL_INDEX) img.anchor.to.col = MAX_COL_INDEX
     }
   }
 
-  // Update table ranges
+  // Update table ranges; tables pushed off the sheet are dropped.
   if (sheet.tables) {
+    const kept: NonNullable<typeof sheet.tables> = []
     for (const table of sheet.tables) {
-      if (table.range) {
-        table.range = shiftRangeCols(table.range, colIndex, count)
+      if (!table.range) {
+        kept.push(table)
+        continue
+      }
+      const range = clipRangeCols(table.range, colIndex, count)
+      if (range !== undefined) {
+        table.range = range
+        // The clip can narrow the table while <tableColumns> still lists
+        // the old width; keep the leftmost definitions that fit the
+        // clipped range. A widened range keeps its definitions: growing a
+        // table the way Excel does is a separate feature, not an insert.
+        const r = parseRange(range)
+        table.columns = table.columns.slice(0, r.endCol - r.startCol + 1)
+        kept.push(table)
       }
     }
+    sheet.tables = kept
   }
 
   shiftReferences(sheet, { axis: "col", at: colIndex, delta: count })
+
+  // Page breaks and text-box anchors travel through shiftReferences, which
+  // has no ceiling: a break past the edge would serialize as a bogus
+  // `<brk id>`, so breaks past XFD are dropped and anchors are held at it.
+  if (sheet.colBreaks) sheet.colBreaks = sheet.colBreaks.filter((b) => b <= MAX_COL_INDEX)
+  if (sheet.textBoxes) {
+    for (const box of sheet.textBoxes) {
+      if (box.anchor.from.col > MAX_COL_INDEX) box.anchor.from.col = MAX_COL_INDEX
+      if (box.anchor.to && box.anchor.to.col > MAX_COL_INDEX) box.anchor.to.col = MAX_COL_INDEX
+    }
+  }
 }
 
 // ── Delete Columns ───────────────────────────────────────────────────
