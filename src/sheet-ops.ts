@@ -255,7 +255,15 @@ export function insertRows(sheet: Sheet, rowIndex: number, count: number): void 
       }
       if (merge.endRow > MAX_ROW_INDEX) merge.endRow = MAX_ROW_INDEX
     }
-    sheet.merges = sheet.merges.filter((m) => m.startRow <= MAX_ROW_INDEX)
+    // Same rule as the delete paths: a range clipped to one cell is no
+    // longer a merge.
+    sheet.merges = sheet.merges.filter(
+      (m) =>
+        m.startRow <= MAX_ROW_INDEX &&
+        m.startRow <= m.endRow &&
+        m.startCol <= m.endCol &&
+        !(m.startRow === m.endRow && m.startCol === m.endCol),
+    )
   }
 
   // Update data validations; ranges pushed off the sheet are dropped.
@@ -613,7 +621,8 @@ export function insertColumns(sheet: Sheet, colIndex: number, count: number): vo
   }
 
   // Update merge ranges; a merge pushed partly off the edge is clipped
-  // to it, one pushed wholly off is dropped.
+  // to it, one pushed wholly off is dropped. Same rule as the delete
+  // paths: a range clipped to one cell is no longer a merge.
   if (sheet.merges) {
     for (const merge of sheet.merges) {
       if (merge.startCol >= colIndex) {
@@ -624,7 +633,13 @@ export function insertColumns(sheet: Sheet, colIndex: number, count: number): vo
       }
       if (merge.endCol > MAX_COL_INDEX) merge.endCol = MAX_COL_INDEX
     }
-    sheet.merges = sheet.merges.filter((m) => m.startCol <= MAX_COL_INDEX)
+    sheet.merges = sheet.merges.filter(
+      (m) =>
+        m.startCol <= MAX_COL_INDEX &&
+        m.startRow <= m.endRow &&
+        m.startCol <= m.endCol &&
+        !(m.startRow === m.endRow && m.startCol === m.endCol),
+    )
   }
 
   // Update data validations; ranges pushed off the sheet are dropped.
@@ -684,6 +699,12 @@ export function insertColumns(sheet: Sheet, colIndex: number, count: number): vo
       const range = clipRangeCols(table.range, colIndex, count)
       if (range !== undefined) {
         table.range = range
+        // The clip can narrow the table while <tableColumns> still lists
+        // the old width; keep the leftmost definitions that fit the
+        // clipped range. A widened range keeps its definitions: growing a
+        // table the way Excel does is a separate feature, not an insert.
+        const r = parseRange(range)
+        table.columns = table.columns.slice(0, r.endCol - r.startCol + 1)
         kept.push(table)
       }
     }

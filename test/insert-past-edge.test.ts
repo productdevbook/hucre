@@ -138,6 +138,14 @@ describe("insertColumns at the grid edge", () => {
     expect(wb.sheets[0]!.textBoxes![0]!.anchor.from.col).toBe(16383)
   })
 
+  it("drops a merge clipped to a single cell, like the delete paths do", async () => {
+    const wb = await openXlsx(await template())
+    wb.sheets[0]!.merges = [{ startRow: 5, startCol: 16382, endRow: 5, endCol: 16383 }]
+    insertColumns(wb.sheets[0]!, 0, 1)
+    expect(wb.sheets[0]!.merges).toEqual([])
+    await saveXlsx(wb)
+  })
+
   it("drops an auto filter and tables pushed off the sheet, clips the rest", async () => {
     const wb = await openXlsx(await template())
     wb.sheets[0]!.autoFilter = { range: "XFD1:XFD3" }
@@ -148,6 +156,17 @@ describe("insertColumns at the grid edge", () => {
     insertColumns(wb.sheets[0]!, 0, 1)
     expect(wb.sheets[0]!.autoFilter).toBeUndefined()
     expect(wb.sheets[0]!.tables!.map((t) => t.range)).toEqual(["B1:B2"])
+    await saveXlsx(wb)
+  })
+
+  it("trims table columns to the clipped range width", async () => {
+    const wb = await openXlsx(await template())
+    wb.sheets[0]!.tables = [
+      { name: "T1", columns: [{ name: "C1" }, { name: "C2" }], range: "XFC1:XFD2" },
+    ]
+    insertColumns(wb.sheets[0]!, 0, 1)
+    expect(wb.sheets[0]!.tables![0]!.range).toBe("XFD1:XFD2")
+    expect(wb.sheets[0]!.tables![0]!.columns).toEqual([{ name: "C1" }])
     await saveXlsx(wb)
   })
 })
@@ -189,6 +208,14 @@ describe("insertRows at the grid edge", () => {
     expect(wb.sheets[0]!.textBoxes![0]!.anchor.from.row).toBe(1048575)
     const xml = await sheetXml(await saveXlsx(wb))
     expect(xml).not.toContain("1048577")
+  })
+
+  it("drops a row merge clipped to a single cell, like the delete paths do", async () => {
+    const wb = await openXlsx(await writeXlsx({ sheets: [{ name: "S", rows: [["x"]] }] }))
+    wb.sheets[0]!.merges = [{ startRow: 1048574, startCol: 0, endRow: 1048575, endCol: 0 }]
+    insertRows(wb.sheets[0]!, 0, 1)
+    expect(wb.sheets[0]!.merges).toEqual([])
+    await saveXlsx(wb)
   })
 
   it("drops row formats and breaks pushed past the bottom", async () => {
