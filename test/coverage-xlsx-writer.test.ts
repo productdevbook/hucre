@@ -533,7 +533,7 @@ describe("object rows resolved through column keys", () => {
       ],
     })
 
-    expect(await part(buf, "xl/styles.xml")).toContain('formatCode="#,##0.00"')
+    expect(await part(buf, "xl/styles.xml")).toContain('numFmtId="4"')
   })
 
   it("leaves a column's own style numFmt in place instead of overriding it", async () => {
@@ -548,8 +548,8 @@ describe("object rows resolved through column keys", () => {
     })
     const styles = await part(buf, "xl/styles.xml")
 
-    expect(styles).toContain('formatCode="0%"')
-    expect(styles).not.toContain('formatCode="0.00"')
+    expect(styles).toContain('numFmtId="9"')
+    expect(styles).not.toContain('numFmtId="2"')
   })
 
   it("falls back to the column key, then to nothing, for a missing header", async () => {
@@ -830,7 +830,7 @@ describe("XlsxStreamWriter cell serialization", () => {
     w.addRow([12.5])
     const styles = await part(await w.finish(), "xl/styles.xml")
 
-    expect(styles).toContain('formatCode="#,##0.00"')
+    expect(styles).toContain('numFmtId="4"')
     expect(styles).toContain("<b/>")
   })
 

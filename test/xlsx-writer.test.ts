@@ -1154,7 +1154,7 @@ describe("writeXlsx", () => {
               "0,0",
               {
                 value: 1234.56,
-                style: { numFmt: "#,##0.00" },
+                style: { numFmt: "#,##0.000" },
               },
             ],
           ]),
@@ -1167,7 +1167,7 @@ describe("writeXlsx", () => {
     expect(numFmtsEl).toBeDefined()
 
     const numFmt = findChild(numFmtsEl, "numFmt")
-    expect(numFmt.attrs["formatCode"]).toBe("#,##0.00")
+    expect(numFmt.attrs["formatCode"]).toBe("#,##0.000")
     expect(Number(numFmt.attrs["numFmtId"])).toBeGreaterThanOrEqual(164)
   })
 
@@ -1402,9 +1402,9 @@ describe("writeXlsx", () => {
           name: "Sheet1",
           rows: [[1234.5, 0.75, 42]],
           cells: new Map([
-            ["0,0", { value: 1234.5, style: { numFmt: "#,##0.00" } }],
-            ["0,1", { value: 0.75, style: { numFmt: "0.00%" } }],
-            ["0,2", { value: 42, style: { numFmt: "#,##0.00" } }],
+            ["0,0", { value: 1234.5, style: { numFmt: "#,##0.000" } }],
+            ["0,1", { value: 0.75, style: { numFmt: "0.000%" } }],
+            ["0,2", { value: 42, style: { numFmt: "#,##0.000" } }],
           ]),
         },
       ],
@@ -1414,7 +1414,7 @@ describe("writeXlsx", () => {
     const numFmtsEl = findChild(stylesDoc, "numFmts")
     const numFmtEls = findChildren(numFmtsEl, "numFmt")
 
-    // 2 unique formats: #,##0.00 and 0.00%
+    // 2 unique formats: #,##0.000 and 0.000%
     expect(numFmtEls.length).toBe(2)
     expect(numFmtEls[0].attrs["numFmtId"]).toBe("164")
     expect(numFmtEls[1].attrs["numFmtId"]).toBe("165")

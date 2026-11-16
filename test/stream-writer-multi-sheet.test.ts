@@ -127,7 +127,7 @@ describe("writeXlsxStreamSheets", () => {
     const styles = await extract(bytes, "xl/styles.xml")
 
     expect(styles).toContain("0.000")
-    expect(styles).toContain("#,##0.00")
+    expect(styles).toContain('numFmtId="4"')
   })
 
   it("writes one string table shared by every sheet", async () => {

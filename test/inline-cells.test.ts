@@ -69,7 +69,7 @@ describe("cell objects written inline in rows", () => {
     // A wrap alignment and a number format both had to be registered.
     expect(styles).toContain('applyAlignment="true"')
     expect(styles).toContain('wrapText="true"')
-    expect(styles).toContain("#,##0.00")
+    expect(styles).toContain('numFmtId="4"')
     // …and reach the cells that asked for them.
     expect(sheet).toMatch(/<c r="B1"[^>]*s="[1-9]/)
     expect(sheet).toMatch(/<c r="A2"[^>]*s="[1-9]/)

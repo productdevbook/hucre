@@ -287,7 +287,7 @@ describe("writeXlsxStream", () => {
     )
     const zip = new ZipReader(bytes)
     const styles = new TextDecoder().decode(await zip.extract("xl/styles.xml"))
-    expect(styles).toContain("#,##0.00")
+    expect(styles).toContain('numFmtId="4"')
   })
 
   it("honours the 1904 date system", async () => {

@@ -14,6 +14,7 @@ import type {
 import { xmlDocument, xmlElement, xmlSelfClose } from "../xml/writer"
 import { cloneBorder, cloneFill, cloneFont } from "../_style"
 import { FPB_NS, FPB_XF_EXT_URI } from "./feature-property-bag"
+import { BUILTIN_NUM_FMT_IDS } from "./builtin-num-fmts"
 
 const NS_SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
@@ -407,6 +408,8 @@ export function createStylesCollector(
   }
 
   function addNumFmt(format: string): number {
+    const builtin = BUILTIN_NUM_FMT_IDS.get(format)
+    if (builtin !== undefined) return builtin
     const existing = numFmtMap.get(format)
     if (existing !== undefined) return existing
 
