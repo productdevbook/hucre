@@ -13,6 +13,7 @@ import type {
   BorderSide,
   BorderLineStyle,
   FillPattern,
+  PatternFill,
 } from "../_types"
 import { parseXml } from "../xml/parser"
 import { isBuiltinDateFormatId, isDateFormat } from "../_date"
@@ -322,13 +323,21 @@ function parseFills(el: XmlElement, fills: FillStyle[]): void {
   }
 }
 
-function parseFill(el: XmlElement): FillStyle {
+/**
+ * `absentPattern` is what a `<patternFill>` that carries a colour but no
+ * `patternType` means. In a cell fill the schema default applies: none. In
+ * a dxf it is solid — that is how Excel writes every conditional-format
+ * fill (`<patternFill><bgColor rgb="…"/></patternFill>`) and how Excel and
+ * LibreOffice render it. Reading it as none made `saveXlsx` write
+ * `patternType="none"`, and the rule's fill disappeared.
+ */
+function parseFill(el: XmlElement, absentPattern: FillPattern = "none"): FillStyle {
   for (const child of el.children) {
     if (typeof child === "string") continue
     const local = child.local || child.tag
 
     if (local === "patternFill") {
-      return parsePatternFill(child)
+      return parsePatternFill(child, absentPattern)
     }
     if (local === "gradientFill") {
       return parseGradientFill(child)
@@ -339,20 +348,21 @@ function parseFill(el: XmlElement): FillStyle {
   return { type: "pattern", pattern: "none" }
 }
 
-function parsePatternFill(el: XmlElement): FillStyle {
-  const pattern = (el.attrs["patternType"] ?? "none") as FillPattern
-  const result: FillStyle = { type: "pattern", pattern }
+function parsePatternFill(el: XmlElement, absentPattern: FillPattern): FillStyle {
+  const result: PatternFill = { type: "pattern", pattern: "none" }
 
   for (const child of el.children) {
     if (typeof child === "string") continue
     const local = child.local || child.tag
     if (local === "fgColor") {
-      ;(result as { fgColor?: Color }).fgColor = parseColor(child)
+      result.fgColor = parseColor(child)
     } else if (local === "bgColor") {
-      ;(result as { bgColor?: Color }).bgColor = parseColor(child)
+      result.bgColor = parseColor(child)
     }
   }
 
+  const declared = el.attrs["patternType"] as FillPattern | undefined
+  result.pattern = declared ?? (result.fgColor || result.bgColor ? absentPattern : "none")
   return result
 }
 
@@ -544,7 +554,7 @@ function parseDxf(el: XmlElement): CellStyle {
         break
       }
       case "fill":
-        style.fill = parseFill(child)
+        style.fill = parseFill(child, "solid")
         break
       case "border":
         style.border = parseBorder(child)
