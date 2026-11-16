@@ -48,10 +48,12 @@ export const BUILTIN_NUM_FMTS: Record<number, string> = {
  * mean the locale's currency. An author who writes "$#,##0…" wants
  * dollars, and the read side cannot tell the two apart.
  *
- * Ids 37-40 are left out for the same reason in reverse: this table spells
- * them with a space ("#,##0 ;(#,##0)") while Excel defines them with a
- * paren-width gap ("#,##0_);(#,##0)"). Mapping the code back to the id
- * would change the rendering; keeping the exact code custom preserves it.
+ * Ids 37-40 and 47 are left out for the same reason in reverse: this
+ * table follows ECMA-376 while Excel defines these ids differently
+ * (MS-OI29500 §18.8.30 notes ECMA "#,##0 ;(#,##0)" vs Excel
+ * "#,##0_);(#,##0)", ECMA "mmss.0" vs Excel "mm:ss.0"). Mapping the code
+ * back to the id would change the rendering; keeping the exact code
+ * custom preserves it.
  */
 export const BUILTIN_NUM_FMT_IDS: ReadonlyMap<string, number> = new Map(
   Object.entries(BUILTIN_NUM_FMTS)
@@ -59,7 +61,7 @@ export const BUILTIN_NUM_FMT_IDS: ReadonlyMap<string, number> = new Map(
       const n = Number(id)
       if (n <= 0) return false
       if (n >= 5 && n <= 8) return false
-      if (n >= 37 && n <= 40) return false
+      if ((n >= 37 && n <= 40) || n === 47) return false
       return true
     })
     .map(([id, code]) => [code, Number(id)]),

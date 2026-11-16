@@ -104,4 +104,21 @@ describe("built-in number format ids", () => {
     expect(cellXfs(styles)).toContain('numFmtId="164"')
     expect(styles).toContain('formatCode="#,##0 ;(#,##0)"')
   })
+
+  it("keeps the ECMA-spelled elapsed-minutes format custom: Excel defines 47 with a colon", async () => {
+    const styles = await part(
+      await writeXlsx({
+        sheets: [
+          {
+            name: "S",
+            rows: [[1]],
+            cells: new Map([["0,0", { value: 1, style: { numFmt: "mmss.0" } }]]),
+          },
+        ],
+      }),
+      "xl/styles.xml",
+    )
+    expect(cellXfs(styles)).toContain('numFmtId="164"')
+    expect(styles).toContain('formatCode="mmss.0"')
+  })
 })

@@ -728,11 +728,12 @@ caller writing `"$#,##0…"` means dollars. They are written as custom
 formats, so a workbook that showed złoty or euro through id 5 shows
 dollars after a round trip.
 
-Ids 37-40 are custom for the same reason in the other direction: this
-table spells them with a space (`#,##0 ;(#,##0)`) while Excel defines them
-with a paren-width gap (`#,##0_);(#,##0)`), so mapping the code back to
-the id would change the rendering. Either spelling keeps its exact code
-as a custom format.
+Ids 37-40 and 47 are custom for the same reason in the other direction:
+this table follows ECMA-376 while Excel defines these ids differently
+(MS-OI29500 §18.8.30: ECMA `#,##0 ;(#,##0)` vs Excel `#,##0_);(#,##0)`,
+ECMA `mmss.0` vs Excel `mm:ss.0`), so mapping the code back to the id
+would change the rendering. Either spelling keeps its exact code as a
+custom format.
 
 The locale trade applies the other way too: a caller writing `"m/d/yyyy"`
 gets id 14, the reader's short date — not a pinned month-first rendering.
