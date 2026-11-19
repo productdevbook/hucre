@@ -834,6 +834,12 @@ a style then — so it has rows the stream, which reads no styles, skips.
 Up to v1.3.0 the stream yielded every `<row>` element, so an Excel-saved
 sheet could stream hundreds of all-null rows `read()` did not have.
 
+The same test decides a cell's value. A cell that does not count is
+`null` in the stream, as it is a hole in `readXlsx`, even in a row that
+is yielded for another cell. Up to v1.3.0 the stream resolved it anyway:
+`<c t="b"/>` came out `false`, an empty `t="str"` came out `""`, and
+`<c t="s"/>` with no `<v>` came out as the first shared string.
+
 `maxRows` is the one place the two XLSX readers still count differently.
 The stream counts the rows it yields, so skipped rows do not use up the
 cap. `readXlsx` counts `<row>` elements, empty ones included, so on a

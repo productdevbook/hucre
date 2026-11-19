@@ -189,6 +189,29 @@ describe("every arm of the shared cellCarriesData is held by a test", () => {
   })
 })
 
+describe("a cell readXlsx does not count has no value in the stream either", () => {
+  // In a row that has other data, these used to come out with a value
+  // where `readXlsx` had nothing: the row was yielded for its other cell,
+  // and the empty one was resolved as if it had text.
+  it.each([
+    ["an empty boolean cell", `<c r="B1" t="b"/>`],
+    ["an empty formula-string result", `<c r="B1" t="str"><v></v></c>`],
+    ["a formula-string cell with no <v>", `<c r="B1" t="str"/>`],
+    // `Number("")` is 0, so this resolved to the first shared string.
+    ["a shared-string cell with no <v>", `<c r="B1" t="s"/>`],
+  ])("%s", async (_label, cell) => {
+    const bytes = await workbook(`<row r="1">${VALUE("A1", 1)}${cell}${VALUE("C1", 3)}</row>`, {
+      sharedStrings: ["first"],
+    })
+
+    const rows = await streamed(bytes)
+    const buffered = (await readXlsx(bytes)).sheets[0]!.rows
+
+    expect(rows).toEqual([{ index: 0, values: [1, null, 3] }])
+    expect(buffered).toEqual([[1, null, 3]])
+  })
+})
+
 describe("maxRows and range count only the rows that are yielded", () => {
   const sheet =
     `<row r="1">${VALUE("A1", 1)}</row>` +

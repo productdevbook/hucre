@@ -297,17 +297,24 @@ function handleCloseTag(
           s.cellStyleIndex,
           styles,
         )
-        const value = resolveStreamCellValue(
-          s.cellType,
-          s.cellStyleIndex,
-          s.cellValueText,
-          s.inlineText,
-          s.inlineRichTextParts,
-          sharedStrings,
-          styles,
-          dateSystem,
-          dates,
-        )
+        // A cell `readXlsx` does not count has no value there, so it has
+        // none here either. Resolved anyway, `<c t="b"/>` came out
+        // `false`, an empty `t="str"` `""`, and `<c t="s"/>` the first
+        // shared string — `Number("")` is 0 — in a row that had other
+        // data, where `readXlsx` had nothing at that position.
+        const value = carries
+          ? resolveStreamCellValue(
+              s.cellType,
+              s.cellStyleIndex,
+              s.cellValueText,
+              s.inlineText,
+              s.inlineRichTextParts,
+              sharedStrings,
+              styles,
+              dateSystem,
+              dates,
+            )
+          : null
         const col = s.cellRef ? parseCellRef(s.cellRef).col : s.implicitCol
         // Cells without an r attribute use implicit column ordering.
         s.currentRowCells.push({ col, value })
