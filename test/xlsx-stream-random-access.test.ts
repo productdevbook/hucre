@@ -453,6 +453,19 @@ describe("random access keeps the readers' limits", () => {
     )
   })
 
+  it("requires [Content_Types].xml on every input, as read() does", async () => {
+    // Validation, not resolution — but a package the buffered reader
+    // rejects must not stream without complaint from a different input.
+    const noTypes = { ...workbookParts(5) }
+    delete (noTypes as Record<string, string>)["[Content_Types].xml"]
+    const order = METADATA_FIRST.filter((p) => p !== "[Content_Types].xml")
+    const bytes = await zipParts(noTypes, order)
+    const message = /missing \[Content_Types\]\.xml/
+    await expect(collect(streamXlsxRows(bytes))).rejects.toThrow(message)
+    await expect(collect(streamXlsxRows(counting(bytes)))).rejects.toThrow(message)
+    await expect(collect(streamXlsxRows(pulledStream(bytes).stream))).rejects.toThrow(message)
+  })
+
   it("gives a non-ZIP the buffered reader's error", async () => {
     const junk = enc.encode("not a zip file at all, just some text that goes on for a while")
     const viaBuffer = await collect(streamXlsxRows(junk)).catch((e: unknown) => e)

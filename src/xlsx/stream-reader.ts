@@ -585,6 +585,16 @@ function resolveFromParts(
   parts: Map<string, Uint8Array>,
   options?: ReadOptions & { sheet?: number | string },
 ): ResolvedMeta | null {
+  // [Content_Types].xml is validation, not something the sheet needs to
+  // resolve, and it is still required before the sheet here on purpose.
+  // Relaxing it would only help a producer that writes it alone after the
+  // sheet, and none does: Excel and hucre write it first; openpyxl,
+  // ExcelJS's streaming writer and the instrument exports write it late
+  // *with* the workbook or styles, which force the fallback anyway. What
+  // relaxing would add is a package `read()` rejects for a missing
+  // content-types part streaming without complaint. A source that can
+  // seek has no order to worry about: the random-access path checks it
+  // against the directory, exactly as the buffered path does.
   const ct = parts.get("[Content_Types].xml")
   const rootRelsBytes = parts.get("_rels/.rels")
   if (!ct || !rootRelsBytes) return null
