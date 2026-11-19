@@ -374,6 +374,8 @@ export class ZipStreamReader {
       // A part held whole is bounded like a buffered stream input; the
       // entry's own size is not known until its end.
       if (total > this.maxInputBytes) throw inputTooLarge(this.maxInputBytes)
+      // Copy: each chunk is a view of `leftover`, which the next pull
+      // replaces or merges into, so a held view could alias later bytes.
       chunks.push(chunk.slice())
     }
     const compressed = concat(chunks)

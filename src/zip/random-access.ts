@@ -2,17 +2,20 @@
 // Reads a ZIP archive from a source that can be read at any offset,
 // without ever holding the archive.
 //
-// `ZipReader` needs the whole file in memory because it reads the central
-// directory from the end and then indexes into the bytes. `ZipStreamReader`
-// avoids that by walking local headers front to back, which only works
-// when every part a reader depends on comes before the one it streams —
-// and Excel, ExcelJS's streaming writer and the large instrument exports
-// this exists for all put the worksheet before some part it needs. With a seekable source
-// neither compromise is needed: read the end records and the directory,
-// read the small parts whole, and pull the big one through the inflater
-// a bounded window at a time. Part order, data descriptors and ZIP64 then
-// make no difference, and what is held is the directory, the metadata
-// parts and one window — not a function of the file's size.
+// `ZipReader` needs the whole file in memory because it reads the
+// central directory from the end and then indexes into the bytes.
+// `ZipStreamReader` avoids that by walking local headers front to back,
+// which only works when every part a reader depends on comes before the
+// one it streams. Excel, ExcelJS's streaming writer and the large
+// instrument exports this reader was written for each put the worksheet
+// before some part it needs.
+//
+// A seekable source needs neither compromise: read the end records and
+// the directory, read the small parts whole, and pull the big one
+// through the inflater a bounded window at a time. Part order, data
+// descriptors and ZIP64 then make no difference, and what is held is the
+// directory, the metadata parts and one window — not a function of the
+// file's size.
 //
 // Every size here comes from the archive, which is untrusted, and the
 // source's `size` comes from the caller, which bounds nothing on a sparse
@@ -206,7 +209,10 @@ export class RandomAccessZip {
     return true
   }
 
-  /** Read and decompress one entry whole, CRC-checked. Counts against the buffer budget. */
+  /**
+   * Read and decompress one entry whole, CRC-checked. Counts against the
+   * buffer budget.
+   */
   async extract(path: string): Promise<Uint8Array> {
     const entry = this.require(path)
     const dataStart = await this.dataStart(entry)
@@ -310,7 +316,10 @@ export class RandomAccessZip {
     return entry
   }
 
-  /** Same ceiling as `ZipReader`: the declared size when stated, the hard cap otherwise. */
+  /**
+   * Same ceiling as `ZipReader`: the declared size when stated, the hard
+   * cap otherwise.
+   */
   private capFor(entry: CentralDirEntry): number {
     return entry.uncompressedSize > 0
       ? Math.min(entry.uncompressedSize, this.maxDecompressedBytes)

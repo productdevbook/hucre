@@ -71,9 +71,10 @@ check("dist/cli.mjs imports nothing outside node: and its own dist", () => {
 //
 // `tsconfig.json`'s `"types": []` keeps `node:` out of `src/` at compile
 // time; this checks what actually ships, which is what a browser or a
-// Worker loads. Only the bundled CLI, and what is bundled into it, may reach for Node. The random-access
-// reader is the reason it is spelled out: the obvious file adapter is a
-// FileHandle, and the README shows it in user code rather than here.
+// Worker loads. Only the bundled CLI, and what is bundled into it, may
+// reach for Node. The random-access reader is the reason it is spelled
+// out: the obvious file adapter is a FileHandle, and the README shows it
+// in user code rather than here.
 
 check("no library module in dist/ imports a node: module", () => {
   const distDir = join(repoRoot, "dist")
