@@ -153,8 +153,8 @@ describe("RandomAccessZip — reads what ZipReader reads", () => {
       const bytes = await make()
       const buffered = new ZipReader(bytes)
       const zip = await RandomAccessZip.open(counting(bytes))
-      expect(zip.entries().sort()).toEqual(buffered.entries().sort())
       for (const path of buffered.entries()) {
+        expect(zip.has(path)).toBe(true)
         expect(await zip.extract(path)).toEqual(await buffered.extract(path))
         expect(await drain(zip.extractStream(path))).toEqual(await buffered.extract(path))
       }

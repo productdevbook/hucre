@@ -181,11 +181,6 @@ export class RandomAccessZip {
     return sourceSize(this.source)
   }
 
-  /** List all entry paths in the archive. */
-  entries(): string[] {
-    return [...this.entryMap.keys()]
-  }
-
   has(path: string): boolean {
     return this.entryMap.has(path)
   }

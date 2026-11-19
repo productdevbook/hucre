@@ -13,17 +13,17 @@ import { ZipError } from "../errors"
 
 export const SIG_LOCAL_FILE = 0x04034b50
 export const SIG_CENTRAL_DIR = 0x02014b50
-export const SIG_END_OF_CENTRAL_DIR = 0x06054b50
+const SIG_END_OF_CENTRAL_DIR = 0x06054b50
 export const SIG_DATA_DESCRIPTOR = 0x08074b50
-export const SIG_ZIP64_EOCD = 0x06064b50
-export const SIG_ZIP64_EOCD_LOCATOR = 0x07064b50
+const SIG_ZIP64_EOCD = 0x06064b50
+const SIG_ZIP64_EOCD_LOCATOR = 0x07064b50
 
 /** 0xFFFFFFFF marker that signals a 32-bit ZIP field overflowed into ZIP64. */
 export const ZIP64_SENTINEL = 0xffffffff
 /** 0xFFFF marker for the 16-bit entry-count fields. */
-export const ZIP64_SENTINEL_16 = 0xffff
+const ZIP64_SENTINEL_16 = 0xffff
 /** Header id of the ZIP64 extended information extra field. */
-export const ZIP64_EXTRA_ID = 0x0001
+const ZIP64_EXTRA_ID = 0x0001
 
 /** Smallest classic EOCD record (no comment). */
 export const EOCD_MIN_BYTES = 22
@@ -276,7 +276,7 @@ export function readZip64Extra(
 }
 
 /** Read a 64-bit little-endian field, refusing values JS can't index with. */
-export function readUint64(bytes: Uint8Array, offset: number, what: string): number {
+function readUint64(bytes: Uint8Array, offset: number, what: string): number {
   if (offset + 8 > bytes.length) {
     throw new ZipError(`${what} extends beyond file`)
   }
