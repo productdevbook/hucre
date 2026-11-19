@@ -840,11 +840,25 @@ is yielded for another cell. Up to v1.3.0 the stream resolved it anyway:
 `<c t="b"/>` came out `false`, an empty `t="str"` came out `""`, and
 `<c t="s"/>` with no `<v>` came out as the first shared string.
 
-`maxRows` is the one place the two XLSX readers still count differently.
-The stream counts the rows it yields, so skipped rows do not use up the
-cap. `readXlsx` counts `<row>` elements, empty ones included, so on a
-sheet that interleaves styled empty rows with data it can stop sooner and
-return fewer data rows than the stream does under the same `maxRows`.
+One exception to the row sets matching: a `<c>` whose `r` names a
+different row from its `<row>`. `readXlsx` places the cell by its own
+`r`, and the stream places it in the enclosing `<row>`, so
+`<row r="2"><c r="A5">` is row index 4 to one and row index 1 to the
+other. No producer hucre has a fixture from writes one; the readers are
+left as they are rather than guessing which `r` a malformed file means.
+
+`maxRows` also counts differently in the two XLSX readers.
+`streamXlsxRows` counts the rows it yields. `readXlsx` counts `<row>`
+elements from the top of `sheetData`, so two kinds of row use up its cap
+that do not use up the stream's:
+
+- a row with no counted cell, such as a styled empty row, and
+- a row before the start of `range`.
+
+So on a sheet that interleaves styled empty rows with data, `readXlsx`
+can return fewer data rows than the stream under the same `maxRows`. With
+`range: "A2:A9", maxRows: 1`, `readXlsx` returns nothing, because row 1
+used up the cap, while the stream returns row 2.
 
 They do **not** agree on how many sheets they walk. `streamXlsxRows` and
 `streamXlsRows` yield one sheet — the first, unless `sheet` names another —

@@ -258,3 +258,39 @@ describe("maxRows and range count only the rows that are yielded", () => {
     expect(rows.map((r) => r.index)).toEqual([0])
   })
 })
+
+describe("the differences docs/PARITY.md names, pinned so the page cannot go stale", () => {
+  it("a cell whose r names another row: readXlsx goes by the cell, the stream by the <row>", async () => {
+    const bytes = await workbook(
+      `<row r="1">${VALUE("A1", 1)}</row><row r="2">${VALUE("A5", 2)}</row>`,
+    )
+
+    const rows = await streamed(bytes)
+
+    expect(rows.map((r) => r.index)).toEqual([0, 1])
+    expect(await bufferedRows(bytes)).toEqual([0, 4])
+  })
+
+  it("maxRows: readXlsx spends its cap on a row before the range, the stream does not", async () => {
+    const bytes = await workbook(
+      `<row r="1">${VALUE("A1", 1)}</row><row r="2">${VALUE("A2", 2)}</row><row r="3">${VALUE("A3", 3)}</row>`,
+    )
+    const options = { range: "A2:A9", maxRows: 1 }
+
+    const rows = await streamed(bytes, options)
+
+    expect(rows).toEqual([{ index: 1, values: [2] }])
+    expect(await bufferedRows(bytes, options)).toEqual([])
+  })
+
+  it("maxRows: readXlsx spends its cap on a styled empty row, the stream does not", async () => {
+    const bytes = await workbook(
+      `<row r="1" ht="30" customHeight="1"/><row r="2">${VALUE("A2", 2)}</row>`,
+    )
+
+    const rows = await streamed(bytes, { maxRows: 1 })
+
+    expect(rows).toEqual([{ index: 1, values: [2] }])
+    expect(await bufferedRows(bytes, { maxRows: 1 })).toEqual([])
+  })
+})
