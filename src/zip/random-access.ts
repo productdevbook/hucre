@@ -40,6 +40,7 @@ import {
 } from "./central-directory"
 import { crc32 } from "./deflate"
 import { byteLimitStream } from "./byte-limit"
+import { canInflateRaw } from "./capability"
 import { inflateRawStream } from "./inflate-stream"
 import { decompressDeflateRaw } from "./reader"
 
@@ -279,6 +280,20 @@ export class RandomAccessZip {
     if (entry.compressedSize === 0 && entry.uncompressedSize === 0) {
       return new ReadableStream<Uint8Array>({ start: (c) => c.close() })
     }
+    if (!canInflateRaw()) {
+      // Without the native inflater `inflateRawStream` buffers the whole
+      // compressed body, whose length is the directory's claim — so it is
+      // held to the same budget as a part read whole. Refused here, from
+      // the claim, rather than as the body accumulates: the length is
+      // known exactly and already checked against the source, so counting
+      // it up front costs nothing and spares reading what would be thrown
+      // away. inflateRawStream itself stays budget-free; the stream path
+      // that also uses it buffered there on main too, under its own log.
+      this.buffered += entry.compressedSize
+      if (this.buffered > this.maxBufferedBytes) {
+        return erroredStream(budgetExceeded(this.buffered, this.maxBufferedBytes))
+      }
+    }
     return inflateRawStream(raw, this.capFor(entry), entry.fileName)
   }
 
@@ -383,12 +398,14 @@ export function sourceSize(source: RandomAccessInput): number {
 }
 
 function checkBudget(buffered: number, max: number): void {
-  if (buffered > max) {
-    throw new ParseError(
-      `Reading this archive would hold ${buffered} bytes from the source, over the ` +
-        `maximum of ${max}. Raise \`maxInputBytes\` if the file really needs it.`,
-    )
-  }
+  if (buffered > max) throw budgetExceeded(buffered, max)
+}
+
+function budgetExceeded(buffered: number, max: number): ParseError {
+  return new ParseError(
+    `Reading this archive would hold ${buffered} bytes from the source, over the ` +
+      `maximum of ${max}. Raise \`maxInputBytes\` if the file really needs it.`,
+  )
 }
 
 function positiveOr(value: number | undefined, fallback: number): number {

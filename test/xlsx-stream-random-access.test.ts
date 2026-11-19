@@ -555,6 +555,39 @@ describe('a runtime without DecompressionStream("deflate-raw")', () => {
       vi.resetModules()
     }
   })
+
+  it("holds the sheet it has to buffer to maxInputBytes on a random-access source", async () => {
+    // Without the native inflater the sheet's compressed body is buffered
+    // whole, and its length is the directory's to claim. The budget that
+    // bounds the metadata has to bound that too.
+    const bytes = await zipParts(workbookParts(20_000), SHEETS_FIRST)
+    const sheet = directory(bytes).find((e) => e.fileName === "xl/worksheets/sheet1.xml")!
+    const maxInputBytes = 200_000
+    expect(sheet.compressedSize).toBeGreaterThan(maxInputBytes)
+    // The native path streams it under the same budget.
+    const rows = await collect(streamXlsxRows(counting(bytes), { maxInputBytes, maxRows: 3 }))
+    expect(rows).toHaveLength(3)
+    class NoRaw {
+      constructor(format: string) {
+        throw new TypeError(`unsupported format ${format}`)
+      }
+    }
+    vi.stubGlobal("DecompressionStream", NoRaw)
+    try {
+      vi.resetModules()
+      const fresh = await import("../src/xlsx/stream-reader")
+      const src = counting(bytes)
+      await expect(
+        collect(fresh.streamXlsxRows(src, { maxInputBytes, maxRows: 3 })),
+      ).rejects.toThrow(/over the maximum of 200000\. Raise `maxInputBytes`/)
+      // Refused from the directory's claim, before the body is read.
+      const [start, end] = bodyRange(bytes, sheet)
+      expect(src.reads.some(([o, n]) => o < end && o + n > start)).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+      vi.resetModules()
+    }
+  })
 })
 
 // ── Limits and fallbacks on the random-access path ───────────────────
