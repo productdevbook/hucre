@@ -119,8 +119,8 @@ export async function read(input: ReadInput, options?: ReadOptions): Promise<Wor
     // or an encrypted OOXML package, which carries both an "EncryptionInfo"
     // and an "EncryptedPackage" stream. Either one alone is still taken as
     // encrypted: a stream by that name is positive evidence of the envelope,
-    // and with a password `decryptAgile` then names the missing half
-    // (DecryptionError), which says more than "damaged" could here.
+    // and with a password `decryptAgile` then reports the package as
+    // incomplete (DecryptionError), which says more than "damaged" could.
     // Only a container that parses can be told apart, so classify it before
     // looking at the password. A container `readCfb` cannot open is
     // truncated or damaged — not evidence of encryption: reporting it as
