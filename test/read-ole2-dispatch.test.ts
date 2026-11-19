@@ -14,7 +14,12 @@ import { read } from "../src/defter"
 import { readXls } from "../src/xls/reader"
 import { writeCfb } from "../src/xlsx/crypto/cfb"
 import { writeXlsx } from "../src/xlsx/writer"
-import { EncryptedFileError, ParseError, UnsupportedFormatError } from "../src/errors"
+import {
+  DecryptionError,
+  EncryptedFileError,
+  ParseError,
+  UnsupportedFormatError,
+} from "../src/errors"
 
 const xls = new Uint8Array(readFileSync(new URL("./fixtures/excel-basic.xls", import.meta.url)))
 
@@ -99,6 +104,16 @@ describe("read() — other OLE2 containers", () => {
     const err = await errorOf(read(enc))
     expect(err).toBeInstanceOf(EncryptedFileError)
     expect((err as EncryptedFileError).format).toBeUndefined()
+  })
+
+  it("treats a container with only one of the encryption streams as encrypted", async () => {
+    for (const name of ["EncryptionInfo", "EncryptedPackage"]) {
+      const data = writeCfb([{ name, data: new Uint8Array(64) }])
+      expect(await errorOf(read(data))).toBeInstanceOf(EncryptedFileError)
+      const withPassword = await errorOf(read(data, { password: "pw" }))
+      expect(withPassword).toBeInstanceOf(DecryptionError)
+      expect((withPassword as Error).message).toMatch(/missing EncryptionInfo\/EncryptedPackage/)
+    }
   })
 
   it("reports a truncated encrypted package as damaged, not encrypted", async () => {
