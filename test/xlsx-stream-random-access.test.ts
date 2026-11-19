@@ -20,6 +20,7 @@ import { streamXlsxRows } from "../src/xlsx/stream-reader"
 import { readXlsx } from "../src/xlsx/reader"
 import { ZipReader } from "../src/zip/reader"
 import { zipStream } from "../src/zip/stream-writer"
+import { ZipWriter } from "../src/zip/writer"
 import { RANDOM_ACCESS_WINDOW_BYTES, randomAccessFromBlob } from "../src/zip/random-access"
 import {
   type CentralDirEntry,
@@ -276,6 +277,7 @@ async function zipParts(
 const ROWS = 40_000
 const parts = workbookParts(ROWS)
 const SHEETS_FIRST = Object.keys(parts) // as declared: sheets, then metadata, content types last
+const METADATA_FIRST = [...SHEETS_FIRST.slice(2), ...SHEETS_FIRST.slice(0, 2)]
 
 describe("random access reads only what the sheet needs", () => {
   it("on an Excel-ordered workbook with data descriptors, never touches the other sheet", async () => {
@@ -354,6 +356,54 @@ describe("random access reads only what the sheet needs", () => {
   })
 })
 
+describe("a ReadableStream with data descriptors streams when metadata comes first", () => {
+  it("pulls well under the file before the first row", async () => {
+    const bytes = await zipParts(parts, METADATA_FIRST)
+    expect(directory(bytes).every((e) => e.hasDataDescriptor)).toBe(true)
+
+    const { stream, pulled } = pulledStream(bytes)
+    const gen = streamXlsxRows(stream)
+    const first = await gen.next()
+    expect(first.value?.index).toBe(0)
+    // The buffered fallback reads the whole file before yielding anything.
+    expect(pulled()).toBeLessThan(bytes.length / 4)
+
+    let count = 1
+    for await (const _ of gen) count++
+    expect(count).toBe(ROWS)
+    // Sheet 1 is the first of two equal sheets, and nothing past it was needed.
+    expect(pulled()).toBeLessThan(bytes.length * 0.75)
+  })
+
+  it("and with the ZIP64 descriptor form", async () => {
+    const bytes = await zipParts(parts, METADATA_FIRST, true)
+    const { stream, pulled } = pulledStream(bytes)
+    const gen = streamXlsxRows(stream)
+    await gen.next()
+    expect(pulled()).toBeLessThan(bytes.length / 4)
+    await gen.return()
+  })
+
+  it("yields what the buffered path yields", async () => {
+    const small = workbookParts(500)
+    const bytes = await zipParts(small, METADATA_FIRST)
+    for (const sheet of [0, 1]) {
+      expect(await collect(streamXlsxRows(pulledStream(bytes).stream, { sheet }))).toEqual(
+        await collect(streamXlsxRows(bytes, { sheet })),
+      )
+    }
+  })
+
+  it("still buffers when the sheet comes before what it needs", async () => {
+    const bytes = await zipParts(workbookParts(500), SHEETS_FIRST)
+    const { stream, pulled } = pulledStream(bytes)
+    const gen = streamXlsxRows(stream)
+    await gen.next()
+    expect(pulled()).toBe(bytes.length)
+    await gen.return()
+  })
+})
+
 // ── Limits and fallbacks on the random-access path ───────────────────
 
 describe("random access keeps the readers' limits", () => {
@@ -365,6 +415,20 @@ describe("random access keeps the readers' limits", () => {
     await expect(collect(streamXlsxRows(bytes, { maxDecompressedBytes: 10_000 }))).rejects.toThrow(
       /possible zip bomb/,
     )
+  })
+
+  it("honours maxDecompressedBytes on a streamed ReadableStream, which used to ignore it", async () => {
+    // Sizes in the local headers and metadata first: the layout the stream
+    // path always streamed, with MAX_DECOMPRESSED_BYTES in place of the
+    // caller's limit. (A descriptor file used to fall back to the buffered
+    // reader, which did honour it — so it would not show the difference.)
+    const small = workbookParts(2000)
+    const writer = new ZipWriter()
+    for (const path of METADATA_FIRST) writer.add(path, enc.encode(small[path]!))
+    const bytes = await writer.build()
+    await expect(
+      collect(streamXlsxRows(pulledStream(bytes).stream, { maxDecompressedBytes: 10_000 })),
+    ).rejects.toThrow(/possible zip bomb/)
   })
 
   it("counts what it holds against maxInputBytes, not the size of the file", async () => {

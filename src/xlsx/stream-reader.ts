@@ -12,7 +12,7 @@ import { MAX_COL_INDEX, MAX_INPUT_BYTES } from "../limits"
 import { isOle2Container } from "../_input"
 import { decryptAgile } from "./crypto/agile"
 import { ZipReader } from "../zip/reader"
-import { ZipStreamReader } from "../zip/stream-reader"
+import { DataDescriptorNotFound, ZipStreamReader } from "../zip/stream-reader"
 import { isRandomAccessInput, RandomAccessZip, readRange, sourceSize } from "../zip/random-access"
 import { matchesRelType } from "./reader"
 import { parseXml, parseSaxStream, decodeOoxmlEscapes } from "../xml/parser"
@@ -664,7 +664,7 @@ async function prepareStreaming(
   input: ReadableStream<Uint8Array>,
   options?: ReadOptions & { sheet?: number | string },
 ): Promise<PrepareResult> {
-  const zr = new ZipStreamReader(input)
+  const zr = new ZipStreamReader(input, options?.maxDecompressedBytes)
   const parts = new Map<string, Uint8Array>()
   const maxInputBytes = options?.maxInputBytes
   let resolved: ResolvedMeta | null = null
@@ -702,6 +702,12 @@ async function prepareStreaming(
       }
     }
   } catch (err) {
+    // A data descriptor the scan could not find is a layout this walk
+    // cannot follow, not a verdict on the archive: every byte is still in
+    // the fallback log, so the buffered reader gets to judge it.
+    if (err instanceof DataDescriptorNotFound) {
+      return { mode: "fallback", data: await zr.drainToBuffer(maxInputBytes) }
+    }
     await zr.close()
     throw err
   }
