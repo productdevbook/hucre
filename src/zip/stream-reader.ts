@@ -23,12 +23,16 @@
 import { crc32, inflate } from "./deflate"
 import { concat, inflateRawStream } from "./inflate-stream"
 import { decompressionCap, inputTooLarge, positiveOr } from "./bounds"
-import { readZip64Extra, SIG_DATA_DESCRIPTOR, ZIP64_SENTINEL } from "./central-directory"
+import {
+  readZip64Extra,
+  SIG_CENTRAL_DIR,
+  SIG_DATA_DESCRIPTOR,
+  SIG_LOCAL_FILE,
+  ZIP64_SENTINEL,
+} from "./central-directory"
 import { ZipError } from "../errors"
 import { MAX_DECOMPRESSED_BYTES, MAX_INPUT_BYTES } from "../limits"
 
-const SIG_LOCAL_FILE = 0x04034b50
-const SIG_CENTRAL_DIR = 0x02014b50
 const FLAG_DATA_DESCRIPTOR = 0x0008
 
 const EMPTY = new Uint8Array(0)
