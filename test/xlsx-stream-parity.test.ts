@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { readFileSync, readdirSync } from "node:fs"
 import { readXlsx } from "../src/xlsx/reader"
 import { streamXlsxRows } from "../src/xlsx/stream-reader"
-import type { CellValue } from "../src/_types"
+import type { Cell, CellValue } from "../src/_types"
 
 // ═══════════════════════════════════════════════════════════════════════
 // XLSX has two readers and they had never been compared. The ODS pair
@@ -24,8 +24,9 @@ import type { CellValue } from "../src/_types"
 //
 //   - `readXlsx` pads every row to the sheet's bounding box; the stream
 //     yields the row as the file had it. Compared on the trimmed form.
-//   - the stream skips an entirely empty row and keeps the true index,
-//     so rows are matched by `index`, not by position.
+//   - the stream skips a row with no cell `readXlsx` would count — a
+//     `<row>` of style-only cells, or of no cells at all — and keeps the
+//     true index, so rows are matched by `index`, not by position.
 //
 // And one that was *not* documented until this test found it: this reads
 // one sheet, where `streamOdsRows` reads them all. See below.
@@ -98,6 +99,53 @@ describe("the two XLSX readers agree, on files hucre did not write", () => {
       })
     }
 
+    expect(diffs).toEqual([])
+  })
+})
+
+describe("the two XLSX readers agree on which rows exist", () => {
+  // The sweep above could not see this. A row the stream yields is
+  // compared against `first.rows[row.index] ?? []`, and an all-null row
+  // trims to `[]` on both sides — so `excel-styleonly.xlsx` streamed four
+  // rows against `readXlsx`'s two and passed. Row *sets* are compared here.
+  //
+  // "Has content" is a key in sparse `Sheet.cells`: in sparse mode every
+  // cell the buffered reader counts toward the bounding box lands there,
+  // and nothing else does — except the entries `readXlsx` adds afterwards
+  // to hang a hyperlink or a comment on a position that had no cell,
+  // which the stream knows nothing about. Those are left out. Sparse mode
+  // also lets `excel-sparse.xlsx` take part, which the dense read rejects.
+  function rowsWithContent(sheet: { cells?: Map<string, Cell> }): number[] {
+    const rows = new Set<number>()
+    for (const [key, cell] of sheet.cells ?? []) {
+      const annotationOnly =
+        cell.value === null && cell.formula === undefined && (cell.hyperlink || cell.comment)
+      if (!annotationOnly) rows.add(Number(key.split(",")[0]))
+    }
+    return [...rows].sort((a, b) => a - b)
+  }
+
+  it("sheet by sheet, across the whole corpus", async () => {
+    const diffs: string[] = []
+    let sheetsCompared = 0
+
+    for (const path of corpus()) {
+      const bytes = new Uint8Array(readFileSync(path))
+      const { sheets } = await readXlsx(bytes, { sparse: true })
+
+      for (let s = 0; s < sheets.length; s++) {
+        const streamed: number[] = []
+        for await (const row of streamXlsxRows(bytes, { sheet: s })) streamed.push(row.index)
+        const buffered = rowsWithContent(sheets[s]!)
+        sheetsCompared++
+
+        if (JSON.stringify(streamed) !== JSON.stringify(buffered)) {
+          diffs.push(`${path} sheet ${s}\n  stream ${streamed}\n  buffer ${buffered}`)
+        }
+      }
+    }
+
+    expect(sheetsCompared).toBeGreaterThan(20)
     expect(diffs).toEqual([])
   })
 })

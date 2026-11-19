@@ -176,9 +176,12 @@ describe("implicit positioning", () => {
     expect(rows).toEqual([[1, null, 3]])
   })
 
-  it("yields an empty value array for a row with no cells", async () => {
+  it("skips a row with no cells, as readXlsx does", async () => {
+    // This used to assert `[[], [1]]`: the bare `<row>` came out as an
+    // empty row, which is what made an Excel-saved sheet stream hundreds
+    // of rows `read()` did not have. See test/xlsx-stream-empty-rows.test.ts.
     const rows = await rowsOf(`<row r="1"/><row r="2"><c r="A2"><v>1</v></c></row>`)
-    expect(rows).toEqual([[], [1]])
+    expect(rows).toEqual([[1]])
   })
 
   it("reads a worksheet written with a namespace prefix on every tag", async () => {
