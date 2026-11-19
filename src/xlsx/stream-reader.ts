@@ -19,7 +19,7 @@ import { parseContentTypes } from "./content-types"
 import { dirname, findRIdAttr, parseRelationships, resolvePath } from "./relationships"
 import { parseSharedStrings } from "./shared-strings"
 import { parseStyles, isDateStyle } from "./styles"
-import { parseCellRef, parseIsoCellDate } from "./worksheet"
+import { cellCarriesData, parseCellRef, parseIsoCellDate } from "./worksheet"
 import { dateToSerial, serialToDate } from "../_date"
 import {
   applyRangeFilter,
@@ -147,7 +147,7 @@ interface RowSaxState {
   implicitCol: number
   /** Whether the current cell's `<f>` had any text — an empty shared-formula `<f/>` does not count. */
   cellHasFormulaText: boolean
-  /** Columns of the current row's cells that `readXlsx` would count; see {@link cellCarriesData}. */
+  /** Columns of the current row's cells that `readXlsx` would count; see `cellCarriesData` in `worksheet.ts`. */
   rowContentCols: number[]
 }
 
@@ -288,6 +288,15 @@ function handleCloseTag(
       break
     case "c":
       if (s.inCell) {
+        const carries = cellCarriesData(
+          s.cellType,
+          s.cellValueText,
+          s.inlineText,
+          s.inlineRichTextParts.length,
+          s.cellHasFormulaText,
+          s.cellStyleIndex,
+          styles,
+        )
         const value = resolveStreamCellValue(
           s.cellType,
           s.cellStyleIndex,
@@ -303,7 +312,7 @@ function handleCloseTag(
         // Cells without an r attribute use implicit column ordering.
         s.currentRowCells.push({ col, value })
         s.implicitCol = col + 1
-        if (cellCarriesData(s, styles)) s.rowContentCols.push(col)
+        if (carries) s.rowContentCols.push(col)
         s.inCell = false
       }
       break
@@ -331,29 +340,6 @@ function handleCloseTag(
       break
   }
   return null
-}
-
-/**
- * Whether the cell just closed is one `readXlsx` would count toward the
- * sheet — the `carriesData` test in `worksheet.ts`, minus the arms that
- * apply only under `readStyles`, which this reader does not take.
- *
- * Decided from the XML rather than the resolved value, because the two
- * disagree both ways: an out-of-range shared-string index resolves to
- * null and still counts, and `<c t="b"/>` resolves to `false` and does
- * not. Keep the two in step — a cell one reader counts and the other
- * does not is a row one of them has and the other lacks.
- */
-function cellCarriesData(s: RowSaxState, styles: ParsedStyles | null): boolean {
-  return (
-    s.cellValueText !== "" ||
-    s.inlineText !== "" ||
-    s.inlineRichTextParts.length > 0 ||
-    s.cellHasFormulaText ||
-    s.cellType === "e" ||
-    s.cellType === "inlineStr" ||
-    (s.cellStyleIndex >= 0 && (styles?.cellXfs[s.cellStyleIndex]?.hasCheckboxFeature ?? false))
-  )
 }
 
 /** Whether the row just closed has a counted cell, inside the range's columns when there is one. */

@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest"
 import { readFileSync, readdirSync } from "node:fs"
 import { readXlsx } from "../src/xlsx/reader"
 import { streamXlsxRows } from "../src/xlsx/stream-reader"
-import type { Cell, CellValue } from "../src/_types"
+import type { CellValue } from "../src/_types"
+import { bufferedRowIndexes } from "./_xlsx-rows"
 
 // ═══════════════════════════════════════════════════════════════════════
 // XLSX has two readers and they had never been compared. The ODS pair
@@ -109,21 +110,10 @@ describe("the two XLSX readers agree on which rows exist", () => {
   // trims to `[]` on both sides — so `excel-styleonly.xlsx` streamed four
   // rows against `readXlsx`'s two and passed. Row *sets* are compared here.
   //
-  // "Has content" is a key in sparse `Sheet.cells`: in sparse mode every
-  // cell the buffered reader counts toward the bounding box lands there,
-  // and nothing else does — except the entries `readXlsx` adds afterwards
-  // to hang a hyperlink or a comment on a position that had no cell,
-  // which the stream knows nothing about. Those are left out. Sparse mode
-  // also lets `excel-sparse.xlsx` take part, which the dense read rejects.
-  function rowsWithContent(sheet: { cells?: Map<string, Cell> }): number[] {
-    const rows = new Set<number>()
-    for (const [key, cell] of sheet.cells ?? []) {
-      const annotationOnly =
-        cell.value === null && cell.formula === undefined && (cell.hyperlink || cell.comment)
-      if (!annotationOnly) rows.add(Number(key.split(",")[0]))
-    }
-    return [...rows].sort((a, b) => a - b)
-  }
+  // The buffered side is `bufferedRowIndexes`, shared with
+  // `test/xlsx-stream-empty-rows.test.ts` so the two cannot read
+  // "has content" differently. Sparse mode lets `excel-sparse.xlsx`
+  // take part, which the dense read rejects.
 
   it("sheet by sheet, across the whole corpus", async () => {
     const diffs: string[] = []
@@ -136,7 +126,7 @@ describe("the two XLSX readers agree on which rows exist", () => {
       for (let s = 0; s < sheets.length; s++) {
         const streamed: number[] = []
         for await (const row of streamXlsxRows(bytes, { sheet: s })) streamed.push(row.index)
-        const buffered = rowsWithContent(sheets[s]!)
+        const buffered = bufferedRowIndexes(sheets[s]!)
         sheetsCompared++
 
         if (JSON.stringify(streamed) !== JSON.stringify(buffered)) {

@@ -3,6 +3,7 @@ import { ZipWriter } from "../src/zip/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { streamXlsxRows } from "../src/xlsx/stream-reader"
 import type { ReadOptions, StreamRow } from "../src/_types"
+import { bufferedRowIndexes } from "./_xlsx-rows"
 
 // ═══════════════════════════════════════════════════════════════════════
 // A row the buffered reader puts nothing in is not a row the stream
@@ -37,8 +38,17 @@ function rels(entries: Array<[id: string, type: string, target: string]>): strin
   return `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${items}</Relationships>`
 }
 
-async function workbook(sheetData: string): Promise<Uint8Array> {
+/** Optional parts: a `styles.xml` and a `sharedStrings.xml`, given as their inner XML. */
+interface Extras {
+  cellXfs?: string
+  sharedStrings?: string[]
+}
+
+async function workbook(sheetData: string, extras: Extras = {}): Promise<Uint8Array> {
   const zip = new ZipWriter()
+  const workbookRels: Array<[string, string, string]> = [
+    ["rId1", "worksheet", "worksheets/sheet1.xml"],
+  ]
   const parts: Record<string, string> = {
     "[Content_Types].xml":
       `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
@@ -46,9 +56,19 @@ async function workbook(sheetData: string): Promise<Uint8Array> {
       `<Default Extension="xml" ContentType="application/xml"/></Types>`,
     "_rels/.rels": rels([["rId1", "officeDocument", "xl/workbook.xml"]]),
     "xl/workbook.xml": `<?xml version="1.0"?><workbook ${NS} ${R}><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>`,
-    "xl/_rels/workbook.xml.rels": rels([["rId1", "worksheet", "worksheets/sheet1.xml"]]),
     "xl/worksheets/sheet1.xml": `<?xml version="1.0"?><worksheet ${NS} ${R}><sheetData>${sheetData}</sheetData></worksheet>`,
   }
+  if (extras.cellXfs !== undefined) {
+    workbookRels.push(["rId2", "styles", "styles.xml"])
+    parts["xl/styles.xml"] =
+      `<?xml version="1.0"?><styleSheet ${NS}><cellXfs>${extras.cellXfs}</cellXfs></styleSheet>`
+  }
+  if (extras.sharedStrings !== undefined) {
+    workbookRels.push(["rId3", "sharedStrings", "sharedStrings.xml"])
+    const items = extras.sharedStrings.map((t) => `<si><t>${t}</t></si>`).join("")
+    parts["xl/sharedStrings.xml"] = `<?xml version="1.0"?><sst ${NS}>${items}</sst>`
+  }
+  parts["xl/_rels/workbook.xml.rels"] = rels(workbookRels)
   for (const [path, content] of Object.entries(parts)) zip.add(path, enc.encode(content))
   return zip.build()
 }
@@ -61,10 +81,7 @@ async function streamed(bytes: Uint8Array, options?: ReadOptions): Promise<Strea
 
 /** The rows `readXlsx` has a cell in — what the stream has to yield. */
 async function bufferedRows(bytes: Uint8Array, options?: ReadOptions): Promise<number[]> {
-  const sheet = (await readXlsx(bytes, { ...options, sparse: true })).sheets[0]!
-  const rows = new Set<number>()
-  for (const key of sheet.cells?.keys() ?? []) rows.add(Number(key.split(",")[0]))
-  return [...rows].sort((a, b) => a - b)
+  return bufferedRowIndexes((await readXlsx(bytes, { ...options, sparse: true })).sheets[0]!)
 }
 
 const VALUE = (ref: string, v: number): string => `<c r="${ref}"><v>${v}</v></c>`
@@ -122,6 +139,53 @@ describe("rows that carry something are yielded, even when it resolves to null",
     )
 
     expect(rows).toEqual([{ index: 0, values: [1, null, null] }])
+  })
+})
+
+describe("every arm of the shared cellCarriesData is held by a test", () => {
+  // Both readers call `cellCarriesData` in `worksheet.ts`. A comparison
+  // of one reader against the other cannot see an arm deleted from it —
+  // both move together — so these pin the expected rows literally.
+
+  // xf 1 carries the Excel 2024 checkbox feature; xf 0 is plain.
+  const CHECKBOX_XFS =
+    `<xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>` +
+    `<xf numFmtId="0" fontId="0" fillId="0" borderId="0"><extLst>` +
+    `<ext uri="{C7286773-470A-42A8-94C5-96B5CB345126}" xmlns:xfpb="http://schemas.microsoft.com/office/spreadsheetml/2022/featurepropertybag">` +
+    `<xfpb:xfComplement i="0"/></ext></extLst></xf>`
+
+  it("a style-only cell on a checkbox xf yields its row; on a plain xf it does not", async () => {
+    // An unchecked checkbox Excel writes as `<c r="A2" s="1"/>`: no value,
+    // and the checkbox is the whole content. `readXlsx` keeps it as
+    // `{ value: null, checkbox: true }`.
+    const bytes = await workbook(
+      `<row r="1">${VALUE("A1", 1)}</row>` +
+        `<row r="2"><c r="A2" s="1"/></row>` +
+        `<row r="3"><c r="A3" s="0"/></row>`,
+      { cellXfs: CHECKBOX_XFS },
+    )
+
+    const rows = await streamed(bytes)
+
+    expect(rows).toEqual([
+      { index: 0, values: [1] },
+      { index: 1, values: [null] },
+    ])
+    expect(await bufferedRows(bytes)).toEqual([0, 1])
+  })
+
+  it("an inline run with no text and no t yields its row", async () => {
+    // Not subsumed by the `t="inlineStr"` arm: `<is>` is read whatever
+    // `t` says, and this cell has a run, no text, and no inline type.
+    // Only the run count says the producer wrote something here.
+    const bytes = await workbook(
+      `<row r="1">${VALUE("A1", 1)}</row><row r="2"><c r="A2"><is><r><t/></r></is></c></row>`,
+    )
+
+    const rows = await streamed(bytes)
+
+    expect(rows.map((r) => r.index)).toEqual([0, 1])
+    expect(await bufferedRows(bytes)).toEqual([0, 1])
   })
 })
 
