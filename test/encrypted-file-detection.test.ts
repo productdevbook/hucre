@@ -7,13 +7,15 @@
 // the confusing `"not a valid ZIP archive"` ParseError that the ZIP
 // reader throws when it tries to open one.
 //
-// Each test here builds a synthetic OLE2 buffer (just the 8-byte magic
-// padded with zeros — enough to hit the byte-sniff path) and exercises
-// every public reader entry point.
+// The direct-reader tests build a synthetic OLE2 buffer (just the 8-byte
+// magic padded with zeros — enough to hit the byte-sniff path). `read()`
+// parses the container to tell .xls from encrypted, so its tests use a
+// genuine encrypted package instead.
 // ──────────────────────────────────────────────────────────────────────
 
 import { describe, expect, it } from "vitest"
 import { readXlsx } from "../src/xlsx/reader"
+import { writeXlsx } from "../src/xlsx/writer"
 import { streamXlsxRows } from "../src/xlsx/stream-reader"
 import { readOds } from "../src/ods/reader"
 import { streamOdsRows } from "../src/ods/stream"
@@ -190,8 +192,19 @@ describe("streamOdsRows — encrypted ODS detection", () => {
 // ── unified read() / readObjects() ──────────────────────────────────
 
 describe("read() — encrypted workbook detection (auto-detect path)", () => {
+  // Unlike the direct readers above, `read()` parses the container before
+  // deciding: an OLE2 container could also be a legacy .xls, and one that
+  // does not parse is damaged rather than encrypted (see
+  // test/read-ole2-dispatch.test.ts). So these use a genuine encrypted
+  // package, not the bare magic.
+  const encrypted = () =>
+    writeXlsx({
+      sheets: [{ name: "S", rows: [["a"]] }],
+      encryption: { password: "pw", spinCount: 64 },
+    })
+
   it("throws EncryptedFileError before format auto-detection runs", async () => {
-    const data = makeOle2Container()
+    const data = await encrypted()
 
     try {
       await read(data)
@@ -206,13 +219,13 @@ describe("read() — encrypted workbook detection (auto-detect path)", () => {
   })
 
   it("readObjects() inherits the same detection path", async () => {
-    const data = makeOle2Container()
+    const data = await encrypted()
 
     await expect(readObjects(data)).rejects.toBeInstanceOf(EncryptedFileError)
   })
 
   it("detects encryption from a ReadableStream via read()", async () => {
-    const data = makeOle2Container()
+    const data = await encrypted()
 
     await expect(read(toReadableStream(data))).rejects.toBeInstanceOf(EncryptedFileError)
   })
