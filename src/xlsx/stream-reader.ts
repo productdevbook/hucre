@@ -19,7 +19,7 @@ import { parseContentTypes } from "./content-types"
 import { dirname, findRIdAttr, parseRelationships, resolvePath } from "./relationships"
 import { parseSharedStrings } from "./shared-strings"
 import { parseStyles, isDateStyle } from "./styles"
-import { parseCellRef, parseIsoCellDate } from "./worksheet"
+import { cellCarriesData, parseCellRef, parseIsoCellDate } from "./worksheet"
 import { dateToSerial, serialToDate } from "../_date"
 import {
   applyRangeFilter,
@@ -145,6 +145,10 @@ interface RowSaxState {
   currentRunText: string
   /** Implicit column counter for cells without r attribute */
   implicitCol: number
+  /** Whether the current cell's `<f>` had any text — an empty shared-formula `<f/>` does not count. */
+  cellHasFormulaText: boolean
+  /** Columns of the current row's cells that `readXlsx` would count; see `cellCarriesData` in `worksheet.ts`. */
+  rowContentCols: number[]
 }
 
 function createRowSaxState(): RowSaxState {
@@ -168,6 +172,8 @@ function createRowSaxState(): RowSaxState {
     inlineRichTextParts: [],
     currentRunText: "",
     implicitCol: 0,
+    cellHasFormulaText: false,
+    rowContentCols: [],
   }
 }
 
@@ -202,6 +208,7 @@ function handleOpenTag(tag: string, attrs: Record<string, string>, s: RowSaxStat
         s.inRow = true
         s.currentRowIndex = attrs["r"] ? Number(attrs["r"]) - 1 : s.currentRowIndex + 1
         s.currentRowCells = []
+        s.rowContentCols = []
         s.implicitCol = 0
       }
       break
@@ -214,6 +221,7 @@ function handleOpenTag(tag: string, attrs: Record<string, string>, s: RowSaxStat
         s.cellValueText = ""
         s.inlineText = ""
         s.inlineRichTextParts = []
+        s.cellHasFormulaText = false
       }
       break
     case "v":
@@ -244,6 +252,8 @@ function handleOpenTag(tag: string, attrs: Record<string, string>, s: RowSaxStat
 function handleText(text: string, s: RowSaxState): void {
   if (s.inValue) {
     s.cellValueText += text
+  } else if (s.inFormula) {
+    if (text !== "") s.cellHasFormulaText = true
   } else if (s.inInlineT) {
     s.inlineText += text
   } else if (s.inInlineRT) {
@@ -278,26 +288,38 @@ function handleCloseTag(
       break
     case "c":
       if (s.inCell) {
-        const value = resolveStreamCellValue(
+        const carries = cellCarriesData(
           s.cellType,
-          s.cellStyleIndex,
           s.cellValueText,
           s.inlineText,
-          s.inlineRichTextParts,
-          sharedStrings,
+          s.inlineRichTextParts.length,
+          s.cellHasFormulaText,
+          s.cellStyleIndex,
           styles,
-          dateSystem,
-          dates,
         )
-        if (s.cellRef) {
-          const pos = parseCellRef(s.cellRef)
-          s.currentRowCells.push({ col: pos.col, value })
-          s.implicitCol = pos.col + 1
-        } else {
-          // Fallback: cells without r attribute use implicit column ordering
-          s.currentRowCells.push({ col: s.implicitCol, value })
-          s.implicitCol++
-        }
+        // A cell `readXlsx` does not count has no value there, so it has
+        // none here either. Resolved anyway, `<c t="b"/>` came out
+        // `false`, an empty `t="str"` `""`, and `<c t="s"/>` the first
+        // shared string — `Number("")` is 0 — in a row that had other
+        // data, where `readXlsx` had nothing at that position.
+        const value = carries
+          ? resolveStreamCellValue(
+              s.cellType,
+              s.cellStyleIndex,
+              s.cellValueText,
+              s.inlineText,
+              s.inlineRichTextParts,
+              sharedStrings,
+              styles,
+              dateSystem,
+              dates,
+            )
+          : null
+        const col = s.cellRef ? parseCellRef(s.cellRef).col : s.implicitCol
+        // Cells without an r attribute use implicit column ordering.
+        s.currentRowCells.push({ col, value })
+        s.implicitCol = col + 1
+        if (carries) s.rowContentCols.push(col)
         s.inCell = false
       }
       break
@@ -325,6 +347,12 @@ function handleCloseTag(
       break
   }
   return null
+}
+
+/** Whether the row just closed has a counted cell, inside the range's columns when there is one. */
+function rowHasContent(s: RowSaxState, range: RangeFilter | undefined): boolean {
+  if (!range) return s.rowContentCols.length > 0
+  return s.rowContentCols.some((col) => col >= range.startCol && col <= range.endCol)
 }
 
 // ── Streaming row parser via SAX (async — ReadableStream) ──────────
@@ -402,6 +430,19 @@ async function* parseWorksheetRowsStreaming(
           }
           return
         }
+        // A row `readXlsx` puts nothing in is not yielded, and does not
+        // count toward `maxRows`. Excel writes a `<row>` for every row that
+        // ever had a format, a height or a hidden flag — often with a
+        // self-closing `<c r="B7" s="3"/>` per styled position and no value
+        // at all — and a small Excel-saved workbook was reported to stream
+        // 722 rows where `read()` returned 121. The buffered reader stopped counting those
+        // cells in #492; this one yielded them as all-null rows, while
+        // `docs/PARITY.md` said every stream reader skipped an empty row.
+        //
+        // After the range-end check on purpose: that check is about where
+        // the `<row>` element is, and an empty row past the range has to
+        // stop the read as surely as a full one.
+        if (!rowHasContent(s, range)) return
         const filtered = range ? applyRangeFilter(row, range) : row
         if (filtered) {
           pendingRows.push(filtered)
@@ -570,6 +611,10 @@ function resolveStreamCellValue(
  *   Parsing stops once a row past the end-row is observed.
  * - `maxRows` — caps the number of rows yielded. Once the cap is hit the
  *   underlying ZIP/SAX stream is cancelled so no further work is done.
+ *
+ * A row with no cell `readXlsx` would count — a `<row>` of style-only
+ * cells, or of none — is not yielded and does not count toward `maxRows`;
+ * `index` stays the row's own, so a gap is the signal.
  */
 // ── True streaming path (ReadableStream input) ───────────────────────
 // Parse ZIP local headers as bytes arrive, collect the small metadata

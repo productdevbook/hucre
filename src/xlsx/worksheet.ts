@@ -187,6 +187,59 @@ export function parseCellRef(ref: string): { row: number; col: number } {
 }
 
 /**
+ * Whether a `<c>` element carries something of its own, independent of
+ * `readStyles` — the test both XLSX readers use to decide whether a
+ * cell counts: `readXlsx` toward the bounding box, `streamXlsxRows`
+ * toward whether its row is yielded and whether it has a value at all.
+ *
+ * One function on purpose. Each reader used to carry its own copy, and
+ * nothing held them in step: deleting the checkbox arm from either, or
+ * the inline-run arm, left the whole suite green. A cell one reader
+ * counts and the other does not is a row one of them has and the other
+ * lacks. The `readStyles`-only arms stay with `readXlsx`'s caller, since
+ * the stream takes no styles to read.
+ *
+ * Decided from the XML, not the resolved value, because the two disagree
+ * both ways: an out-of-range shared-string index resolves to null and
+ * still counts, and `<c t="b"/>` resolves to `false` and does not.
+ *
+ * `inlineRunCount` is not implied by `cellType === "inlineStr"`: an
+ * `<is>` is read whatever `t` says, so `<c><is><r><t/></r></is></c>`
+ * has a run, no text and no inline type, and counts only through it.
+ */
+export function cellCarriesData(
+  cellType: string,
+  valueText: string,
+  inlineText: string,
+  inlineRunCount: number,
+  hasFormulaText: boolean,
+  styleIndex: number,
+  styles: ParsedStyles | null,
+): boolean {
+  return (
+    valueText !== "" ||
+    inlineText !== "" ||
+    inlineRunCount > 0 ||
+    hasFormulaText ||
+    cellType === "e" ||
+    // An empty *inline* string is still a string. The producer
+    // wrote `t="inlineStr"` and an `<is>` to say so, which is
+    // not the contentless `<c r="WVF45" s="3"/>` this guard is
+    // for. Deciding from the collected text alone made the two
+    // spellings of one value disagree: a shared string carries
+    // its index here, non-empty even when the string is empty,
+    // so `""` survived that way and vanished the other.
+    //
+    // It reached hucre's own writers, because
+    // `writeXlsxStream` defaults to inline strings.
+    cellType === "inlineStr" ||
+    // An Excel 2024 checkbox is a style-only cell whose xf says it is a
+    // checkbox: unchecked, it may have no `<v>` at all.
+    (styleIndex >= 0 && (styles?.cellXfs[styleIndex]?.hasCheckboxFeature ?? false))
+  )
+}
+
+/**
  * Bound a 1-based `<col min>` / `<col max>` attribute so it can safely
  * drive a loop.
  *
@@ -1144,28 +1197,21 @@ function worksheetParser(
             // instead of filling the cell from the row. See #601.
             const inFormattedRow =
               ctx.readStyles === true && rowDefs.get(effRow)?.style !== undefined
+
+            // `streamXlsxRows` calls the same `cellCarriesData`, so a
+            // change to what counts belongs there, not beside it here.
             const carriesData =
-              cellValueText !== "" ||
-              inlineText !== "" ||
-              inlineRichText.length > 0 ||
-              cellFormulaText !== "" ||
-              cellType === "e" ||
-              // An empty *inline* string is still a string. The producer
-              // wrote `t="inlineStr"` and an `<is>` to say so, which is
-              // not the contentless `<c r="WVF45" s="3"/>` this guard is
-              // for. Deciding from the collected text alone made the two
-              // spellings of one value disagree: a shared string carries
-              // its index here, non-empty even when the string is empty,
-              // so `""` survived that way and vanished the other.
-              //
-              // It reached hucre's own writers, because
-              // `writeXlsxStream` defaults to inline strings.
-              cellType === "inlineStr" ||
+              cellCarriesData(
+                cellType,
+                cellValueText,
+                inlineText,
+                inlineRichText.length,
+                cellFormulaText !== "",
+                cellStyleIndex,
+                ctx.styles,
+              ) ||
               (ctx.readStyles && cellStyleIndex >= 0) ||
-              inFormattedRow ||
-              (ctx.styles && cellStyleIndex >= 0
-                ? (ctx.styles.cellXfs[cellStyleIndex]?.hasCheckboxFeature ?? false)
-                : false)
+              inFormattedRow
 
             if (!skipCell && carriesData) {
               processCell(

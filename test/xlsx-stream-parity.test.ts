@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest"
 import { readFileSync, readdirSync } from "node:fs"
 import { readXlsx } from "../src/xlsx/reader"
 import { streamXlsxRows } from "../src/xlsx/stream-reader"
-import type { CellValue } from "../src/_types"
+import type { CellValue, Sheet } from "../src/_types"
+import { bufferedRowIndexes } from "./_xlsx-rows"
 
 // ═══════════════════════════════════════════════════════════════════════
 // XLSX has two readers and they had never been compared. The ODS pair
@@ -24,8 +25,9 @@ import type { CellValue } from "../src/_types"
 //
 //   - `readXlsx` pads every row to the sheet's bounding box; the stream
 //     yields the row as the file had it. Compared on the trimmed form.
-//   - the stream skips an entirely empty row and keeps the true index,
-//     so rows are matched by `index`, not by position.
+//   - the stream skips a row with no cell `readXlsx` would count — a
+//     `<row>` of style-only cells, or of no cells at all — and keeps the
+//     true index, so rows are matched by `index`, not by position.
 //
 // And one that was *not* documented until this test found it: this reads
 // one sheet, where `streamOdsRows` reads them all. See below.
@@ -50,6 +52,49 @@ function corpus(): string[] {
   return out.sort()
 }
 
+/**
+ * Each sheet's rows as `readXlsx` has them, by row index.
+ *
+ * Dense where it can be. `excel-sparse.xlsx` is over the dense read's
+ * documented limit — `test/sparse-read.test.ts` owns that case — so it
+ * is read sparse and its cells laid out by row instead of being left
+ * out of the comparison.
+ */
+async function bufferedSheets(
+  bytes: Uint8Array,
+  options: { dates?: "serial" } | undefined,
+): Promise<Array<Map<number, CellValue[]>>> {
+  let sheets: Sheet[]
+  let sparse = false
+  try {
+    sheets = (await readXlsx(bytes, options)).sheets
+  } catch {
+    sheets = (await readXlsx(bytes, { ...options, sparse: true })).sheets
+    sparse = true
+  }
+  return sheets.map((sheet) => {
+    const rows = new Map<number, CellValue[]>()
+    // Not `sheet.cells` as the test: a dense read fills it too, for the
+    // cells that carry more than a value.
+    if (!sparse) {
+      sheet.rows.forEach((values, index) => rows.set(index, values))
+      return rows
+    }
+    for (const [key, cell] of sheet.cells ?? []) {
+      const [r, c] = key.split(",").map(Number) as [number, number]
+      const values = rows.get(r) ?? []
+      values[c] = cell.value
+      rows.set(r, values)
+    }
+    for (const [r, values] of rows)
+      rows.set(
+        r,
+        Array.from(values, (v) => v ?? null),
+      )
+    return rows
+  })
+}
+
 describe("the two XLSX readers agree, on files hucre did not write", () => {
   // `dates: "serial"` too: each reader has its own date branch, which is
   // how #496 reached one of them and not the other. See #600.
@@ -58,46 +103,82 @@ describe("the two XLSX readers agree, on files hucre did not write", () => {
     ['with dates: "serial"', { dates: "serial" }],
   ] as const)("row for row, across the whole corpus, %s", async (_label, options) => {
     const diffs: string[] = []
+    let sheetsCompared = 0
 
     for (const path of corpus()) {
       const bytes = new Uint8Array(readFileSync(path))
+      const sheets = await bufferedSheets(bytes, options)
 
-      let sheets
-      try {
-        sheets = (await readXlsx(bytes, options)).sheets
-      } catch {
-        // Over a documented limit — `excel-sparse.xlsx` is the one, and
-        // `test/sparse-read.test.ts` owns that case.
-        continue
-      }
+      // Every sheet, not only the first. This compared sheet 0 alone, and
+      // the row-set sweep below was all that looked at the rest — so a
+      // value the stream got wrong on a second sheet had nothing to fail.
+      for (let s = 0; s < sheets.length; s++) {
+        const rows = sheets[s]!
+        sheetsCompared++
 
-      // Sheet 0 only: see the test below for why that is not a shortcut.
-      const first = sheets[0]
-      if (!first) continue
+        const seen = new Set<number>()
+        for await (const row of streamXlsxRows(bytes, { ...options, sheet: s })) {
+          const streamed = JSON.stringify(trim(row.values ?? []))
+          const buffered = JSON.stringify(trim(rows.get(row.index) ?? []))
 
-      const seen = new Set<number>()
-      for await (const row of streamXlsxRows(bytes, options)) {
-        const want = first.rows[row.index]
-        const streamed = JSON.stringify(trim(row.values ?? []))
-        const buffered = JSON.stringify(trim(want ?? []))
-
-        if (streamed !== buffered && diffs.length < 8) {
-          diffs.push(`${path} row ${row.index}\n  stream ${streamed}\n  buffer ${buffered}`)
+          if (streamed !== buffered && diffs.length < 8) {
+            diffs.push(
+              `${path} sheet ${s} row ${row.index}\n  stream ${streamed}\n  buffer ${buffered}`,
+            )
+          }
+          seen.add(row.index)
         }
-        seen.add(row.index)
-      }
 
-      // Anything the stream left out has to have been empty.
-      first.rows.forEach((values: CellValue[], index: number) => {
-        if (seen.has(index)) return
-        if (values.some((v) => v !== null && v !== "") && diffs.length < 8) {
-          diffs.push(
-            `${path} row ${index} skipped but not empty: ${JSON.stringify(values.map(norm))}`,
-          )
+        // Anything the stream left out has to have been empty.
+        for (const [index, values] of rows) {
+          if (seen.has(index)) continue
+          if (values.some((v) => v !== null && v !== "") && diffs.length < 8) {
+            diffs.push(
+              `${path} sheet ${s} row ${index} skipped but not empty: ${JSON.stringify(values.map(norm))}`,
+            )
+          }
         }
-      })
+      }
     }
 
+    // A floor, so a corpus that stopped loading cannot pass by comparing nothing.
+    expect(sheetsCompared).toBeGreaterThan(20)
+    expect(diffs).toEqual([])
+  })
+})
+
+describe("the two XLSX readers agree on which rows exist", () => {
+  // The sweep above could not see this. A row the stream yields is
+  // compared against the buffered row at its index, and an all-null row
+  // trims to `[]` on both sides — so `excel-styleonly.xlsx` streamed four
+  // rows against `readXlsx`'s two and passed. Row *sets* are compared here.
+  //
+  // The buffered side is `bufferedRowIndexes`, shared with
+  // `test/xlsx-stream-empty-rows.test.ts` so the two cannot read
+  // "has content" differently. Sparse mode lets `excel-sparse.xlsx`
+  // take part, which the dense read rejects.
+
+  it("sheet by sheet, across the whole corpus", async () => {
+    const diffs: string[] = []
+    let sheetsCompared = 0
+
+    for (const path of corpus()) {
+      const bytes = new Uint8Array(readFileSync(path))
+      const { sheets } = await readXlsx(bytes, { sparse: true })
+
+      for (let s = 0; s < sheets.length; s++) {
+        const streamed: number[] = []
+        for await (const row of streamXlsxRows(bytes, { sheet: s })) streamed.push(row.index)
+        const buffered = bufferedRowIndexes(sheets[s]!)
+        sheetsCompared++
+
+        if (JSON.stringify(streamed) !== JSON.stringify(buffered)) {
+          diffs.push(`${path} sheet ${s}\n  stream ${streamed}\n  buffer ${buffered}`)
+        }
+      }
+    }
+
+    expect(sheetsCompared).toBeGreaterThan(20)
     expect(diffs).toEqual([])
   })
 })
