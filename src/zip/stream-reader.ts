@@ -220,15 +220,11 @@ export class ZipStreamReader {
     // at the sentinel and states them in the local ZIP64 extra field.
     if (sized && (compressedSize === ZIP64_SENTINEL || uncompressedSize === ZIP64_SENTINEL)) {
       try {
-        const z = readZip64Extra(
-          extra,
-          0,
-          extra.length,
-          uncompressedSize === ZIP64_SENTINEL,
-          compressedSize === ZIP64_SENTINEL,
-          false,
-          name,
-        )
+        // A local header has no offset field, so none is asked for.
+        const z = readZip64Extra(extra, 0, extra.length, name, {
+          uncompressedSize: uncompressedSize === ZIP64_SENTINEL,
+          compressedSize: compressedSize === ZIP64_SENTINEL,
+        })
         if (z.uncompressedSize !== undefined) uncompressedSize = z.uncompressedSize
         if (z.compressedSize !== undefined) compressedSize = z.compressedSize
       } catch {

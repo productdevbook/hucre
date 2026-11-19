@@ -182,15 +182,11 @@ export function readCentralDirectory(
       uncompressedSize === ZIP64_SENTINEL ||
       localHeaderOffset === ZIP64_SENTINEL
     ) {
-      const zip64 = readZip64Extra(
-        bytes,
-        pos + 46 + fileNameLength,
-        extraFieldLength,
-        uncompressedSize === ZIP64_SENTINEL,
-        compressedSize === ZIP64_SENTINEL,
-        localHeaderOffset === ZIP64_SENTINEL,
-        fileName,
-      )
+      const zip64 = readZip64Extra(bytes, pos + 46 + fileNameLength, extraFieldLength, fileName, {
+        uncompressedSize: uncompressedSize === ZIP64_SENTINEL,
+        compressedSize: compressedSize === ZIP64_SENTINEL,
+        localHeaderOffset: localHeaderOffset === ZIP64_SENTINEL,
+      })
       if (zip64.uncompressedSize !== undefined) uncompressedSize = zip64.uncompressedSize
       if (zip64.compressedSize !== undefined) compressedSize = zip64.compressedSize
       if (zip64.localHeaderOffset !== undefined) localHeaderOffset = zip64.localHeaderOffset
@@ -213,21 +209,30 @@ export function readCentralDirectory(
 }
 
 /**
+ * Which fields a ZIP64 extra field carries: those whose 32-bit
+ * counterpart held the sentinel.
+ */
+export interface Zip64Fields {
+  uncompressedSize?: boolean
+  compressedSize?: boolean
+  localHeaderOffset?: boolean
+}
+
+/**
  * Pull the overflowed fields out of a ZIP64 extended-information extra
  * field — central directory or local header, the layout is the same.
  *
  * The record is positional: only the fields whose 32-bit counterpart held
  * the sentinel are present, always in the order size → compressed size →
- * local header offset → disk number.
+ * local header offset → disk number. `want` names which of the first
+ * three are there; a field left out of it is neither read nor returned.
  */
 export function readZip64Extra(
   bytes: Uint8Array,
   offset: number,
   length: number,
-  wantUncompressed: boolean,
-  wantCompressed: boolean,
-  wantOffset: boolean,
   fileName: string,
+  want: Zip64Fields,
 ): { uncompressedSize?: number; compressedSize?: number; localHeaderOffset?: number } {
   const view = viewOf(bytes)
   const end = Math.min(offset + length, bytes.length)
@@ -260,9 +265,9 @@ export function readZip64Extra(
       return value
     }
 
-    if (wantUncompressed) result.uncompressedSize = take("ZIP64 uncompressed size")
-    if (wantCompressed) result.compressedSize = take("ZIP64 compressed size")
-    if (wantOffset) result.localHeaderOffset = take("ZIP64 local header offset")
+    if (want.uncompressedSize) result.uncompressedSize = take("ZIP64 uncompressed size")
+    if (want.compressedSize) result.compressedSize = take("ZIP64 compressed size")
+    if (want.localHeaderOffset) result.localHeaderOffset = take("ZIP64 local header offset")
 
     return result
   }
