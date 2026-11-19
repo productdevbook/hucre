@@ -32,6 +32,7 @@ import type {
   DataValidation,
   MergeRange,
   PaperSize,
+  RandomAccessInput,
   ReadObjectsOptions,
   ReadObjectsResult,
   ReadOptions,
@@ -87,6 +88,7 @@ type _SurfaceCheck = [
   OdsObjectsResult,
   OdsStreamRow,
   PaperSize,
+  RandomAccessInput,
   ReadObjectsOptions,
   ReadObjectsResult,
   ReadOptions,
@@ -157,6 +159,7 @@ describe("hucre/xlsx", () => {
       xlsx,
       [
         "streamXlsxRows",
+        "randomAccessFromBlob",
         "XlsxStreamWriter",
         "writeXlsxStream",
         "writeXlsxStreamSheets",

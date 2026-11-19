@@ -18,6 +18,7 @@ export { openXlsx, saveXlsx } from "./xlsx/roundtrip"
 export type { RoundtripWorkbook } from "./xlsx/roundtrip"
 export { hashSheetPassword } from "./xlsx/password"
 export { streamXlsxRows } from "./xlsx/stream-reader"
+export { randomAccessFromBlob } from "./zip/random-access"
 export type { StreamRow } from "./xlsx/stream-reader"
 export {
   XlsxStreamWriter,
@@ -79,6 +80,7 @@ export type {
   ConditionalRule,
   DataValidation,
   MergeRange,
+  RandomAccessInput,
   ReadInput,
   ReadOptions,
   ReadWarning,

@@ -25,6 +25,7 @@ export { calculateColumnWidth, measureValueWidth, calculateRowHeight } from "./x
 // @deprecated Import from `hucre/ooxml` instead.
 export { parseThemeColors, resolveThemeColor } from "./xlsx/theme"
 export { streamXlsxRows } from "./xlsx/stream-reader"
+export { randomAccessFromBlob } from "./zip/random-access"
 export type { StreamRow } from "./xlsx/stream-reader"
 export {
   XlsxStreamWriter,
@@ -395,6 +396,7 @@ export type {
   WorkbookProperties,
   // Read
   ReadOptions,
+  RandomAccessInput,
   ReadInput,
   SheetFilter,
   SheetFilterInfo,

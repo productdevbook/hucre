@@ -27,6 +27,21 @@ export const MAX_DECOMPRESSED_BYTES: number = 2 * 1024 * 1024 * 1024
  */
 export const MAX_INPUT_BYTES: number = 1024 * 1024 * 1024
 
+/**
+ * Cap on the size of a ZIP central directory read from a random-access
+ * source.
+ *
+ * The directory is the one part of the archive the random-access reader
+ * must hold whole, and its size is a field in the file. A source's
+ * `size` is whatever the caller says it is, so "it fits inside the file"
+ * bounds nothing on a sparse file or a fabricated source: an EOCD
+ * claiming a 4 GiB directory would be honoured with a 4 GiB allocation.
+ *
+ * Each record is 46 bytes plus its name, so 64 MiB is upwards of half a
+ * million entries — two orders of magnitude past any real workbook.
+ */
+export const MAX_CENTRAL_DIRECTORY_BYTES: number = 64 * 1024 * 1024
+
 /** Maximum row index (0-based) — Excel supports 1,048,576 rows. */
 export const MAX_ROW_INDEX = 1_048_575
 

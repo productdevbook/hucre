@@ -340,6 +340,7 @@ Process large files row-by-row without loading everything into memory:
 
 ```ts
 import {
+  randomAccessFromBlob,
   streamXlsRows,
   streamXlsxRows,
   writeXlsxStream,
@@ -352,13 +353,17 @@ for await (const row of streamXlsxRows(buffer)) {
   console.log(row.index, row.values)
 }
 
-// True streaming from a ReadableStream — the ZIP is parsed front-to-back
-// from local file headers, so the whole archive is never buffered. Only
-// the small metadata parts (content types, rels, workbook, shared strings,
-// styles) are read up front; the target worksheet is piped straight into
-// the SAX parser. (Falls back to buffering only for archives whose layout
-// rules out single-pass streaming — e.g. ZIP data descriptors, or shared
-// strings stored after the worksheet.)
+// A file on disk, read in place — memory does not grow with the file.
+// `randomAccessFromBlob` takes any Blob or File; on Node, fs.openAsBlob
+// (stable since Node 24) gives a file-backed one, so hucre itself needs
+// no Node API.
+import { openAsBlob } from "node:fs"
+for await (const row of streamXlsxRows(randomAccessFromBlob(await openAsBlob("big.xlsx")))) {
+  console.log(row.index, row.values)
+}
+
+// A ReadableStream is walked front to back, so it streams only when the
+// parts the sheet needs come before it — see the table below.
 const res = await fetch("https://example.com/huge.xlsx")
 for await (const row of streamXlsxRows(res.body!)) {
   console.log(row.index, row.values)
@@ -536,6 +541,78 @@ writing to a sink that discards the bytes (Node 24):
 |   300,000 |                       41 MB |                       328 MB |
 | 1,000,000 |                       67 MB |                     1,037 MB |
 | 3,000,000 |                       70 MB |                   not viable |
+
+#### Which input actually streams
+
+`streamXlsxRows` takes four kinds of input, and what it holds in memory
+depends on which:
+
+| input                                    | what is held                                                                             |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `RandomAccessInput` (file, `Blob`, HTTP) | the ZIP directory, the metadata parts, and one 1 MiB window of the sheet                 |
+| `ReadableStream`, metadata before sheet  | every byte before the sheet (kept in case it has to fall back), then one chunk at a time |
+| `ReadableStream`, any other layout       | **the whole file**, under `maxInputBytes`, and then as for a `Uint8Array`                |
+| `Uint8Array` / `ArrayBuffer`             | the file you passed in; the sheet is still decompressed and parsed as a stream, not held |
+
+A `RandomAccessInput` is `{ size, read(offset, length) }`: `read` must
+resolve with exactly `length` bytes, and hucre never closes the source.
+It reads the directory from the end of the file, so the order of the
+parts, data descriptors and ZIP64 make no difference. Anything with that
+shape works — a Node `FileHandle`:
+
+```ts
+import { open } from "node:fs/promises"
+
+const handle = await open("big.xlsx")
+const source = {
+  size: (await handle.stat()).size,
+  async read(offset: number, length: number) {
+    const buf = new Uint8Array(length)
+    let done = 0
+    while (done < length) {
+      const { bytesRead } = await handle.read(buf, done, length - done, offset + done)
+      if (bytesRead === 0) break // short: hucre rejects it rather than guess
+      done += bytesRead
+    }
+    return buf.subarray(0, done)
+  },
+}
+try {
+  for await (const row of streamXlsxRows(source)) console.log(row.values)
+} finally {
+  await handle.close()
+}
+```
+
+or an HTTP resource with `Range` requests, where `read` fetches
+`bytes=${offset}-${offset + length - 1}`.
+
+It still reads the file whole — under `maxInputBytes`, which for this
+input bounds what is held rather than the file's size — in three cases:
+an encrypted workbook, which has to be decrypted whole; a ZIP directory
+it cannot parse; and a part stored with a compression method other than
+STORE or DEFLATE, or one whose directory entry gives no compressed size.
+The last two go to the buffered reader so that the result, or the error,
+is the one a `Uint8Array` would get.
+
+A `ReadableStream` cannot seek, so the walk can stream the sheet only
+once it has passed every part the sheet depends on: `[Content_Types].xml`,
+`_rels/.rels`, the workbook and its `.rels`, `sharedStrings.xml` and
+`styles.xml`. **Excel, openpyxl, ExcelJS's streaming writer and hucre's
+own `writeXlsxStream` all write the sheet before some of those**, and so
+do large battery-cycler and instrument exports — for all of them a
+stream is buffered whole. Give those files to `streamXlsxRows` as a
+`RandomAccessInput` instead. A stream is also buffered when:
+
+- the sheet is not stored as `xl/worksheets/sheetN.xml`;
+- an entry is STORE-compressed with a data descriptor (a DEFLATE entry
+  with one streams: its end is found from the descriptor and checked
+  by the inflater), or its descriptor cannot be found;
+- the workbook is encrypted, or the requested sheet does not exist.
+
+There is no spill to disk: the library has no file system to spill to.
+On a runtime without `DecompressionStream("deflate-raw")` the worksheet's
+compressed bytes are buffered and inflated in one go, whatever the input.
 
 #### What the streaming _reader_ costs
 

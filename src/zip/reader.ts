@@ -7,20 +7,20 @@ import { MAX_DECOMPRESSED_BYTES } from "../limits"
 import { byteLimitStream, chunkedStream } from "./byte-limit"
 import { crc32, inflate } from "./deflate"
 import { canInflateRaw } from "./capability"
+import {
+  type CentralDirEntry,
+  type DirectoryBounds,
+  readCentralDirectory,
+  readEocd,
+  readZip64Eocd,
+  readZip64Locator,
+  SIG_DATA_DESCRIPTOR,
+  SIG_LOCAL_FILE,
+  ZIP64_EOCD_BYTES,
+  ZIP64_LOCATOR_BYTES,
+  ZIP64_SENTINEL,
+} from "./central-directory"
 
-// ── ZIP Signatures ──────────────────────────────────────────────────
-
-const SIG_LOCAL_FILE = 0x04034b50
-const SIG_CENTRAL_DIR = 0x02014b50
-const SIG_END_OF_CENTRAL_DIR = 0x06054b50
-const SIG_DATA_DESCRIPTOR = 0x08074b50
-const SIG_ZIP64_EOCD = 0x06064b50
-const SIG_ZIP64_EOCD_LOCATOR = 0x07064b50
-
-/** 0xFFFFFFFF marker that signals a 32-bit ZIP field overflowed into ZIP64. */
-const ZIP64_SENTINEL = 0xffffffff
-/** 0xFFFF marker for the 16-bit entry-count fields. */
-const ZIP64_SENTINEL_16 = 0xffff
 /**
  * The most DEFLATE can expand a byte by — 1032:1, the format's ceiling
  * for a maximum-length match emitted from a minimum-length code. Used to
@@ -29,27 +29,11 @@ const ZIP64_SENTINEL_16 = 0xffff
  */
 const MAX_DEFLATE_RATIO = 1032
 
-/** Header id of the ZIP64 extended information extra field. */
-const ZIP64_EXTRA_ID = 0x0001
-
-// ── Types ───────────────────────────────────────────────────────────
-
-interface CentralDirEntry {
-  fileName: string
-  compressionMethod: number
-  compressedSize: number
-  uncompressedSize: number
-  crc32: number
-  localHeaderOffset: number
-  /** Bit 3 of general purpose flag — data descriptor present */
-  hasDataDescriptor: boolean
-}
-
 // ── Decompression ───────────────────────────────────────────────────
 
-async function decompressDeflateRaw(
+export async function decompressDeflateRaw(
   data: Uint8Array,
-  maxBytes = MAX_DECOMPRESSED_BYTES,
+  maxBytes: number = MAX_DECOMPRESSED_BYTES,
 ): Promise<Uint8Array> {
   if (canInflateRaw()) {
     try {
@@ -214,43 +198,11 @@ export class ZipReader {
   // ── Private ─────────────────────────────────────────────────────
 
   private readEndOfCentralDir(): void {
-    // EOCD is at least 22 bytes and located at the end of the file.
-    // We need to search backwards because there may be a comment.
-    const minOffset = Math.max(0, this.data.length - 65557) // 22 + 65535 max comment
-
-    let eocdOffset = -1
-    for (let i = this.data.length - 22; i >= minOffset; i--) {
-      if (this.view.getUint32(i, true) === SIG_END_OF_CENTRAL_DIR) {
-        eocdOffset = i
-        break
-      }
-    }
-
-    if (eocdOffset === -1) {
-      throw new ZipError("End of Central Directory not found — not a valid ZIP file")
-    }
-
-    let centralDirSize = this.view.getUint32(eocdOffset + 12, true)
-    let centralDirOffset = this.view.getUint32(eocdOffset + 16, true)
-    let entryCount = this.view.getUint16(eocdOffset + 10, true)
-
-    // ZIP64: when the entry count or central-directory size/offset overflows
-    // the 16-/32-bit EOCD fields they hold a 0xFFFF / 0xFFFFFFFF sentinel and
-    // the real values live in a ZIP64 EOCD record. Producers also emit these
-    // records defensively on small archives, so a sentinel is not by itself
-    // evidence that the archive is huge.
-    if (
-      entryCount === ZIP64_SENTINEL_16 ||
-      centralDirSize === ZIP64_SENTINEL ||
-      centralDirOffset === ZIP64_SENTINEL
-    ) {
-      const zip64 = this.readZip64EndOfCentralDir(eocdOffset)
-      entryCount = zip64.entryCount
-      centralDirSize = zip64.centralDirSize
-      centralDirOffset = zip64.centralDirOffset
-    }
-
-    this.readCentralDirectory(centralDirOffset, centralDirSize, entryCount)
+    const eocd = readEocd(this.data, 0)
+    let bounds: DirectoryBounds = eocd
+    if (eocd.needsZip64) bounds = this.readZip64EndOfCentralDir(eocd.eocdOffset)
+    this.centralDir = readCentralDirectory(this.data, bounds.centralDirOffset, bounds.entryCount)
+    for (const entry of this.centralDir) this.entryMap.set(entry.fileName, entry)
   }
 
   /**
@@ -260,163 +212,16 @@ export class ZipReader {
    * points at the ZIP64 EOCD record, which repeats the same fields at 64-bit
    * width.
    */
-  private readZip64EndOfCentralDir(eocdOffset: number): {
-    entryCount: number
-    centralDirSize: number
-    centralDirOffset: number
-  } {
-    const locatorOffset = eocdOffset - 20
-    if (locatorOffset < 0 || this.view.getUint32(locatorOffset, true) !== SIG_ZIP64_EOCD_LOCATOR) {
+  private readZip64EndOfCentralDir(eocdOffset: number): DirectoryBounds {
+    const locatorOffset = eocdOffset - ZIP64_LOCATOR_BYTES
+    if (locatorOffset < 0) {
       throw new ZipError("ZIP64 End of Central Directory locator not found")
     }
-
-    const recordOffset = this.readUint64(locatorOffset + 8, "ZIP64 EOCD offset")
-    if (recordOffset + 56 > this.data.length) {
+    const recordOffset = readZip64Locator(this.data.subarray(locatorOffset, eocdOffset))
+    if (recordOffset + ZIP64_EOCD_BYTES > this.data.length) {
       throw new ZipError("ZIP64 End of Central Directory record extends beyond file")
     }
-    if (this.view.getUint32(recordOffset, true) !== SIG_ZIP64_EOCD) {
-      throw new ZipError("Invalid ZIP64 End of Central Directory signature")
-    }
-
-    return {
-      entryCount: this.readUint64(recordOffset + 32, "ZIP64 entry count"),
-      centralDirSize: this.readUint64(recordOffset + 40, "ZIP64 central directory size"),
-      centralDirOffset: this.readUint64(recordOffset + 48, "ZIP64 central directory offset"),
-    }
-  }
-
-  /** Read a 64-bit little-endian field, refusing values JS can't index with. */
-  private readUint64(offset: number, what: string): number {
-    if (offset + 8 > this.data.length) {
-      throw new ZipError(`${what} extends beyond file`)
-    }
-    const value = this.view.getBigUint64(offset, true)
-    if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
-      throw new ZipError(`${what} (${value}) exceeds the addressable range`)
-    }
-    return Number(value)
-  }
-
-  private readCentralDirectory(offset: number, _size: number, expectedCount: number): void {
-    let pos = offset
-
-    for (let i = 0; i < expectedCount; i++) {
-      if (pos + 46 > this.data.length) {
-        throw new ZipError("Central Directory entry extends beyond file")
-      }
-
-      const sig = this.view.getUint32(pos, true)
-      if (sig !== SIG_CENTRAL_DIR) {
-        throw new ZipError(
-          `Invalid Central Directory signature at offset ${pos}: 0x${sig.toString(16)}`,
-        )
-      }
-
-      const generalFlag = this.view.getUint16(pos + 8, true)
-      const compressionMethod = this.view.getUint16(pos + 10, true)
-      const entryCrc32 = this.view.getUint32(pos + 16, true)
-      let compressedSize = this.view.getUint32(pos + 20, true)
-      let uncompressedSize = this.view.getUint32(pos + 24, true)
-      const fileNameLength = this.view.getUint16(pos + 28, true)
-      const extraFieldLength = this.view.getUint16(pos + 30, true)
-      const commentLength = this.view.getUint16(pos + 32, true)
-      let localHeaderOffset = this.view.getUint32(pos + 42, true)
-
-      const fileNameBytes = this.data.subarray(pos + 46, pos + 46 + fileNameLength)
-      const fileName = new TextDecoder().decode(fileNameBytes)
-
-      // Any field left at the sentinel is carried at 64-bit width in the
-      // ZIP64 extra field instead.
-      if (
-        compressedSize === ZIP64_SENTINEL ||
-        uncompressedSize === ZIP64_SENTINEL ||
-        localHeaderOffset === ZIP64_SENTINEL
-      ) {
-        const zip64 = this.readZip64Extra(
-          pos + 46 + fileNameLength,
-          extraFieldLength,
-          uncompressedSize === ZIP64_SENTINEL,
-          compressedSize === ZIP64_SENTINEL,
-          localHeaderOffset === ZIP64_SENTINEL,
-          fileName,
-        )
-        if (zip64.uncompressedSize !== undefined) uncompressedSize = zip64.uncompressedSize
-        if (zip64.compressedSize !== undefined) compressedSize = zip64.compressedSize
-        if (zip64.localHeaderOffset !== undefined) localHeaderOffset = zip64.localHeaderOffset
-      }
-
-      const hasDataDescriptor = (generalFlag & 0x08) !== 0
-
-      const entry: CentralDirEntry = {
-        fileName,
-        compressionMethod,
-        compressedSize,
-        uncompressedSize,
-        crc32: entryCrc32,
-        localHeaderOffset,
-        hasDataDescriptor,
-      }
-
-      this.centralDir.push(entry)
-      this.entryMap.set(fileName, entry)
-
-      pos += 46 + fileNameLength + extraFieldLength + commentLength
-    }
-  }
-
-  /**
-   * Pull the overflowed fields out of a central-directory ZIP64 extra field.
-   *
-   * The record is positional: only the fields whose 32-bit counterpart held
-   * the sentinel are present, always in the order size → compressed size →
-   * local header offset → disk number.
-   */
-  private readZip64Extra(
-    offset: number,
-    length: number,
-    wantUncompressed: boolean,
-    wantCompressed: boolean,
-    wantOffset: boolean,
-    fileName: string,
-  ): { uncompressedSize?: number; compressedSize?: number; localHeaderOffset?: number } {
-    const end = Math.min(offset + length, this.data.length)
-    let pos = offset
-
-    while (pos + 4 <= end) {
-      const headerId = this.view.getUint16(pos, true)
-      const dataSize = this.view.getUint16(pos + 2, true)
-      const dataStart = pos + 4
-
-      if (headerId !== ZIP64_EXTRA_ID) {
-        pos = dataStart + dataSize
-        continue
-      }
-
-      const dataEnd = dataStart + dataSize
-      let cursor = dataStart
-      const result: {
-        uncompressedSize?: number
-        compressedSize?: number
-        localHeaderOffset?: number
-      } = {}
-
-      const take = (what: string): number => {
-        if (cursor + 8 > dataEnd) {
-          throw new ZipError(`Truncated ZIP64 extra field for entry: ${fileName}`)
-        }
-        const value = this.readUint64(cursor, what)
-        cursor += 8
-        return value
-      }
-
-      if (wantUncompressed) result.uncompressedSize = take("ZIP64 uncompressed size")
-      if (wantCompressed) result.compressedSize = take("ZIP64 compressed size")
-      if (wantOffset) result.localHeaderOffset = take("ZIP64 local header offset")
-
-      return result
-    }
-
-    throw new ZipError(`Missing ZIP64 extra field for entry: ${fileName}`)
+    return readZip64Eocd(this.data.subarray(recordOffset, recordOffset + ZIP64_EOCD_BYTES))
   }
 
   private async extractEntry(entry: CentralDirEntry): Promise<Uint8Array> {

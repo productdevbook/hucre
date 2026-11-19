@@ -41,6 +41,25 @@ That one line is the difference between 90 MB and 556 MB in
 reader: its peak tracks the number of **distinct strings**, not the number
 of rows, because `xl/sharedStrings.xml` has to be read up front.
 
+`stream-layout.mjs` — not part of `bun run bench`, because it generates a
+~300 MB workbook. It writes one in Excel's part order (the sheet before
+`styles.xml` and `sharedStrings.xml`, sizes in the local headers), the
+shape of a large battery-cycler or instrument export, and reads it with
+`streamXlsxRows` as a `ReadableStream` (which has to buffer it) and as a
+`RandomAccessInput` (which does not):
+
+```bash
+node bench/stream-layout.mjs              # 4,000,000 rows, then deletes the file
+node bench/stream-layout.mjs 500000       # smaller
+```
+
+One run on Linux (WSL2), Node 26, 4,000,000 rows, 295.6 MB zipped:
+
+| input               | read before first row | peak RSS |
+| ------------------- | --------------------: | -------: |
+| `ReadableStream`    |                  100% |   667 MB |
+| `RandomAccessInput` |                  0.4% |   140 MB |
+
 ## Numbers to compare against
 
 Taken on Linux, Node 24, 100,000 rows × 12 columns. Yours will differ;

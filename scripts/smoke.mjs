@@ -17,6 +17,8 @@ import {
   writeXlsxStream,
   readOds,
   writeOds,
+  randomAccessFromBlob,
+  streamXlsxRows,
 } from "../dist/index.mjs"
 
 let failures = 0
@@ -77,6 +79,17 @@ console.log("xlsx streaming")
   const bytes = await drain(writeXlsxStream(ROWS, { name: "S" }))
   const wb = await readXlsx(bytes)
   check("round trip", wb.sheets[0].rows[1][0] === "Ada")
+}
+
+console.log("xlsx random-access streaming")
+{
+  // Exercises Blob.slice, DecompressionStream over pulled windows, and the
+  // directory read from the end — the sheet-first layout writeXlsxStream
+  // produces, which a ReadableStream cannot stream.
+  const bytes = await drain(writeXlsxStream(ROWS, { name: "S" }))
+  const rows = []
+  for await (const row of streamXlsxRows(randomAccessFromBlob(new Blob([bytes])))) rows.push(row)
+  check("round trip", rows[1]?.values[0] === "Ada" && rows[1]?.values[2] instanceof Date)
 }
 
 console.log("ods")
