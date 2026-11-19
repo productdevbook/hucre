@@ -29,7 +29,7 @@ import { decryptAgile } from "./xlsx/crypto/agile"
 import { writeXlsx } from "./xlsx/writer"
 import { readOds } from "./ods/reader"
 import { writeOds } from "./ods/writer"
-import { EncryptedFileError, UnsupportedFormatError } from "./errors"
+import { EncryptedFileError, ParseError, UnsupportedFormatError } from "./errors"
 import { isOle2Container, readInputToUint8Array } from "./_input"
 import { detectTextFormat, type TextFormat } from "./_sniff"
 import { parseCsv } from "./csv/reader"
@@ -116,15 +116,29 @@ export async function read(input: ReadInput, options?: ReadOptions): Promise<Wor
   // detectFormat routes to readOds, which handles its own encryption.)
   if (isOle2Container(data)) {
     // An OLE2 container is either a legacy .xls (BIFF "Workbook" stream)
-    // or an encrypted OOXML/ODS package (an "EncryptionInfo" stream).
-    let cfbStreams: Map<string, Uint8Array> | null = null
+    // or an encrypted OOXML package ("EncryptionInfo" + "EncryptedPackage").
+    // Only a container that parses can be told apart, so classify it before
+    // looking at the password. A container `readCfb` cannot open is
+    // truncated or damaged — not evidence of encryption: reporting it as
+    // "password-protected" sent callers of a cut-short .xls looking for a
+    // password, and with one we tried to decrypt garbage.
+    let cfbStreams: Map<string, Uint8Array>
     try {
       cfbStreams = readCfb(data)
-    } catch {
-      cfbStreams = null // not a parseable CFB — treat as encrypted/unknown
+    } catch (err) {
+      throw new ParseError(
+        "Failed to read file: OLE2 container is truncated or damaged",
+        undefined,
+        { cause: err },
+      )
     }
-    if (cfbStreams && looksLikeXls(cfbStreams)) {
+    if (looksLikeXls(cfbStreams)) {
       return readXls(data, options)
+    }
+    if (!cfbStreams.has("EncryptionInfo") && !cfbStreams.has("EncryptedPackage")) {
+      throw new ParseError(
+        "Unsupported OLE2 container: it holds neither a Workbook stream nor an encrypted package",
+      )
     }
     if (options?.password) {
       data = await decryptAgile(data, options.password, options.maxSpinCount)
