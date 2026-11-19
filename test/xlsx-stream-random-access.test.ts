@@ -603,6 +603,28 @@ describe("random access keeps the readers' limits", () => {
     )
   })
 
+  it("reads whole an entry whose directory gives neither size, as ZipReader recovers it", async () => {
+    // Bit 3 set and both directory sizes zero. ZipReader takes the sizes
+    // from the local header (ZipWriter's layout) or the descriptor
+    // (zipStream's); the directory alone says the part is empty, which is
+    // not the same thing. Taking it at its word yielded an empty
+    // sharedStrings.xml and "Empty document: no root element found".
+    const small = workbookParts(50)
+    const writer = new ZipWriter()
+    for (const path of SHEETS_FIRST) writer.add(path, enc.encode(small[path]!))
+    const layouts = [await writer.build(), await zipParts(small, SHEETS_FIRST)]
+    for (const bytes of layouts) {
+      const zeroed = patchDirectoryEntry(bytes, "xl/sharedStrings.xml", (v, at) => {
+        v.setUint16(at + 8, v.getUint16(at + 8, true) | 0x08, true)
+        v.setUint32(at + 20, 0, true)
+        v.setUint32(at + 24, 0, true)
+      })
+      const expected = await collect(streamXlsxRows(zeroed))
+      expect(expected).toHaveLength(50)
+      expect(await collect(streamXlsxRows(counting(zeroed)))).toEqual(expected)
+    }
+  })
+
   it("gives a non-ZIP the buffered reader's error", async () => {
     const junk = enc.encode("not a zip file at all, just some text that goes on for a while")
     const viaBuffer = await collect(streamXlsxRows(junk)).catch((e: unknown) => e)

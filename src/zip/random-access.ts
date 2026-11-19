@@ -187,19 +187,21 @@ export class RandomAccessZip {
   /**
    * Whether this reader can extract `path` from the directory alone.
    *
-   * Two shapes it declines, both of which `ZipReader` handles with the
-   * whole file in hand: a method other than STORE or DEFLATE (which it
-   * reports as unsupported), and an entry whose directory record gives no
-   * compressed size for a non-empty body — the malformed data-descriptor
-   * case `ZipReader` recovers by scanning the bytes that follow. The
-   * caller reads the file whole for those, so the outcome, error message
-   * included, is the buffered reader's.
+   * Shapes it declines, all of which `ZipReader` handles with the whole
+   * file in hand: a method other than STORE or DEFLATE (which it reports
+   * as unsupported), and a directory record with no compressed size where
+   * the directory is not the last word on it. That is a non-empty body,
+   * or any entry with a data descriptor: for those `ZipReader` takes the
+   * sizes from the local header, or scans for the descriptor, rather than
+   * believing a zero — so "both sizes zero" means empty only when bit 3
+   * is clear. The caller reads the file whole for these, so the outcome,
+   * error message included, is the buffered reader's.
    */
   canExtract(path: string): boolean {
     const e = this.entryMap.get(path)
     if (!e) return false
     if (e.compressionMethod !== 0 && e.compressionMethod !== 8) return false
-    if (e.compressedSize === 0 && e.uncompressedSize !== 0) return false
+    if (e.compressedSize === 0 && (e.hasDataDescriptor || e.uncompressedSize !== 0)) return false
     return true
   }
 
