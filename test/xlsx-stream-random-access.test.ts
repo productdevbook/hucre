@@ -11,7 +11,8 @@
 // for CI. What is measured is the cause of it: the bytes asked of the
 // source, in total, per read and before the first row.
 
-import { readdirSync, readFileSync } from "node:fs"
+import { openAsBlob, readdirSync, readFileSync } from "node:fs"
+import { open } from "node:fs/promises"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { EncryptedFileError, ParseError, ZipError } from "../src/errors"
@@ -179,6 +180,36 @@ describe("streamXlsxRows yields the same rows from every input and layout", () =
       }
     })
   }
+
+  it("works with the README's adapters: a FileHandle, and fs.openAsBlob", async () => {
+    const path = join(FIXTURES, "excel-styled.xlsx")
+    const expected = await collect(streamXlsxRows(new Uint8Array(readFileSync(path))))
+
+    // The README's FileHandle adapter, verbatim apart from the loop body.
+    const handle = await open(path)
+    try {
+      const source: RandomAccessInput = {
+        size: (await handle.stat()).size,
+        async read(offset: number, length: number) {
+          const buf = new Uint8Array(length)
+          let done = 0
+          while (done < length) {
+            const { bytesRead } = await handle.read(buf, done, length - done, offset + done)
+            if (bytesRead === 0) break
+            done += bytesRead
+          }
+          return buf.subarray(0, done)
+        },
+      }
+      expect(await collect(streamXlsxRows(source))).toEqual(expected)
+    } finally {
+      await handle.close()
+    }
+
+    expect(await collect(streamXlsxRows(randomAccessFromBlob(await openAsBlob(path))))).toEqual(
+      expected,
+    )
+  })
 
   it("applies range, maxRows, dates and dateSystem the same way", async () => {
     const original = new Uint8Array(readFileSync(join(FIXTURES, "excel-basic.xlsx")))
