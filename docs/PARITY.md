@@ -819,6 +819,27 @@ The streaming readers _do_ agree: `streamXlsxRows`, `streamXlsRows` and
 `streamOdsRows` all skip an entirely empty row and keep the true index on
 `StreamRow`, so a gap in the indexes is the signal.
 
+For `streamXlsxRows`, "empty" means what it means to `readXlsx` without
+`readStyles`, and that is not "every value is null". Excel writes a
+`<row>` for every row that ever had a format, a height or a hidden flag,
+often holding a self-closing `<c r="B7" s="3"/>` per styled position;
+none of those cells counts toward `readXlsx`'s bounding box, so the row
+is not yielded. A cell that does count yields its row even when its value
+is null — a formula with no cached result, or a shared-string index the
+table does not have. The row set `streamXlsxRows` yields for a sheet is
+the set of rows `readXlsx(…, { sparse: true })` has a cell in, not
+counting a cell that exists only to carry a hyperlink or comment. Under
+`readStyles: true`, `readXlsx` does count a style-only cell — it carries
+a style then — so it has rows the stream, which reads no styles, skips.
+Up to v1.3.0 the stream yielded every `<row>` element, so an Excel-saved
+sheet could stream hundreds of all-null rows `read()` did not have.
+
+`maxRows` is the one place the two XLSX readers still count differently.
+The stream counts the rows it yields, so skipped rows do not use up the
+cap. `readXlsx` counts `<row>` elements, empty ones included, so on a
+sheet that interleaves styled empty rows with data it can stop sooner and
+return fewer data rows than the stream does under the same `maxRows`.
+
 They do **not** agree on how many sheets they walk. `streamXlsxRows` and
 `streamXlsRows` yield one sheet — the first, unless `sheet` names another —
 while `streamOdsRows` walks every sheet in the document and tags each row
