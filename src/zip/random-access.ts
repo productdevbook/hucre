@@ -353,7 +353,8 @@ async function readExact(
   return got instanceof Uint8Array ? got : new Uint8Array(got.buffer, got.byteOffset, length)
 }
 
-function sourceSize(source: RandomAccessInput): number {
+/** The source's declared size, checked to be a byte count. */
+export function sourceSize(source: RandomAccessInput): number {
   const size = source.size
   if (!Number.isSafeInteger(size) || size < 0) {
     throw new ParseError(`RandomAccessInput.size must be a non-negative integer, got ${size}`)

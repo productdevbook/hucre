@@ -3,16 +3,17 @@
 // Parses shared strings and styles upfront (small), then streams
 // worksheet rows without buffering the entire sheet in memory.
 
-import type { CellValue, ReadOptions, StreamRow } from "../_types"
+import type { CellValue, RandomAccessInput, ReadOptions, StreamRow } from "../_types"
 import type { SharedString } from "./shared-strings"
 import type { ParsedStyles } from "./styles"
 import type { Relationship } from "./relationships"
 import { EncryptedFileError, ParseError, ZipError } from "../errors"
-import { MAX_COL_INDEX } from "../limits"
+import { MAX_COL_INDEX, MAX_INPUT_BYTES } from "../limits"
 import { isOle2Container } from "../_input"
 import { decryptAgile } from "./crypto/agile"
 import { ZipReader } from "../zip/reader"
 import { ZipStreamReader } from "../zip/stream-reader"
+import { isRandomAccessInput, RandomAccessZip, readRange, sourceSize } from "../zip/random-access"
 import { matchesRelType } from "./reader"
 import { parseXml, parseSaxStream, decodeOoxmlEscapes } from "../xml/parser"
 import { parseContentTypes } from "./content-types"
@@ -550,27 +551,6 @@ function resolveStreamCellValue(
 
 // ── Main streaming reader ───────────────────────────────────────────
 
-/**
- * Create an async iterable that yields rows one at a time.
- * Parses shared strings and styles upfront (they're small),
- * then streams worksheet rows via SAX parsing.
- *
- * Accepts Uint8Array, ArrayBuffer, or ReadableStream<Uint8Array>.
- * For ReadableStream input, the stream is buffered to read the ZIP
- * central directory, then the worksheet entry is stream-decompressed
- * and piped through the SAX parser in chunks.
- *
- * Honored {@link ReadOptions} fields:
- * - `sheet` — target sheet (number index or name). Default: first sheet.
- * - `dateSystem` — `"1900"` / `"1904"` / `"auto"`. Default: auto-detect.
- * - `dates` — `"serial"` yields date-formatted numbers as the serial
- *   rather than a `Date`. Default: `"date"`.
- * - `range` — A1-style range filter (e.g. `"B2:D10"`). Rows outside the
- *   row span are skipped; cells outside the column span are nulled out.
- *   Parsing stops once a row past the end-row is observed.
- * - `maxRows` — caps the number of rows yielded. Once the cap is hit the
- *   underlying ZIP/SAX stream is cancelled so no further work is done.
- */
 // ── True streaming path (ReadableStream input) ───────────────────────
 // Parse ZIP local headers as bytes arrive, collect the small metadata
 // parts, and pipe the single target worksheet straight into the SAX
@@ -727,8 +707,122 @@ async function prepareStreaming(
   }
 }
 
+// ── Random-access path ───────────────────────────────────────────────
+// The directory says where everything is, so the order the producer
+// wrote the parts in does not matter. The resolver is the buffered
+// path's own (`resolveFromPackage`), which is what keeps the two
+// agreeing on every row, date and error message.
+
+type RandomAccessPlan =
+  | { mode: "stream"; zip: RandomAccessZip; meta: ResolvedMeta }
+  | { mode: "empty" }
+  | { mode: "whole" }
+
+/** A part the random-access reader declines; the file is read whole instead. */
+class WholeFileNeeded extends Error {}
+
+async function planRandomAccess(
+  source: RandomAccessInput,
+  options?: ReadOptions & { sheet?: number | string },
+): Promise<RandomAccessPlan> {
+  const size = sourceSize(source)
+  // An encrypted workbook is an OLE2 container, not a ZIP, and has to be
+  // decrypted whole before anything in it can be read.
+  if (size >= 8 && isOle2Container(await readRange(source, 0, 8))) return { mode: "whole" }
+
+  let zip: RandomAccessZip
+  try {
+    zip = await RandomAccessZip.open(source, {
+      maxDecompressedBytes: options?.maxDecompressedBytes,
+      maxBufferedBytes: options?.maxInputBytes,
+    })
+  } catch (err) {
+    // A directory this reader cannot make sense of goes to the buffered
+    // reader when the file can be held, so the outcome — and the error
+    // message, if it is one — is the one a Uint8Array would get. When it
+    // cannot be held, the directory's own complaint is the useful one.
+    if (err instanceof ZipError && size <= inputCap(options?.maxInputBytes)) {
+      return { mode: "whole" }
+    }
+    throw err
+  }
+
+  const pkg = {
+    has: (path: string) => zip.has(path),
+    extract: (path: string) => {
+      if (!zip.canExtract(path)) throw new WholeFileNeeded()
+      return zip.extract(path)
+    },
+  }
+  let meta: ResolvedMeta | null
+  try {
+    meta = await resolveFromPackage(pkg, options)
+  } catch (err) {
+    if (err instanceof WholeFileNeeded) return { mode: "whole" }
+    throw err
+  }
+  if (!meta) return { mode: "empty" }
+  if (!zip.canExtract(meta.wsPath)) return { mode: "whole" }
+  return { mode: "stream", zip, meta }
+}
+
+function inputCap(maxInputBytes: number | undefined): number {
+  return typeof maxInputBytes === "number" && Number.isFinite(maxInputBytes) && maxInputBytes > 0
+    ? maxInputBytes
+    : MAX_INPUT_BYTES
+}
+
+/** Read a random-access source whole, under the same ceiling a stream gets. */
+async function readWhole(
+  source: RandomAccessInput,
+  maxInputBytes: number | undefined,
+): Promise<Uint8Array> {
+  const size = sourceSize(source)
+  const cap = inputCap(maxInputBytes)
+  if (size > cap) {
+    throw new ParseError(
+      `Input exceeds the maximum of ${cap} bytes. ` +
+        "Raise `maxInputBytes` if the file really is this large.",
+    )
+  }
+  return readRange(source, 0, size)
+}
+
+/**
+ * Create an async iterable that yields rows one at a time.
+ * Parses shared strings and styles upfront (they're small),
+ * then streams worksheet rows via SAX parsing.
+ *
+ * Input, and what each costs:
+ * - {@link RandomAccessInput} (a file handle, a `Blob` via
+ *   `randomAccessFromBlob`, ranged HTTP) — the archive's directory is
+ *   read from the end, the metadata parts whole, and the worksheet a
+ *   bounded window at a time. Memory does not grow with the file, and
+ *   part order, data descriptors and ZIP64 make no difference. The file
+ *   is read whole only when it must be: an encrypted workbook, or an
+ *   archive this reader declines (see `RandomAccessZip.canExtract`),
+ *   either way under `maxInputBytes`.
+ * - `ReadableStream<Uint8Array>` — walked front to back by local header.
+ *   Streams when every part the sheet needs comes before it; otherwise
+ *   the stream is buffered (under `maxInputBytes`) and read as below.
+ * - `Uint8Array` / `ArrayBuffer` — already in memory; the worksheet is
+ *   still decompressed and parsed as a stream.
+ *
+ * Honored {@link ReadOptions} fields:
+ * - `sheet` — target sheet (number index or name). Default: first sheet.
+ * - `dateSystem` — `"1900"` / `"1904"` / `"auto"`. Default: auto-detect.
+ * - `dates` — `"serial"` yields date-formatted numbers as the serial
+ *   rather than a `Date`. Default: `"date"`.
+ * - `range` — A1-style range filter (e.g. `"B2:D10"`). Rows outside the
+ *   row span are skipped; cells outside the column span are nulled out.
+ *   Parsing stops once a row past the end-row is observed.
+ * - `maxRows` — caps the number of rows yielded. Once the cap is hit the
+ *   underlying ZIP/SAX stream is cancelled so no further work is done.
+ * - `maxInputBytes`, `maxDecompressedBytes` — as for the buffered readers.
+ *   `maxTotalCells` does not apply: nothing here builds a grid.
+ */
 export async function* streamXlsxRows(
-  input: Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>,
+  input: Uint8Array | ArrayBuffer | ReadableStream<Uint8Array> | RandomAccessInput,
   options?: ReadOptions & { sheet?: number | string },
 ): AsyncGenerator<StreamRow, void, undefined> {
   // Normalize input to Uint8Array for ZIP central directory parsing.
@@ -737,6 +831,14 @@ export async function* streamXlsxRows(
     data = input
   } else if (input instanceof ArrayBuffer) {
     data = new Uint8Array(input)
+  } else if (isRandomAccessInput(input)) {
+    const plan = await planRandomAccess(input, options)
+    if (plan.mode === "stream") {
+      yield* streamResolved(plan.zip.extractStream(plan.meta.wsPath), plan.meta, options)
+      return
+    }
+    if (plan.mode === "empty") return
+    data = await readWhole(input, options?.maxInputBytes)
   } else {
     // ReadableStream — attempt true streaming (parse ZIP local headers as
     // bytes arrive, pipe the target worksheet straight into the SAX parser

@@ -57,6 +57,7 @@
     // Reads the .xls and .xlsb fixtures off disk.
     "test/read-dates-serial.test.ts",
     // Walks src/ with `node:fs` to scan for regex lookbehind. See #591.
-    "test/no-regex-lookbehind.test.ts"
+    "test/no-regex-lookbehind.test.ts",
+    "test/xlsx-stream-random-access.test.ts"
   ]
 }

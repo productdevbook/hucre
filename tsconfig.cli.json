@@ -33,7 +33,8 @@
     "test/ods-column-default-style.test.ts",
     "test/write-model.test.ts",
     "test/builder-coverage.test.ts",
-    "test/read-dates-serial.test.ts"
+    "test/read-dates-serial.test.ts",
+    "test/xlsx-stream-random-access.test.ts"
   ],
   "exclude": []
 }
