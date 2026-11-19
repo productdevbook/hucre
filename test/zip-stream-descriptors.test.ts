@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest"
 import { ZipError } from "../src/errors"
 import { crc32 } from "../src/zip/deflate"
 import { zipStream } from "../src/zip/stream-writer"
-import { DataDescriptorNotFound, ZipStreamReader } from "../src/zip/stream-reader"
+import { DataDescriptorUnresolved, ZipStreamReader } from "../src/zip/stream-reader"
 
 const enc = new TextEncoder()
 const dec = new TextDecoder()
@@ -171,6 +171,49 @@ function descriptorEntry(name: string, body: Uint8Array, d: { crc: number; usize
   ])
 }
 
+describe("ZIP64 local headers with their sizes stated", () => {
+  it("streams an entry whose sizes are in the local ZIP64 extra field", async () => {
+    // What a seekable ZIP64 writer leaves: bit 3 clear, the 32-bit size
+    // fields at the sentinel, the real sizes in extra field 0x0001.
+    // zipStream always sets bit 3, so this is built by hand.
+    const payload = enc.encode("<z>" + "zeta ".repeat(200) + "</z>")
+    const body = storedDeflate(payload)
+    const nameBytes = enc.encode("z.xml")
+    const extra = new Uint8Array(4 + 16)
+    const ev = new DataView(extra.buffer)
+    ev.setUint16(0, 0x0001, true)
+    ev.setUint16(2, 16, true)
+    ev.setBigUint64(4, BigInt(payload.length), true)
+    ev.setBigUint64(12, BigInt(body.length), true)
+    const header = new Uint8Array(30)
+    const hv = new DataView(header.buffer)
+    hv.setUint32(0, 0x04034b50, true)
+    hv.setUint16(8, 8, true)
+    hv.setUint32(14, crc32(payload), true)
+    hv.setUint32(18, 0xffffffff, true)
+    hv.setUint32(22, 0xffffffff, true)
+    hv.setUint16(26, nameBytes.length, true)
+    hv.setUint16(28, extra.length, true)
+    const bytes = new Uint8Array([
+      ...header,
+      ...nameBytes,
+      ...extra,
+      ...body,
+      ...u32(0x02014b50),
+      ...Array.from({ length: 42 }, () => 0),
+    ])
+    for (const whole of [true, false]) {
+      const zr = new ZipStreamReader(toStream(bytes))
+      const e = (await zr.nextEntry())!
+      expect(e).toMatchObject({ streamable: true, dataDescriptor: false })
+      expect(e.compressedSize).toBe(body.length)
+      const out = whole ? await zr.readEntryBytes(e) : await drain(zr.entryStream(e))
+      expect(out).toEqual(payload)
+      expect(await zr.nextEntry()).toBeNull()
+    }
+  })
+})
+
 describe("a wrong boundary fails loudly", () => {
   it("is not fooled by header signatures inside the body", async () => {
     // Stored blocks carry their payload verbatim, so the compressed body
@@ -189,9 +232,11 @@ describe("a wrong boundary fails loudly", () => {
     const payload = enc.encode("hello")
     const bytes = descriptorEntry("s.xml", storedDeflate(payload), { crc: 0x1234, usize: 5 })
     const zr = new ZipStreamReader(toStream(bytes))
-    await expect(zr.readEntryBytes((await zr.nextEntry())!)).rejects.toThrow(
-      /does not match its data descriptor/,
-    )
+    // Unresolved rather than plain damage: before the sheet the stream path
+    // still holds every byte, and falls back to the buffered reader on it.
+    const read = zr.readEntryBytes((await zr.nextEntry())!)
+    await expect(read).rejects.toThrow(DataDescriptorUnresolved)
+    await expect(read).rejects.toThrow(/does not match its data descriptor/)
   })
 
   it("rejects a forged descriptor inside the body instead of yielding a truncated part", async () => {
@@ -221,12 +266,12 @@ describe("a wrong boundary fails loudly", () => {
     await expect(drain(streamed.entryStream(e))).rejects.toThrow(ZipError)
   })
 
-  it("reports a missing descriptor as DataDescriptorNotFound, for the caller to fall back on", async () => {
+  it("reports a missing descriptor as DataDescriptorUnresolved, for the caller to fall back on", async () => {
     // Bit 3 set, sizes in the header, no descriptor written.
     const bytes = await written({ "a.xml": "<a/>" })
     const zr = new ZipStreamReader(toStream(withoutDescriptors(bytes)))
     const e = (await zr.nextEntry())!
-    await expect(zr.readEntryBytes(e)).rejects.toThrow(DataDescriptorNotFound)
+    await expect(zr.readEntryBytes(e)).rejects.toThrow(DataDescriptorUnresolved)
   })
 })
 

@@ -1687,7 +1687,8 @@ export type SheetFilter = (info: SheetFilterInfo, index: number) => boolean
  * | `maxRows`    | yes  | no  | no   | no  |
  * | `range`      | yes  | no  | no   | no  |
  *
- * `maxInputBytes` applies wherever the input is a `ReadableStream`.
+ * `maxInputBytes` applies wherever the input is a `ReadableStream`, and to
+ * what `streamXlsxRows` holds from a `RandomAccessInput`.
  *
  * `headerRow` and `schema` used to live here and were honoured by no
  * reader at all; they were removed before v1 rather than frozen. Header

@@ -296,6 +296,148 @@ describe("RandomAccessZip — a hostile directory cannot buy an allocation", () 
   })
 })
 
+describe("RandomAccessZip — a stored entry is held to the decompression ceiling", () => {
+  /** A sparse source whose directory holds one STORE entry of the given sizes. */
+  function storedEntrySource(compressedSize: number, uncompressedSize: number) {
+    const HUGE = 2 ** 50
+    const name = enc.encode("s.xml")
+    const cd = new Uint8Array(46 + name.length + 4 + 16)
+    const cv = new DataView(cd.buffer)
+    cv.setUint32(0, 0x02014b50, true)
+    cv.setUint16(10, 0, true) // STORE
+    cv.setUint32(20, 0xffffffff, true)
+    cv.setUint32(24, 0xffffffff, true)
+    cv.setUint16(28, name.length, true)
+    cv.setUint16(30, 4 + 16, true)
+    cd.set(name, 46)
+    cv.setUint16(46 + name.length, 0x0001, true)
+    cv.setUint16(46 + name.length + 2, 16, true)
+    cv.setBigUint64(46 + name.length + 4, BigInt(uncompressedSize), true)
+    cv.setBigUint64(46 + name.length + 12, BigInt(compressedSize), true)
+    const local = new Uint8Array(30)
+    new DataView(local.buffer).setUint32(0, 0x04034b50, true)
+    const cdOffset = HUGE - 4096
+    const tail = zip64Tail(HUGE, { count: 1, cdSize: cd.length, cdOffset })
+    return sparse(HUGE, [
+      [0, local],
+      [cdOffset, cd],
+      [HUGE - tail.length, tail],
+    ])
+  }
+
+  it("refuses one larger than the ceiling without reading its body", async () => {
+    const src = storedEntrySource(2 ** 40, 2 ** 40)
+    const zip = await RandomAccessZip.open(src)
+    const before = src.reads.length
+    await expect(drain(zip.extractStream("s.xml"))).rejects.toThrow(/possible zip bomb/)
+    expect(src.reads.length).toBe(before)
+  })
+
+  it("stops one that runs past its declared size after a window", async () => {
+    const src = storedEntrySource(2 ** 30, 10)
+    const zip = await RandomAccessZip.open(src)
+    const before = src.reads.length
+    await expect(drain(zip.extractStream("s.xml"))).rejects.toThrow(/possible zip bomb/)
+    expect(src.reads.length - before).toBeLessThanOrEqual(3)
+  })
+
+  it("honours a lower maxDecompressedBytes", async () => {
+    const src = storedEntrySource(2 ** 30, 2 ** 30)
+    const zip = await RandomAccessZip.open(src, { maxDecompressedBytes: 1000 })
+    await expect(drain(zip.extractStream("s.xml"))).rejects.toThrow(/limit of 1000 bytes/)
+  })
+})
+
+describe("RandomAccessZip — the remaining shapes", () => {
+  it("reads a part larger than one window whole, one window per read", async () => {
+    const big = noise(RANDOM_ACCESS_WINDOW_BYTES * 2 + 123)
+    const bytes = await viaStreamWriter({ "big.bin": big })
+    const src = counting(bytes)
+    const zip = await RandomAccessZip.open(src)
+    expect(sameBytes(await zip.extract("big.bin"), big)).toBe(true)
+    for (const [, len] of src.reads) expect(len).toBeLessThanOrEqual(RANDOM_ACCESS_WINDOW_BYTES)
+  })
+
+  it("reads an empty DEFLATE entry and a stored one", async () => {
+    const z = new ZipWriter()
+    z.add("empty.xml", new Uint8Array(0))
+    z.add("stored.bin", enc.encode("ab"), { compress: false })
+    const bytes = await z.build()
+    const zip = await RandomAccessZip.open(counting(bytes))
+    for (const path of ["empty.xml", "stored.bin"]) {
+      const expected = await new ZipReader(bytes).extract(path)
+      expect(await zip.extract(path)).toEqual(expected)
+      expect(await drain(zip.extractStream(path))).toEqual(expected)
+    }
+  })
+
+  it("reports what ZipReader reports for a missing entry, a bad method and a bad CRC", async () => {
+    const bytes = await viaStreamWriter({ "a.txt": enc.encode("hello") })
+    const zip = await RandomAccessZip.open(counting(bytes))
+    expect(zip.canExtract("nope")).toBe(false)
+    await expect(zip.extract("nope")).rejects.toThrow(/Entry not found: nope/)
+
+    const patched = (patch: (v: DataView, cd: number) => void) => {
+      const out = bytes.slice()
+      const v = new DataView(out.buffer)
+      for (let i = out.length - 22; i >= 0; i--) {
+        if (v.getUint32(i, true) === 0x02014b50) {
+          patch(v, i)
+          return out
+        }
+      }
+      throw new Error("no directory record")
+    }
+    const method = await RandomAccessZip.open(
+      counting(patched((v, cd) => v.setUint16(cd + 10, 99, true))),
+    )
+    expect(method.canExtract("a.txt")).toBe(false)
+    await expect(method.extract("a.txt")).rejects.toThrow(/Unsupported compression method 99/)
+
+    const crc = await RandomAccessZip.open(
+      counting(patched((v, cd) => v.setUint32(cd + 16, 1, true))),
+    )
+    await expect(crc.extract("a.txt")).rejects.toThrow(/CRC-32 mismatch for a\.txt/)
+
+    const offset = await RandomAccessZip.open(
+      counting(patched((v, cd) => v.setUint32(cd + 42, bytes.length - 10, true))),
+    )
+    await expect(offset.extract("a.txt")).rejects.toThrow(/Local file header extends beyond file/)
+
+    const signature = await RandomAccessZip.open(
+      counting(patched((v, cd) => v.setUint32(cd + 42, 1, true))),
+    )
+    await expect(signature.extract("a.txt")).rejects.toThrow(/Invalid local file header signature/)
+  })
+
+  it("refuses ZIP64 end records that point nowhere", async () => {
+    // A sentinel EOCD with no locator in front of it.
+    const lone = new Uint8Array(22)
+    lone.set(eocd({ count: 0xffff, cdSize: 0xffffffff, cdOffset: 0xffffffff }))
+    await expect(RandomAccessZip.open(counting(lone))).rejects.toThrow(/locator not found/)
+    // A locator pointing past the end of the source.
+    const tail = zip64Tail(1000, { count: 0, cdSize: 0, cdOffset: 0 })
+    new DataView(tail.buffer).setBigUint64(56 + 8, 10_000n, true)
+    await expect(RandomAccessZip.open(sparse(1000, [[1000 - 98, tail]]))).rejects.toThrow(
+      /record extends beyond file/,
+    )
+  })
+
+  it("accepts bytes that are a view but not a Uint8Array", async () => {
+    const bytes = await viaStreamWriter({ "a.txt": enc.encode("hello") })
+    const src = {
+      size: bytes.length,
+      async read(o: number, n: number) {
+        const copy = bytes.slice(o, o + n)
+        return new DataView(copy.buffer) as unknown as Uint8Array
+      },
+    }
+    expect(dec.decode(await (await RandomAccessZip.open(src)).extract("a.txt"))).toBe("hello")
+    const notBytes = { size: bytes.length, read: async () => "nope" as unknown as Uint8Array }
+    await expect(RandomAccessZip.open(notBytes)).rejects.toThrow(/returned string/)
+  })
+})
+
 describe("RandomAccessZip — the read contract", () => {
   it("rejects a read that returns more than asked for", async () => {
     // What an HTTP server that ignores Range sends: the whole file.

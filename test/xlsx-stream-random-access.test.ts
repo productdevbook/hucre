@@ -14,7 +14,7 @@
 import { openAsBlob, readdirSync, readFileSync } from "node:fs"
 import { open } from "node:fs/promises"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { EncryptedFileError, ParseError, ZipError } from "../src/errors"
 import type { RandomAccessInput, StreamRow } from "../src/_types"
 import { streamXlsxRows } from "../src/xlsx/stream-reader"
@@ -105,6 +105,35 @@ async function repack(bytes: Uint8Array, order: Order, zip64 = false): Promise<U
       : [...rest, ...sheets]
   const entries = ordered.map((path) => ({ path, data: parts.get(path)! }))
   return new Uint8Array(await new Response(zipStream(entries, { zip64 })).arrayBuffer())
+}
+
+/** Set bit 3 on every local header, leaving sizes and the directory as they are. */
+function withBit3OnLocalHeaders(zip: Uint8Array): Uint8Array {
+  const out = zip.slice()
+  for (const e of directory(zip)) out[e.localHeaderOffset + 6]! |= 0x08
+  return out
+}
+
+/** Rewrite one central directory record in place. `at` is the record's offset. */
+function patchDirectoryEntry(
+  zip: Uint8Array,
+  name: string,
+  patch: (v: DataView, at: number) => void,
+): Uint8Array {
+  const out = zip.slice()
+  const v = new DataView(out.buffer)
+  const eocd = readEocd(out, 0)
+  let pos = eocd.centralDirOffset
+  for (let i = 0; i < eocd.entryCount; i++) {
+    const nameLen = v.getUint16(pos + 28, true)
+    const entryName = new TextDecoder().decode(out.subarray(pos + 46, pos + 46 + nameLen))
+    if (entryName === name) {
+      patch(v, pos)
+      return out
+    }
+    pos += 46 + nameLen + v.getUint16(pos + 30, true) + v.getUint16(pos + 32, true)
+  }
+  throw new Error(`no ${name} in directory`)
 }
 
 function directory(bytes: Uint8Array): CentralDirEntry[] {
@@ -305,12 +334,17 @@ async function zipParts(
   return new Uint8Array(await new Response(zipStream(entries, { zip64 })).arrayBuffer())
 }
 
-const ROWS = 40_000
+// ~6 MB of compressed sheet each, so "under half the sheet before the
+// first row" leaves several windows of margin rather than one.
+const ROWS = 100_000
+// These generate and parse a few hundred thousand rows; under coverage
+// instrumentation that is well past vitest's 5 s default.
+const HEAVY = { timeout: 60_000 }
 const parts = workbookParts(ROWS)
 const SHEETS_FIRST = Object.keys(parts) // as declared: sheets, then metadata, content types last
 const METADATA_FIRST = [...SHEETS_FIRST.slice(2), ...SHEETS_FIRST.slice(0, 2)]
 
-describe("random access reads only what the sheet needs", () => {
+describe("random access reads only what the sheet needs", HEAVY, () => {
   it("on an Excel-ordered workbook with data descriptors, never touches the other sheet", async () => {
     const bytes = await zipParts(parts, SHEETS_FIRST)
     const dir = directory(bytes)
@@ -387,7 +421,7 @@ describe("random access reads only what the sheet needs", () => {
   })
 })
 
-describe("a ReadableStream with data descriptors streams when metadata comes first", () => {
+describe("a ReadableStream with data descriptors streams when metadata comes first", HEAVY, () => {
   it("pulls well under the file before the first row", async () => {
     const bytes = await zipParts(parts, METADATA_FIRST)
     expect(directory(bytes).every((e) => e.hasDataDescriptor)).toBe(true)
@@ -432,6 +466,30 @@ describe("a ReadableStream with data descriptors streams when metadata comes fir
     await gen.next()
     expect(pulled()).toBe(bytes.length)
     await gen.return()
+  })
+})
+
+describe('a runtime without DecompressionStream("deflate-raw")', () => {
+  it("still streams the same rows from a random-access source and a stream", async () => {
+    // The capability is memoized per module, so the probe runs in a fresh
+    // module registry with the constructor refusing the format.
+    const bytes = await zipParts(workbookParts(300), METADATA_FIRST)
+    const expected = await collect(streamXlsxRows(bytes))
+    class NoRaw {
+      constructor(format: string) {
+        throw new TypeError(`unsupported format ${format}`)
+      }
+    }
+    vi.stubGlobal("DecompressionStream", NoRaw)
+    try {
+      vi.resetModules()
+      const fresh = await import("../src/xlsx/stream-reader")
+      expect(await collect(fresh.streamXlsxRows(counting(bytes)))).toEqual(expected)
+      expect(await collect(fresh.streamXlsxRows(pulledStream(bytes).stream))).toEqual(expected)
+    } finally {
+      vi.unstubAllGlobals()
+      vi.resetModules()
+    }
   })
 })
 
@@ -495,6 +553,52 @@ describe("random access keeps the readers' limits", () => {
     await expect(collect(streamXlsxRows(bytes))).rejects.toThrow(message)
     await expect(collect(streamXlsxRows(counting(bytes)))).rejects.toThrow(message)
     await expect(collect(streamXlsxRows(pulledStream(bytes).stream))).rejects.toThrow(message)
+  })
+
+  it("holds a ReadableStream to maxInputBytes while scanning for a descriptor", async () => {
+    // Bit 3 set on every local header, sizes left in place, no descriptor
+    // written. The descriptor scan reads to the end of the stream before
+    // the walk falls back, so the cap has to apply as the fallback log
+    // grows. It never fully did: drainToBuffer counted only the chunks it
+    // pulled itself, so whatever was already logged — here, with one
+    // chunk from Blob.stream(), all of it — escaped the cap on main too.
+    const small = workbookParts(2000)
+    const writer = new ZipWriter()
+    for (const path of METADATA_FIRST) writer.add(path, enc.encode(small[path]!))
+    const bytes = withBit3OnLocalHeaders(await writer.build())
+    // Without the cap it still reads, through the buffered reader.
+    expect(await collect(streamXlsxRows(pulledStream(bytes).stream))).toHaveLength(2000)
+    await expect(
+      collect(streamXlsxRows(pulledStream(bytes).stream, { maxInputBytes: 10_000 })),
+    ).rejects.toThrow(/Input stream exceeds the maximum of 10000 bytes/)
+  })
+
+  it("reads whole, through the buffered reader, an entry the directory declines", async () => {
+    const small = workbookParts(50)
+    const writer = new ZipWriter()
+    for (const path of SHEETS_FIRST) writer.add(path, enc.encode(small[path]!))
+    const bytes = await writer.build()
+    const expected = await collect(streamXlsxRows(bytes))
+
+    // No compressed size in the directory, bit 3 set: ZipReader recovers
+    // it from the local header; the random-access reader declines.
+    const noSize = patchDirectoryEntry(bytes, "xl/worksheets/sheet1.xml", (v, at) => {
+      v.setUint16(at + 8, v.getUint16(at + 8, true) | 0x08, true)
+      v.setUint32(at + 20, 0, true)
+    })
+    const src = counting(noSize)
+    expect(await collect(streamXlsxRows(src))).toEqual(expected)
+    expect(src.reads.some(([o, n]) => o === 0 && n === noSize.length)).toBe(true)
+
+    // An unsupported method: the buffered reader's error, word for word.
+    const method = patchDirectoryEntry(bytes, "xl/styles.xml", (v, at) =>
+      v.setUint16(at + 10, 99, true),
+    )
+    const buffered = await collect(streamXlsxRows(method)).catch((e: Error) => e.message)
+    expect(buffered).toMatch(/Unsupported compression method 99/)
+    expect(await collect(streamXlsxRows(counting(method))).catch((e: Error) => e.message)).toBe(
+      buffered,
+    )
   })
 
   it("gives a non-ZIP the buffered reader's error", async () => {

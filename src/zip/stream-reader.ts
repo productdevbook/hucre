@@ -78,12 +78,14 @@ interface DataDescriptor {
 }
 
 /**
- * The descriptor scan reached the end of the source without finding the
- * body's end. Not damage the caller should see — `prepareStreaming` falls
- * back on it, and the buffered reader, which has the central directory,
- * is the one to judge the archive.
+ * A data-descriptor entry this walk could not follow: the scan reached the
+ * end of the source without finding the body's end, or the boundary it
+ * found does not match the descriptor's CRC and size. Not damage the
+ * caller should see — `prepareStreaming` falls back on it while the
+ * fallback log is intact, and the buffered reader, which has the central
+ * directory, is the one to judge the archive.
  */
-export class DataDescriptorNotFound extends ZipError {}
+export class DataDescriptorUnresolved extends ZipError {}
 
 /**
  * Pull-based ZIP reader over a byte {@link ReadableStream}.
@@ -104,24 +106,42 @@ export class ZipStreamReader {
   /** The current entry's extent is found by scanning for its descriptor. */
   private pendingDescriptor = false
   private bodyConsumed = true
+  /** Bytes held in {@link fallbackLog}. */
+  private logged = 0
   private readonly maxDecompressedBytes: number
+  private readonly maxInputBytes: number
 
   constructor(
     stream: ReadableStream<Uint8Array>,
     maxDecompressedBytes: number = MAX_DECOMPRESSED_BYTES,
+    maxInputBytes: number = MAX_INPUT_BYTES,
   ) {
     this.reader = stream.getReader()
     this.maxDecompressedBytes = maxDecompressedBytes
+    this.maxInputBytes = positiveOr(maxInputBytes, MAX_INPUT_BYTES)
   }
 
-  /** Pull one more chunk from the source, logging it for fallback. */
+  /**
+   * Pull one more chunk from the source, logging it for fallback.
+   *
+   * The log is the buffer a fallback hands to the random-access reader, so
+   * it is held to `maxInputBytes` as it grows rather than only when the
+   * fallback is taken. The difference matters since data descriptors are
+   * followed: the scan for one can read a stream to its end before the
+   * walk decides it cannot stream, and a check made only in
+   * `drainToBuffer` would then find nothing left to count.
+   */
   private async pull(): Promise<Uint8Array | null> {
     const { value, done } = await this.reader.read()
     if (done || !value) {
       this.ended = true
       return null
     }
-    if (this.fallbackLog) this.fallbackLog.push(value)
+    if (this.fallbackLog) {
+      this.logged += value.length
+      if (this.logged > this.maxInputBytes) throw inputTooLarge(this.maxInputBytes)
+      this.fallbackLog.push(value)
+    }
     return value
   }
 
@@ -352,9 +372,7 @@ export class ZipStreamReader {
       total += chunk.length
       // A part held whole is bounded like a buffered stream input; the
       // entry's own size is not known until its end.
-      if (total > MAX_INPUT_BYTES) {
-        throw new ZipError(`ZipStreamReader: ${entry.name} exceeds ${MAX_INPUT_BYTES} bytes`)
-      }
+      if (total > this.maxInputBytes) throw inputTooLarge(this.maxInputBytes)
       chunks.push(chunk.slice())
     }
     const compressed = concat(chunks)
@@ -366,7 +384,9 @@ export class ZipStreamReader {
     const out = compressed.length === 0 ? EMPTY : inflate(compressed, cap)
     const size = d.zip64 ? out.length : out.length >>> 0
     if (size !== d.uncompressedSize || (d.crc !== 0 && crc32(out) !== d.crc)) {
-      throw new ZipError(`ZipStreamReader: ${entry.name} does not match its data descriptor`)
+      throw new DataDescriptorUnresolved(
+        `ZipStreamReader: ${entry.name} does not match its data descriptor`,
+      )
     }
     return out
   }
@@ -428,7 +448,7 @@ export class ZipStreamReader {
       }
       if (!(await this.pullIntoLeftover())) {
         this.bodyConsumed = true
-        throw new DataDescriptorNotFound(
+        throw new DataDescriptorUnresolved(
           "ZipStreamReader: reached the end of the stream without finding the data descriptor",
         )
       }
@@ -450,11 +470,11 @@ export class ZipStreamReader {
     if (!this.fallbackLog) {
       throw new ZipError("ZipStreamReader: cannot fall back after streaming started")
     }
-    const cap = Number.isFinite(maxBytes) && maxBytes > 0 ? maxBytes : MAX_INPUT_BYTES
+    const cap = positiveOr(maxBytes, MAX_INPUT_BYTES)
     const chunks = this.fallbackLog
     this.fallbackLog = null
-    let total = 0
-    for (const c of chunks) total += c.length
+    let total = this.logged
+    if (total > cap) throw inputTooLarge(cap)
     // Pull whatever remains from the source (stop logging — we own `chunks`).
     for (;;) {
       if (this.ended) break
@@ -462,12 +482,7 @@ export class ZipStreamReader {
       if (done) break
       if (value) {
         total += value.length
-        if (total > cap) {
-          throw new ParseError(
-            `Input stream exceeds the maximum of ${cap} bytes. ` +
-              "Raise `maxInputBytes` if the file really is this large.",
-          )
-        }
+        if (total > cap) throw inputTooLarge(cap)
         chunks.push(value)
       }
     }
@@ -493,6 +508,17 @@ export class ZipStreamReader {
       // ignore
     }
   }
+}
+
+function inputTooLarge(cap: number): ParseError {
+  return new ParseError(
+    `Input stream exceeds the maximum of ${cap} bytes. ` +
+      "Raise `maxInputBytes` if the file really is this large.",
+  )
+}
+
+function positiveOr(value: number, fallback: number): number {
+  return Number.isFinite(value) && value > 0 ? value : fallback
 }
 
 /** `PK\x03\x04` (next entry) or `PK\x01\x02` (central directory) at `j`. */

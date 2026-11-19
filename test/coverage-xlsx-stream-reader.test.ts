@@ -562,8 +562,9 @@ describe("ReadableStream input", () => {
 
   it("falls back when the entries cannot be streamed from their local headers", async () => {
     // Bit 3 of the general-purpose flag says the sizes live in a trailing
-    // data descriptor, so the local header alone cannot bound the entry.
-    // The central directory is untouched, so the buffered reader copes.
+    // data descriptor — but none was written. The descriptor scan finds no
+    // boundary and the walk falls back; the central directory is
+    // untouched, so the buffered reader copes.
     const data = await build(defaultParts(`<row r="1"><c r="A1"><v>8</v></c></row>`))
     const patched = withDataDescriptorFlag(data)
     expect(await collect(streamXlsxRows(toStream(patched)))).toEqual([[8]])

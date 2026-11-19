@@ -39,6 +39,7 @@ import {
   ZIP64_LOCATOR_BYTES,
 } from "./central-directory"
 import { crc32 } from "./deflate"
+import { byteLimitStream } from "./byte-limit"
 import { inflateRawStream } from "./inflate-stream"
 import { decompressDeflateRaw } from "./reader"
 
@@ -259,7 +260,20 @@ export class RandomAccessZip {
       // One window in flight, not the default's read-ahead of several.
       { highWaterMark: 0 },
     )
-    if (entry.compressionMethod === 0) return raw
+    if (entry.compressionMethod === 0) {
+      // A stored body is its own output, so the decompression ceiling is a
+      // ceiling on what is read. Without it a directory claiming a huge
+      // stored sheet in a sparse source would be read window by window to
+      // the end of whatever the source pretends to hold.
+      if (entry.compressedSize > this.maxDecompressedBytes) {
+        return erroredStream(
+          new ZipError(
+            `Decompressed size exceeds limit of ${this.maxDecompressedBytes} bytes (possible zip bomb)`,
+          ),
+        )
+      }
+      return raw.pipeThrough(byteLimitStream(this.capFor(entry)))
+    }
     if (entry.compressedSize === 0 && entry.uncompressedSize === 0) {
       return new ReadableStream<Uint8Array>({ start: (c) => c.close() })
     }
@@ -351,6 +365,10 @@ async function readExact(
     )
   }
   return got instanceof Uint8Array ? got : new Uint8Array(got.buffer, got.byteOffset, length)
+}
+
+function erroredStream(err: Error): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({ start: (c) => c.error(err) })
 }
 
 /** The source's declared size, checked to be a byte count. */
