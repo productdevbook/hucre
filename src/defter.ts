@@ -136,8 +136,14 @@ export async function read(input: ReadInput, options?: ReadOptions): Promise<Wor
       return readXls(data, options)
     }
     if (!cfbStreams.has("EncryptionInfo") && !cfbStreams.has("EncryptedPackage")) {
-      throw new ParseError(
-        "Unsupported OLE2 container: it holds neither a Workbook stream nor an encrypted package",
+      // UnsupportedFormatError, not ParseError: the container is intact, we
+      // just do not recognise what is in it (a Word or PowerPoint file, an
+      // MSG, …). Within `read()` that class means "not a format we could
+      // identify" — `detectFormat` throws it for unknown bytes too. ParseError
+      // is for a format we did identify that turns out to be broken, like
+      // `readXls`'s "missing Workbook stream" when the caller named .xls.
+      throw new UnsupportedFormatError(
+        "unknown (OLE2 container with neither a Workbook stream nor an encrypted package)",
       )
     }
     if (options?.password) {

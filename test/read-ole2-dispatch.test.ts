@@ -14,7 +14,7 @@ import { read } from "../src/defter"
 import { readXls } from "../src/xls/reader"
 import { writeCfb } from "../src/xlsx/crypto/cfb"
 import { writeXlsx } from "../src/xlsx/writer"
-import { EncryptedFileError, ParseError } from "../src/errors"
+import { EncryptedFileError, ParseError, UnsupportedFormatError } from "../src/errors"
 
 const xls = new Uint8Array(readFileSync(new URL("./fixtures/excel-basic.xls", import.meta.url)))
 
@@ -80,12 +80,14 @@ describe("read() — other OLE2 containers", () => {
     expect(err).not.toBeInstanceOf(EncryptedFileError)
   })
 
-  it("rejects an intact CFB with neither a workbook nor an encrypted package", async () => {
+  it("rejects an intact CFB with neither a workbook nor an encrypted package as unsupported", async () => {
     const data = writeCfb([{ name: "SummaryInformation", data: new Uint8Array(64) }])
     for (const options of [undefined, { password: "pw" }]) {
       const err = await errorOf(read(data, options))
-      expect(err).toBeInstanceOf(ParseError)
-      expect((err as Error).message).toMatch(/neither a Workbook stream nor an encrypted package/)
+      expect(err).toBeInstanceOf(UnsupportedFormatError)
+      expect((err as Error).message).toBe(
+        "Unsupported format: unknown (OLE2 container with neither a Workbook stream nor an encrypted package)",
+      )
     }
   })
 
