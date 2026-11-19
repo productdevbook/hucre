@@ -1772,6 +1772,13 @@ export interface ReadOptions {
    * fails with a `ParseError` instead of growing until the process runs
    * out of memory. Ignored for `Uint8Array` / `ArrayBuffer` input, which
    * the caller has already allocated.
+   *
+   * For a {@link RandomAccessInput} it bounds what is held from the
+   * source, not the source's size: the central directory plus the
+   * compressed metadata parts, which is all that is ever buffered there,
+   * or the whole file when it has to be read whole (an encrypted
+   * workbook, or a directory the random-access reader declines). The
+   * streamed worksheet is never held, so it does not count.
    */
   maxInputBytes?: number
   /**
@@ -2241,6 +2248,38 @@ export interface StreamRow {
 // ── Input/Output Types ─────────────────────────────────────────────
 
 export type ReadInput = Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>
+
+/**
+ * A byte source that can be read at any offset — a file handle, a
+ * `Blob`, an HTTP resource that honours `Range`.
+ *
+ * `streamXlsxRows` accepts one and reads the archive the way a ZIP is
+ * meant to be read: the directory from the end, then only the parts it
+ * needs, the worksheet a bounded window at a time. A `ReadableStream`
+ * has to be walked front to back and can stream only when every part
+ * the sheet depends on comes before it, which Excel's own files do not
+ * do. With this the order of the parts, data descriptors and ZIP64 stop
+ * mattering, and memory does not grow with the file.
+ *
+ * Kept apart from {@link ReadInput} on purpose: the buffered readers
+ * have no use for random access and would only read it whole, so they do
+ * not accept it. Use {@link randomAccessFromBlob} for a `Blob` or `File`
+ * (including Node's `fs.openAsBlob`).
+ *
+ * The contract:
+ * - `size` is the total length in bytes. hucre never asks past it.
+ * - `read(offset, length)` resolves with exactly `length` bytes starting
+ *   at `offset`. Anything else — a short read, or a server that ignored
+ *   `Range` and sent the whole file — fails with a `ParseError` rather
+ *   than being guessed at.
+ * - hucre never closes the source; that stays with whoever opened it.
+ */
+export interface RandomAccessInput {
+  /** Total length of the source in bytes. */
+  readonly size: number
+  /** Resolve with exactly `length` bytes starting at `offset`. */
+  read(offset: number, length: number): Promise<Uint8Array>
+}
 export type WriteOutput = Uint8Array
 
 // ── Incremental writers ────────────────────────────────────────────

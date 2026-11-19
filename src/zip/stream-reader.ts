@@ -16,11 +16,10 @@
 // recover the bytes consumed so far via {@link ZipStreamReader.drainToBuffer}
 // and fall back to the random-access {@link ZipReader}.
 
-import { byteLimitStream, STREAM_CHUNK_BYTES } from "./byte-limit"
 import { inflate } from "./deflate"
+import { concat, inflateRawStream } from "./inflate-stream"
 import { ParseError, ZipError } from "../errors"
 import { MAX_DECOMPRESSED_BYTES, MAX_INPUT_BYTES } from "../limits"
-import { canInflateRaw } from "./capability"
 
 const SIG_LOCAL_FILE = 0x04034b50
 const SIG_CENTRAL_DIR = 0x02014b50
@@ -216,41 +215,7 @@ export class ZipStreamReader {
       entry.uncompressedSize > 0
         ? Math.min(entry.uncompressedSize, MAX_DECOMPRESSED_BYTES)
         : MAX_DECOMPRESSED_BYTES
-    if (canInflateRaw()) {
-      return (
-        raw.pipeThrough(
-          new DecompressionStream("deflate-raw") as unknown as ReadableWritablePair<
-            Uint8Array,
-            Uint8Array
-          >,
-        ) as ReadableStream<Uint8Array>
-      ).pipeThrough(byteLimitStream(cap))
-    }
-    // No DecompressionStream — buffer the compressed body and inflate once.
-    // The result is handed on in pieces rather than as one enqueue: a
-    // consumer that accumulates what it is given (`parseSaxStream` does
-    // `buf += decoder.decode(chunk)`) would otherwise rebuild the very
-    // string the streaming path exists to avoid, and this is the branch
-    // the browser/Workers claims rest on. Same reason as the twin
-    // paths in `reader.ts`. See #503.
-    return new ReadableStream<Uint8Array>({
-      async start(controller) {
-        const chunks: Uint8Array[] = []
-        const r = raw.getReader()
-        for (;;) {
-          const { value, done } = await r.read()
-          if (done) break
-          if (value) chunks.push(value)
-        }
-        const inflated = inflate(concat(chunks), cap)
-        for (let at = 0; at < inflated.length; at += STREAM_CHUNK_BYTES) {
-          controller.enqueue(
-            inflated.subarray(at, Math.min(at + STREAM_CHUNK_BYTES, inflated.length)),
-          )
-        }
-        controller.close()
-      },
-    })
+    return inflateRawStream(raw, cap, entry.name)
   }
 
   /**
@@ -318,16 +283,4 @@ function readU16(b: Uint8Array, off: number): number {
 
 function readU32(b: Uint8Array, off: number): number {
   return (b[off] | (b[off + 1] << 8) | (b[off + 2] << 16) | (b[off + 3] << 24)) >>> 0
-}
-
-function concat(chunks: Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const c of chunks) total += c.length
-  const out = new Uint8Array(total)
-  let off = 0
-  for (const c of chunks) {
-    out.set(c, off)
-    off += c.length
-  }
-  return out
 }

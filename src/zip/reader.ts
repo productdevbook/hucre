@@ -31,9 +31,9 @@ const MAX_DEFLATE_RATIO = 1032
 
 // ── Decompression ───────────────────────────────────────────────────
 
-async function decompressDeflateRaw(
+export async function decompressDeflateRaw(
   data: Uint8Array,
-  maxBytes = MAX_DECOMPRESSED_BYTES,
+  maxBytes: number = MAX_DECOMPRESSED_BYTES,
 ): Promise<Uint8Array> {
   if (canInflateRaw()) {
     try {
