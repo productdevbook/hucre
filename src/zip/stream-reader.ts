@@ -24,6 +24,7 @@ import { crc32, inflate } from "./deflate"
 import { concat, inflateRawStream } from "./inflate-stream"
 import { decompressionCap, inputTooLarge, positiveOr } from "./bounds"
 import {
+  isSupportedMethod,
   readZip64Extra,
   SIG_CENTRAL_DIR,
   SIG_DATA_DESCRIPTOR,
@@ -212,7 +213,7 @@ export class ZipStreamReader {
       extra = got
     }
 
-    const supported = compressionMethod === 0 || compressionMethod === 8
+    const supported = isSupportedMethod(compressionMethod)
     const dataDescriptor = (flags & FLAG_DATA_DESCRIPTOR) !== 0
     let sized = !dataDescriptor
     // A ZIP64 entry written with its sizes known leaves the 32-bit fields

@@ -38,6 +38,11 @@ export const CENTRAL_DIR_ENTRY_MIN_BYTES = 46
 /** Fixed part of a local file header. */
 export const LOCAL_HEADER_BYTES = 30
 
+/** STORE (0) or DEFLATE (8): the compression methods hucre reads. */
+export function isSupportedMethod(method: number): boolean {
+  return method === 0 || method === 8
+}
+
 export interface CentralDirEntry {
   fileName: string
   compressionMethod: number

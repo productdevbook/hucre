@@ -32,6 +32,7 @@ import {
   CENTRAL_DIR_ENTRY_MIN_BYTES,
   EOCD_MIN_BYTES,
   EOCD_SEARCH_BYTES,
+  isSupportedMethod,
   LOCAL_HEADER_BYTES,
   readCentralDirectory,
   readEocd,
@@ -205,7 +206,7 @@ export class RandomAccessZip {
   canExtract(path: string): boolean {
     const e = this.entryMap.get(path)
     if (!e) return false
-    if (e.compressionMethod !== 0 && e.compressionMethod !== 8) return false
+    if (!isSupportedMethod(e.compressionMethod)) return false
     if (e.compressedSize === 0 && (e.hasDataDescriptor || e.uncompressedSize !== 0)) return false
     return true
   }
@@ -309,7 +310,7 @@ export class RandomAccessZip {
   private require(path: string): CentralDirEntry {
     const entry = this.entryMap.get(path)
     if (!entry) throw new ZipError(`Entry not found: ${path}`)
-    if (entry.compressionMethod !== 0 && entry.compressionMethod !== 8) {
+    if (!isSupportedMethod(entry.compressionMethod)) {
       throw new ZipError(
         `Unsupported compression method ${entry.compressionMethod} for entry: ${entry.fileName}`,
       )
