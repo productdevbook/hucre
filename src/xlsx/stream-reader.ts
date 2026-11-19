@@ -744,21 +744,7 @@ export async function* streamXlsxRows(
     // when the archive's structure rules out single-pass streaming.
     const prep = await prepareStreaming(input, options)
     if (prep.mode === "stream") {
-      let rangeFilter: RangeFilter | undefined
-      if (options?.range) rangeFilter = parseRangeFilter(options.range)
-      const maxRowsLimit =
-        typeof options?.maxRows === "number" && options.maxRows > 0 ? options.maxRows : 0
-      yield* parseWorksheetRowsStreaming(
-        prep.wsStream,
-        prep.meta.sharedStrings,
-        prep.meta.parsedStyles,
-        prep.meta.dateSystem,
-        options?.dates,
-        {
-          range: rangeFilter,
-          maxRows: maxRowsLimit > 0 ? maxRowsLimit : undefined,
-        },
-      )
+      yield* streamResolved(prep.wsStream, prep.meta, options)
       return
     }
     data = prep.data
@@ -789,6 +775,30 @@ export async function* streamXlsxRows(
     })
   }
 
+  const resolved = await resolveFromPackage(zip, options)
+  if (resolved) yield* streamResolved(zip.extractStream(resolved.wsPath), resolved, options)
+}
+
+/**
+ * What the resolver needs from an archive: `ZipReader` over a buffer,
+ * `RandomAccessZip` over a seekable source. Both have the directory in
+ * hand, so unlike the local-header walk in `prepareStreaming` they can
+ * look any part up by name.
+ */
+interface PackageReader {
+  has(path: string): boolean
+  extract(path: string): Promise<Uint8Array>
+}
+
+/**
+ * Resolve the target worksheet and read everything it depends on, from an
+ * archive whose directory is known. Returns null when there is nothing to
+ * stream: no such sheet, or a tab that is not a worksheet.
+ */
+async function resolveFromPackage(
+  zip: PackageReader,
+  options?: ReadOptions & { sheet?: number | string },
+): Promise<ResolvedMeta | null> {
   // 2. Validate content types
   if (!zip.has("[Content_Types].xml")) {
     throw new ParseError("Invalid XLSX: missing [Content_Types].xml")
@@ -869,37 +879,39 @@ export async function* streamXlsxRows(
   // 9. Resolve the target sheet
   const targetSheet = resolveTargetSheet(sheetInfos, options?.sheet)
   if (!targetSheet) {
-    return // No matching sheet — yield nothing
+    return null // No matching sheet — yield nothing
   }
 
-  if (nonWorksheetRIds.has(targetSheet.rId)) return
+  if (nonWorksheetRIds.has(targetSheet.rId)) return null
 
   const wsPath = sheetRelMap.get(targetSheet.rId)
   if (!wsPath || !zip.has(wsPath)) {
     throw new ParseError(`Invalid XLSX: missing worksheet file for sheet "${targetSheet.name}"`)
   }
 
-  // 10. Build optional row/cell filters from ReadOptions.
-  // `range` and `maxRows` mirror the batch-reader semantics: range filters
-  // both rows (skip outside) and cells (mask outside columns), maxRows
-  // caps the number of yielded rows. Both stop pulling from the worksheet
-  // stream as soon as no more rows can be emitted.
-  let rangeFilter: RangeFilter | undefined
-  if (options?.range) {
-    rangeFilter = parseRangeFilter(options.range)
-  }
+  return { wsPath, sharedStrings, parsedStyles, dateSystem }
+}
+
+/**
+ * Stream the resolved worksheet's rows. `range` and `maxRows` mirror the
+ * batch-reader semantics: range filters both rows (skip outside) and
+ * cells (mask outside columns), maxRows caps the number of yielded rows.
+ * Both stop pulling from the worksheet stream as soon as no more rows can
+ * be emitted.
+ */
+function streamResolved(
+  wsStream: ReadableStream<Uint8Array>,
+  meta: ResolvedMeta,
+  options?: ReadOptions,
+): AsyncGenerator<StreamRow, void, undefined> {
+  const rangeFilter = options?.range ? parseRangeFilter(options.range) : undefined
   const maxRowsLimit =
     typeof options?.maxRows === "number" && options.maxRows > 0 ? options.maxRows : 0
-
-  // 11. Stream worksheet rows
-  // Use streaming decompression: pipe ZIP entry through DecompressionStream
-  // directly into the SAX parser, yielding rows as they complete.
-  const wsStream = zip.extractStream(wsPath)
-  yield* parseWorksheetRowsStreaming(
+  return parseWorksheetRowsStreaming(
     wsStream,
-    sharedStrings,
-    parsedStyles,
-    dateSystem,
+    meta.sharedStrings,
+    meta.parsedStyles,
+    meta.dateSystem,
     options?.dates,
     {
       range: rangeFilter,
