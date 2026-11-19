@@ -22,6 +22,7 @@
 
 import { crc32, inflate } from "./deflate"
 import { concat, inflateRawStream } from "./inflate-stream"
+import { positiveOr } from "./bounds"
 import { readZip64Extra, SIG_DATA_DESCRIPTOR, ZIP64_SENTINEL } from "./central-directory"
 import { ParseError, ZipError } from "../errors"
 import { MAX_DECOMPRESSED_BYTES, MAX_INPUT_BYTES } from "../limits"
@@ -532,10 +533,6 @@ function inputTooLarge(cap: number): ParseError {
     `Input stream exceeds the maximum of ${cap} bytes. ` +
       "Raise `maxInputBytes` if the file really is this large.",
   )
-}
-
-function positiveOr(value: number, fallback: number): number {
-  return Number.isFinite(value) && value > 0 ? value : fallback
 }
 
 /** `PK\x03\x04` (next entry) or `PK\x01\x02` (central directory) at `j`. */

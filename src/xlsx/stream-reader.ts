@@ -11,6 +11,7 @@ import { EncryptedFileError, ParseError, ZipError } from "../errors"
 import { MAX_COL_INDEX, MAX_DECOMPRESSED_BYTES, MAX_INPUT_BYTES } from "../limits"
 import { isOle2Container } from "../_input"
 import { decryptAgile } from "./crypto/agile"
+import { positiveOr } from "../zip/bounds"
 import { ZipReader } from "../zip/reader"
 import { DataDescriptorUnresolved, ZipStreamReader } from "../zip/stream-reader"
 import { isRandomAccessInput, RandomAccessZip, readRange, sourceSize } from "../zip/random-access"
@@ -767,7 +768,7 @@ async function planRandomAccess(
     // reader when the file can be held, so the outcome — and the error
     // message, if it is one — is the one a Uint8Array would get. When it
     // cannot be held, the directory's own complaint is the useful one.
-    if (err instanceof ZipError && size <= inputCap(options?.maxInputBytes)) {
+    if (err instanceof ZipError && size <= positiveOr(options?.maxInputBytes, MAX_INPUT_BYTES)) {
       return { mode: "whole" }
     }
     throw err
@@ -792,19 +793,13 @@ async function planRandomAccess(
   return { mode: "stream", zip, meta }
 }
 
-function inputCap(maxInputBytes: number | undefined): number {
-  return typeof maxInputBytes === "number" && Number.isFinite(maxInputBytes) && maxInputBytes > 0
-    ? maxInputBytes
-    : MAX_INPUT_BYTES
-}
-
 /** Read a random-access source whole, under the same ceiling a stream gets. */
 async function readWhole(
   source: RandomAccessInput,
   maxInputBytes: number | undefined,
 ): Promise<Uint8Array> {
   const size = sourceSize(source)
-  const cap = inputCap(maxInputBytes)
+  const cap = positiveOr(maxInputBytes, MAX_INPUT_BYTES)
   if (size > cap) {
     throw new ParseError(
       `Input exceeds the maximum of ${cap} bytes. ` +

@@ -42,6 +42,7 @@ import {
   ZIP64_LOCATOR_BYTES,
 } from "./central-directory"
 import { crc32 } from "./deflate"
+import { positiveOr } from "./bounds"
 import { byteLimitStream } from "./byte-limit"
 import { canInflateRaw } from "./capability"
 import { inflateRawStream } from "./inflate-stream"
@@ -415,8 +416,4 @@ function budgetExceeded(buffered: number, max: number): ParseError {
     `Reading this archive would hold ${buffered} bytes from the source, over the ` +
       `maximum of ${max}. Raise \`maxInputBytes\` if the file really needs it.`,
   )
-}
-
-function positiveOr(value: number | undefined, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback
 }
