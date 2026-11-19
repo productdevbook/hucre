@@ -4,6 +4,8 @@
 // one reading of them, so a ceiling cannot be spelled one way in one
 // reader and drift in another.
 
+import { ParseError } from "../errors"
+
 /**
  * `value` when it is a positive finite number, else `fallback`.
  *
@@ -23,4 +25,16 @@ export function positiveOr(value: number | undefined, fallback: number): number 
  */
 export function decompressionCap(declaredSize: number, max: number): number {
   return declaredSize > 0 ? Math.min(declaredSize, max) : max
+}
+
+/**
+ * The error for input over `maxInputBytes`. `input` names what was too
+ * large; the stream readers say "Input stream", which is what
+ * `bufferReadableStream` says too.
+ */
+export function inputTooLarge(cap: number, input: string = "Input stream"): ParseError {
+  return new ParseError(
+    `${input} exceeds the maximum of ${cap} bytes. ` +
+      "Raise `maxInputBytes` if the file really is this large.",
+  )
 }

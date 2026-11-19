@@ -22,9 +22,9 @@
 
 import { crc32, inflate } from "./deflate"
 import { concat, inflateRawStream } from "./inflate-stream"
-import { decompressionCap, positiveOr } from "./bounds"
+import { decompressionCap, inputTooLarge, positiveOr } from "./bounds"
 import { readZip64Extra, SIG_DATA_DESCRIPTOR, ZIP64_SENTINEL } from "./central-directory"
-import { ParseError, ZipError } from "../errors"
+import { ZipError } from "../errors"
 import { MAX_DECOMPRESSED_BYTES, MAX_INPUT_BYTES } from "../limits"
 
 const SIG_LOCAL_FILE = 0x04034b50
@@ -517,13 +517,6 @@ export class ZipStreamReader {
       // ignore
     }
   }
-}
-
-function inputTooLarge(cap: number): ParseError {
-  return new ParseError(
-    `Input stream exceeds the maximum of ${cap} bytes. ` +
-      "Raise `maxInputBytes` if the file really is this large.",
-  )
 }
 
 /** `PK\x03\x04` (next entry) or `PK\x01\x02` (central directory) at `j`. */

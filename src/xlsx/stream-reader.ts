@@ -11,7 +11,7 @@ import { EncryptedFileError, ParseError, ZipError } from "../errors"
 import { MAX_COL_INDEX, MAX_DECOMPRESSED_BYTES, MAX_INPUT_BYTES } from "../limits"
 import { isOle2Container } from "../_input"
 import { decryptAgile } from "./crypto/agile"
-import { positiveOr } from "../zip/bounds"
+import { inputTooLarge, positiveOr } from "../zip/bounds"
 import { ZipReader } from "../zip/reader"
 import { DataDescriptorUnresolved, ZipStreamReader } from "../zip/stream-reader"
 import { isRandomAccessInput, RandomAccessZip, readRange, sourceSize } from "../zip/random-access"
@@ -800,12 +800,8 @@ async function readWhole(
 ): Promise<Uint8Array> {
   const size = sourceSize(source)
   const cap = positiveOr(maxInputBytes, MAX_INPUT_BYTES)
-  if (size > cap) {
-    throw new ParseError(
-      `Input exceeds the maximum of ${cap} bytes. ` +
-        "Raise `maxInputBytes` if the file really is this large.",
-    )
-  }
+  // "Input", not "Input stream": this source is read, not drained.
+  if (size > cap) throw inputTooLarge(cap, "Input")
   return readRange(source, 0, size)
 }
 
