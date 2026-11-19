@@ -14,3 +14,13 @@
 export function positiveOr(value: number | undefined, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback
 }
+
+/**
+ * What one entry may decompress to: its declared size when the archive
+ * states one, the absolute ceiling otherwise, and never more than that
+ * ceiling. Zero is "not declared", which is what a data descriptor
+ * leaves in the header, not "empty".
+ */
+export function decompressionCap(declaredSize: number, max: number): number {
+  return declaredSize > 0 ? Math.min(declaredSize, max) : max
+}

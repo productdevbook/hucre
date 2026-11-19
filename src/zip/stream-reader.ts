@@ -22,7 +22,7 @@
 
 import { crc32, inflate } from "./deflate"
 import { concat, inflateRawStream } from "./inflate-stream"
-import { positiveOr } from "./bounds"
+import { decompressionCap, positiveOr } from "./bounds"
 import { readZip64Extra, SIG_DATA_DESCRIPTOR, ZIP64_SENTINEL } from "./central-directory"
 import { ParseError, ZipError } from "../errors"
 import { MAX_DECOMPRESSED_BYTES, MAX_INPUT_BYTES } from "../limits"
@@ -287,10 +287,7 @@ export class ZipStreamReader {
     // Copy out of the leftover-backed view so later reads can't alias it.
     const owned = compressed.slice()
     if (entry.compressionMethod === 0) return owned
-    const cap =
-      entry.uncompressedSize > 0
-        ? Math.min(entry.uncompressedSize, this.maxDecompressedBytes)
-        : this.maxDecompressedBytes
+    const cap = decompressionCap(entry.uncompressedSize, this.maxDecompressedBytes)
     return inflate(owned, cap)
   }
 
@@ -308,10 +305,7 @@ export class ZipStreamReader {
     // Same ceiling on both branches: the declared uncompressed size when the
     // header states one, the absolute cap otherwise. The native path used to
     // enforce neither, so a bomb streamed out unbounded.
-    const cap =
-      entry.uncompressedSize > 0
-        ? Math.min(entry.uncompressedSize, this.maxDecompressedBytes)
-        : this.maxDecompressedBytes
+    const cap = decompressionCap(entry.uncompressedSize, this.maxDecompressedBytes)
     return inflateRawStream(raw, cap, entry.name)
   }
 
@@ -381,10 +375,7 @@ export class ZipStreamReader {
     }
     const compressed = concat(chunks)
     const d = descriptor!
-    const cap =
-      d.uncompressedSize > 0
-        ? Math.min(d.uncompressedSize, this.maxDecompressedBytes)
-        : this.maxDecompressedBytes
+    const cap = decompressionCap(d.uncompressedSize, this.maxDecompressedBytes)
     // A wrong boundary usually fails here rather than at the check below:
     // the body is cut short ("Unexpected end of DEFLATE data"), or the cap
     // taken from a forged descriptor is too small. Either is the scan being

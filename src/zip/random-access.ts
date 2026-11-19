@@ -42,7 +42,7 @@ import {
   ZIP64_LOCATOR_BYTES,
 } from "./central-directory"
 import { crc32 } from "./deflate"
-import { positiveOr } from "./bounds"
+import { decompressionCap, positiveOr } from "./bounds"
 import { byteLimitStream } from "./byte-limit"
 import { canInflateRaw } from "./capability"
 import { inflateRawStream } from "./inflate-stream"
@@ -322,9 +322,7 @@ export class RandomAccessZip {
    * cap otherwise.
    */
   private capFor(entry: CentralDirEntry): number {
-    return entry.uncompressedSize > 0
-      ? Math.min(entry.uncompressedSize, this.maxDecompressedBytes)
-      : this.maxDecompressedBytes
+    return decompressionCap(entry.uncompressedSize, this.maxDecompressedBytes)
   }
 
   /**
