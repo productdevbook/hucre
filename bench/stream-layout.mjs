@@ -231,7 +231,8 @@ async function generate(file, rows) {
         `</Relationships>`,
     ),
   )
-  // Excel's order: the sheet, then styles and shared strings after it.
+  // Excel's order: workbook first, then the sheet, then styles and shared
+  // strings after it.
   await entry("xl/worksheets/sheet1.xml", sheet())
   await entry(
     "xl/styles.xml",

@@ -2,8 +2,9 @@
 // used to make it buffer.
 //
 // The large battery-cycler and instrument exports this was written for
-// (hundreds of MB) put the worksheet before the shared strings, styles
-// and workbook, as Excel itself does; ExcelJS's streaming writer adds a
+// (hundreds of MB) put the worksheet before the workbook's rels and the
+// content types; Excel puts it before styles and shared strings;
+// ExcelJS's streaming writer puts it before nearly everything and adds a
 // data descriptor to every entry. Walking a ReadableStream front to back,
 // streamXlsxRows could stream none of them and buffered the archive.
 //
@@ -93,8 +94,9 @@ async function repack(bytes: Uint8Array, order: Order, zip64 = false): Promise<U
   const names = [...parts.keys()]
   const sheets = names.filter(isSheet)
   const rest = names.filter((p) => !isSheet(p))
-  // Sheets first, [Content_Types].xml last: Excel's order, and the
-  // instrument exports'. Metadata first: what local-header streaming needs.
+  // Sheets first, [Content_Types].xml last: the worst case of the orders
+  // above, which every one of them is a milder form of. Metadata first:
+  // what local-header streaming needs.
   const ordered =
     order === "sheets-first"
       ? [

@@ -7,7 +7,7 @@
 // avoids that by walking local headers front to back, which only works
 // when every part a reader depends on comes before the one it streams —
 // and Excel, ExcelJS's streaming writer and the large instrument exports
-// this exists for all put the worksheet first. With a seekable source
+// this exists for all put the worksheet before some part it needs. With a seekable source
 // neither compromise is needed: read the end records and the directory,
 // read the small parts whole, and pull the big one through the inflater
 // a bounded window at a time. Part order, data descriptors and ZIP64 then
