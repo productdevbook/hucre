@@ -23,9 +23,16 @@ import {
 
 const xls = new Uint8Array(readFileSync(new URL("./fixtures/excel-basic.xls", import.meta.url)))
 
-/** `xls` cut to `percent`% of its length. */
-const cut = (percent: number): Uint8Array =>
-  xls.subarray(0, Math.floor((xls.length * percent) / 100))
+/** `bytes` cut to `percent`% of their length. */
+const cut = (bytes: Uint8Array, percent: number): Uint8Array =>
+  bytes.subarray(0, Math.floor((bytes.length * percent) / 100))
+
+/** A genuine encrypted OOXML package, written by hucre's own `writeXlsx`. */
+const encryptedPackage = (): Promise<Uint8Array> =>
+  writeXlsx({
+    sheets: [{ name: "S", rows: [["a"]] }],
+    encryption: { password: "pw", spinCount: 64 },
+  })
 
 const PERCENTS = Array.from({ length: 99 }, (_, i) => i + 1)
 
@@ -47,8 +54,9 @@ describe("read() — truncated legacy .xls", () => {
   it("rejects every cut from 1% to 99% with a ParseError, not EncryptedFileError", async () => {
     const wrong: string[] = []
     for (const p of PERCENTS) {
-      const err = await errorOf(read(cut(p)))
-      if (!(err instanceof ParseError) || err instanceof EncryptedFileError) {
+      const err = await errorOf(read(cut(xls, p)))
+      // EncryptedFileError is not a ParseError, so this one check excludes it.
+      if (!(err instanceof ParseError)) {
         wrong.push(`${p}%: ${(err as Error).name}`)
       }
     }
@@ -56,7 +64,7 @@ describe("read() — truncated legacy .xls", () => {
   })
 
   it("names the damage and keeps the container error as the cause", async () => {
-    const err = await errorOf(read(cut(50)))
+    const err = await errorOf(read(cut(xls, 50)))
     expect(err).toBeInstanceOf(ParseError)
     expect((err as Error).message).toMatch(/truncated or damaged/)
     expect((err as Error).cause).toBeInstanceOf(Error)
@@ -64,15 +72,15 @@ describe("read() — truncated legacy .xls", () => {
 
   it("does not try to decrypt a truncated file when a password is given", async () => {
     for (const p of [1, 25, 50, 75, 99]) {
-      const err = await errorOf(read(cut(p), { password: "pw" }))
+      const err = await errorOf(read(cut(xls, p), { password: "pw" }))
       expect(err).toBeInstanceOf(ParseError)
     }
   })
 
   it("agrees with readXls on the error class", async () => {
-    const direct = await errorOf(readXls(cut(50)))
+    const direct = await errorOf(readXls(cut(xls, 50)))
     expect(direct).toBeInstanceOf(ParseError)
-    expect(await errorOf(read(cut(50)))).toBeInstanceOf(ParseError)
+    expect(await errorOf(read(cut(xls, 50)))).toBeInstanceOf(ParseError)
   })
 })
 
@@ -82,7 +90,6 @@ describe("read() — other OLE2 containers", () => {
     data.set([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
     const err = await errorOf(read(data))
     expect(err).toBeInstanceOf(ParseError)
-    expect(err).not.toBeInstanceOf(EncryptedFileError)
   })
 
   it("rejects an intact CFB with neither a workbook nor an encrypted package as unsupported", async () => {
@@ -97,11 +104,7 @@ describe("read() — other OLE2 containers", () => {
   })
 
   it("still reports an intact encrypted package as encrypted", async () => {
-    const enc = await writeXlsx({
-      sheets: [{ name: "S", rows: [["a"]] }],
-      encryption: { password: "pw", spinCount: 64 },
-    })
-    const err = await errorOf(read(enc))
+    const err = await errorOf(read(await encryptedPackage()))
     expect(err).toBeInstanceOf(EncryptedFileError)
     expect((err as EncryptedFileError).format).toBeUndefined()
   })
@@ -117,12 +120,9 @@ describe("read() — other OLE2 containers", () => {
   })
 
   it("reports a truncated encrypted package as damaged, not encrypted", async () => {
-    const enc = await writeXlsx({
-      sheets: [{ name: "S", rows: [["a"]] }],
-      encryption: { password: "pw", spinCount: 64 },
-    })
+    const enc = await encryptedPackage()
     for (const p of [10, 50, 90]) {
-      const err = await errorOf(read(enc.subarray(0, Math.floor((enc.length * p) / 100))))
+      const err = await errorOf(read(cut(enc, p)))
       expect(err).toBeInstanceOf(ParseError)
     }
   })
