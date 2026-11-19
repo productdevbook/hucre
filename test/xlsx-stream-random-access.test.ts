@@ -23,6 +23,7 @@ import { readXlsx } from "../src/xlsx/reader"
 import { ZipReader } from "../src/zip/reader"
 import { zipStream } from "../src/zip/stream-writer"
 import { ZipWriter } from "../src/zip/writer"
+import { crc32 } from "../src/zip/deflate"
 import { RANDOM_ACCESS_WINDOW_BYTES, randomAccessFromBlob } from "../src/zip/random-access"
 import {
   type CentralDirEntry,
@@ -469,7 +470,68 @@ describe("a ReadableStream with data descriptors streams when metadata comes fir
     expect(pulled()).toBe(bytes.length)
     await gen.return()
   })
+
+  it("falls back, with the buffered path's rows, when a metadata part fools the scan", async () => {
+    // styles.xml carries, verbatim in a stored DEFLATE block, a descriptor
+    // claiming to close the body at its own offset, then a header
+    // signature: the one shape the scan can be fooled by. The part cut
+    // there fails in the inflater, before its CRC is checked. That has to
+    // send the walk to the buffered reader, whose directory knows the real
+    // size, rather than surface as a ZipError.
+    const small = workbookParts(50)
+    const styles = enc.encode(small["xl/styles.xml"]!)
+    const prefix = enc.encode("<!--")
+    const forged = new Uint8Array(20)
+    const fv = new DataView(forged.buffer)
+    fv.setUint32(0, 0x08074b50, true)
+    fv.setUint32(8, 5 + styles.length + prefix.length, true) // body offset of the forgery
+    fv.setUint32(12, 4, true)
+    fv.setUint32(16, 0x04034b50, true)
+    const forgedStyles = new Uint8Array([...styles, ...prefix, ...forged, ...enc.encode("-->")])
+    const payloads = new Map(METADATA_FIRST.map((p) => [p, enc.encode(small[p]!)]))
+    payloads.set("xl/styles.xml", forgedStyles)
+    const bytes = storedDescriptorZip(payloads)
+
+    const expected = await collect(streamXlsxRows(bytes))
+    expect(expected).toHaveLength(50)
+    const { stream, pulled } = pulledStream(bytes)
+    expect(await collect(streamXlsxRows(stream))).toEqual(expected)
+    expect(pulled()).toBe(bytes.length)
+  })
 })
+
+/**
+ * A ZIP whose every entry is DEFLATE with bit 3 set and its body one
+ * stored block, so the payload appears verbatim in the archive — which
+ * zipStream, compressing for real, cannot be made to do. Sizes are zero
+ * in the local headers, in a signed descriptor after each body, and
+ * correct in the central directory.
+ */
+function storedDescriptorZip(payloads: Map<string, Uint8Array>): Uint8Array {
+  const out: number[] = []
+  const dir: number[] = []
+  const u16 = (n: number) => [n & 0xff, (n >>> 8) & 0xff]
+  const u32 = (n: number) => [...u16(n & 0xffff), ...u16(n >>> 16)]
+  for (const [path, payload] of payloads) {
+    expect(payload.length).toBeLessThan(65536)
+    const name = enc.encode(path)
+    const body = [0x01, ...u16(payload.length), ...u16(~payload.length & 0xffff), ...payload]
+    const crc = crc32(payload)
+    const offset = out.length
+    // version, flags (bit 3), method 8, time, date, crc, sizes, name, extra
+    out.push(...u32(0x04034b50), ...u16(20), ...u16(8), ...u16(8), ...u32(0))
+    out.push(...u32(0), ...u32(0), ...u32(0), ...u16(name.length), ...u16(0), ...name, ...body)
+    out.push(...u32(0x08074b50), ...u32(crc), ...u32(body.length), ...u32(payload.length))
+    dir.push(...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(8), ...u16(8), ...u32(0))
+    dir.push(...u32(crc), ...u32(body.length), ...u32(payload.length), ...u16(name.length))
+    dir.push(...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset), ...name)
+  }
+  const dirOffset = out.length
+  out.push(...dir, ...u32(0x06054b50), ...u16(0), ...u16(0))
+  out.push(...u16(payloads.size), ...u16(payloads.size), ...u32(dir.length), ...u32(dirOffset))
+  out.push(...u16(0))
+  return new Uint8Array(out)
+}
 
 describe('a runtime without DecompressionStream("deflate-raw")', () => {
   it("still streams the same rows from a random-access source and a stream", async () => {

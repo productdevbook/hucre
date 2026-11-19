@@ -79,8 +79,9 @@ interface DataDescriptor {
 
 /**
  * A data-descriptor entry this walk could not follow: the scan reached the
- * end of the source without finding the body's end, or the boundary it
- * found does not match the descriptor's CRC and size. Not damage the
+ * end of the source without finding the body's end, or, for a part read
+ * whole, the boundary it found does not inflate or does not match the
+ * descriptor's CRC and size. Not damage the
  * caller should see — `prepareStreaming` falls back on it while the
  * fallback log is intact, and the buffered reader, which has the central
  * directory, is the one to judge the archive.
@@ -381,7 +382,21 @@ export class ZipStreamReader {
       d.uncompressedSize > 0
         ? Math.min(d.uncompressedSize, this.maxDecompressedBytes)
         : this.maxDecompressedBytes
-    const out = compressed.length === 0 ? EMPTY : inflate(compressed, cap)
+    // A wrong boundary usually fails here rather than at the check below:
+    // the body is cut short ("Unexpected end of DEFLATE data"), or the cap
+    // taken from a forged descriptor is too small. Either is the scan being
+    // wrong, not a verdict on the archive, so it is Unresolved and the
+    // caller falls back to the reader that has the central directory. A
+    // genuine bomb loses nothing by it: that reader applies the same cap.
+    let out: Uint8Array
+    try {
+      out = compressed.length === 0 ? EMPTY : inflate(compressed, cap)
+    } catch (err) {
+      throw new DataDescriptorUnresolved(
+        `ZipStreamReader: ${entry.name} does not inflate up to its data descriptor`,
+        { cause: err },
+      )
+    }
     const size = d.zip64 ? out.length : out.length >>> 0
     if (size !== d.uncompressedSize || (d.crc !== 0 && crc32(out) !== d.crc)) {
       throw new DataDescriptorUnresolved(

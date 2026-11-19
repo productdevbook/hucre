@@ -716,9 +716,10 @@ async function prepareStreaming(
       }
     }
   } catch (err) {
-    // A data descriptor the scan could not find is a layout this walk
-    // cannot follow, not a verdict on the archive: every byte is still in
-    // the fallback log, so the buffered reader gets to judge it.
+    // A data descriptor the scan could not find, or a boundary that did
+    // not hold up when a part was read whole, is a layout this walk cannot
+    // follow, not a verdict on the archive: every byte is still in the
+    // fallback log, so the buffered reader gets to judge it.
     if (err instanceof DataDescriptorUnresolved) {
       try {
         return { mode: "fallback", data: await zr.drainToBuffer(maxInputBytes) }

@@ -258,8 +258,13 @@ describe("a wrong boundary fails loudly", () => {
     const body = storedDeflate(payload)
     const bytes = descriptorEntry("s.xml", body, { crc: crc32(payload), usize: payload.length })
 
+    // Read whole, the cut-short body fails in the inflater before the CRC
+    // can be checked. That is still the boundary being wrong, not the
+    // archive, so it is Unresolved too: the stream path falls back on it.
     const whole = new ZipStreamReader(toStream(bytes))
-    await expect(whole.readEntryBytes((await whole.nextEntry())!)).rejects.toThrow(ZipError)
+    const read = whole.readEntryBytes((await whole.nextEntry())!)
+    await expect(read).rejects.toThrow(DataDescriptorUnresolved)
+    await expect(read).rejects.toMatchObject({ cause: expect.any(ZipError) })
 
     const streamed = new ZipStreamReader(toStream(bytes))
     const e = (await streamed.nextEntry())!
