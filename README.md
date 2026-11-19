@@ -355,7 +355,8 @@ for await (const row of streamXlsxRows(buffer)) {
 
 // A file on disk, read in place — memory does not grow with the file.
 // `randomAccessFromBlob` takes any Blob or File; on Node, fs.openAsBlob
-// gives a file-backed one, so no Node API is needed in hucre itself.
+// (stable since Node 24) gives a file-backed one, so hucre itself needs
+// no Node API.
 import { openAsBlob } from "node:fs"
 for await (const row of streamXlsxRows(randomAccessFromBlob(await openAsBlob("big.xlsx")))) {
   console.log(row.index, row.values)
@@ -549,7 +550,7 @@ depends on which:
 | input                                    | what is held                                                                             |
 | ---------------------------------------- | ---------------------------------------------------------------------------------------- |
 | `RandomAccessInput` (file, `Blob`, HTTP) | the ZIP directory, the metadata parts, and one 1 MiB window of the sheet                 |
-| `ReadableStream`, metadata before sheet  | the metadata parts and one chunk of the sheet                                            |
+| `ReadableStream`, metadata before sheet  | every byte before the sheet (kept in case it has to fall back), then one chunk at a time |
 | `ReadableStream`, any other layout       | **the whole file**, under `maxInputBytes`, and then as for a `Uint8Array`                |
 | `Uint8Array` / `ArrayBuffer`             | the file you passed in; the sheet is still decompressed and parsed as a stream, not held |
 
